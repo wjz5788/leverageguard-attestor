@@ -1,5 +1,20 @@
 # LeverageGuard / LeverSafe 项目工作区
 
+> 官网：https://wjz5788.com · 合约地址（Base Mainnet）：`0x9552b58d323993f84d01e3744f175f47a9462f94` · 联系邮箱：zmshyc@gmail.com
+
+**一句话定位**：LiqPass 是面向散户的链上爆仓保险，让高杠杆交易也能“先买保单再冲单”。
+
+**产品承诺**：
+- 仅绑定一家中心化交易所（首期对接 Binance UID）。
+- 只读风控，不托管资金、不触碰 API 写权限。
+- 被动理赔，按链上保单与凭证自动触发赔付。
+
+**关键材料**：
+- 中文帮助文档：《[LiqPass 基金申请帮助文档（中文）](docs/LiqPass_HelpDoc_CN.md)》
+- 英文帮助文档：《[LiqPass Help Documentation (EN)](docs/LiqPass_HelpDoc_EN.md)》
+- 可核验数据来源清单：[docs/references.md](docs/references.md)
+- 线下核对与上链留痕指引：[docs/proof.md](docs/proof.md)
+
 该仓库聚合杠杆保险（LeverageGuard / LeverSafe）相关的产品方案、技术实现与运营资料，方便团队在一个版本库内协作迭代。主要内容按照“文档 / 源码 / 数据”划分，并结合 Base 生态资助申请、风控模型与前端演示等子项目。
 
 ## 目录结构
