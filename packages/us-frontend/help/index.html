@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LiqPass Help Center · Base Mainnet</title>
+    <meta
+      name="description"
+      content="Read the LiqPass liquidation insurance help center for Base Mainnet: overview, usage flow, FAQs, and compliance notes."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/public/styles/main.css" />
+  </head>
+  <body data-page="help">
+    <header>
+      <div class="nav">
+        <div class="brand">
+          <span class="brand-title">LiqPass · Help Center</span>
+          <span class="brand-subtitle">Base Mainnet · Attestation Portal</span>
+        </div>
+        <div class="nav-controls">
+          <nav class="nav-links" aria-label="Primary navigation">
+            <a class="nav-link" href="/" data-nav-link>
+              <span class="lang-block" data-lang="zh">产品总览</span>
+              <span class="lang-block" data-lang="en">Overview</span>
+            </a>
+            <a class="nav-link" href="/help" data-nav-link>
+              <span class="lang-block" data-lang="zh">帮助</span>
+              <span class="lang-block" data-lang="en">Help</span>
+            </a>
+          </nav>
+          <div class="language-toggle" aria-label="Language toggle">
+            <span class="lang-block" data-lang="zh">语言：</span>
+            <span class="lang-block" data-lang="en">Language:</span>
+            <button type="button" data-lang-option data-lang="zh">中</button>
+            <span>/</span>
+            <button type="button" data-lang-option data-lang="en">EN</button>
+          </div>
+          <div data-wallet-slot></div>
+        </div>
+      </div>
+    </header>
+    <main class="help-layout">
+      <div class="help-content" data-help-root></div>
+      <aside class="help-toc" data-help-toc aria-label="Help table of contents"></aside>
+    </main>
+    <script type="module" src="/public/main.js"></script>
+  </body>
+</html>

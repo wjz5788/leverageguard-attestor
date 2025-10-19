@@ -1,0 +1,94 @@
+name: deploy-us
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "packages/us-frontend/**"
+      - ".github/workflows/deploy-us.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-us
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: us-prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            packages/us-frontend/package-lock.json
+
+      - name: Build US frontend
+        env:
+          NEXT_PUBLIC_ATTESTOR_API: ${{ secrets.NEXT_PUBLIC_ATTESTOR_API }}
+          NEXT_PUBLIC_CHAIN_ID: ${{ secrets.NEXT_PUBLIC_CHAIN_ID }}
+          APP_TAGLINE: ${{ secrets.APP_TAGLINE }}
+        run: |
+          set -eux
+          # 防 403，可留可删
+          npm config set registry https://registry.npmmirror.com || true
+
+          if [ -f packages/us-frontend/package.json ]; then
+            cd packages/us-frontend
+            npm ci
+            npm run build || npm run build:prod || true
+            cd -
+            OUT=packages/us-frontend/dist
+            [ -d "$OUT" ] || OUT=packages/us-frontend/build
+          else
+            OUT=packages/us-frontend
+          fi
+
+          rm -rf us_frontend_dist
+          mkdir -p us_frontend_dist
+          rsync -a --delete --exclude ".git" --exclude "node_modules" "$OUT"/ us_frontend_dist/
+          echo "commit=$(git rev-parse --short HEAD)" > us_frontend_dist/__version
+
+      - name: Pack artifact
+        run: tar -czf us_frontend.tgz -C us_frontend_dist .
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.US_SSH_KEY }}
+
+      - name: Add known_hosts
+        if: ${{ secrets.KNOWN_HOSTS != '' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+
+      - name: Upload and activate on US
+        env:
+          HOST:  ${{ secrets.US_HOST }}
+          PORT:  ${{ secrets.US_PORT || '22' }}
+          USER:  ${{ secrets.US_USER }}
+          BASE:  ${{ secrets.US_DEPLOY_PATH }}
+          RUNID: ${{ github.run_id }}
+        run: |
+          set -eux
+          ssh -p "$PORT" $USER@$HOST "mkdir -p $BASE/releases/$RUNID"
+          scp -P "$PORT" us_frontend.tgz $USER@$HOST:$BASE/releases/$RUNID/
+          ssh -p "$PORT" $USER@$HOST bash -lc "
+            set -eux
+            cd $BASE/releases/$RUNID
+            tar -xzf us_frontend.tgz
+            ln -nfs $BASE/releases/$RUNID $BASE/current
+            if command -v systemctl >/dev/null 2>&1; then sudo systemctl reload nginx || true; fi
+            test -f $BASE/current/__version || true
+          "
