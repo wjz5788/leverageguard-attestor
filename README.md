@@ -17,6 +17,12 @@
 
 该仓库聚合杠杆保险（LeverageGuard / LeverSafe）相关的产品方案、技术实现与运营资料，方便团队在一个版本库内协作迭代。主要内容按照“文档 / 源码 / 数据”划分，并结合 Base 生态资助申请、风控模型与前端演示等子项目。
 
+## Quick Links
+
+- [Placeholder Link 1](#)
+- [Placeholder Link 2](#)
+- [Placeholder Link 3](#)
+
 ## 目录结构
 
 ```
