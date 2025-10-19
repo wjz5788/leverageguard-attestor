@@ -1,76 +1,107 @@
-import { helpSections, tocOrder, type HelpSection, type HelpSubsection } from '../content/help';
-import type { SupportedLanguage } from '../utils/language';
+import {
+  helpSections,
+  helpToc,
+  type ContentBlock,
+  type LocalizedSection,
+} from '../content/help';
+import { SUPPORTED_LANGUAGES, type SupportedLanguage } from '../utils/language';
 
-const LANGS: SupportedLanguage[] = ['zh', 'en'];
-
-function createLocalizedHeading(tag: 'h1' | 'h2' | 'h3', text: { zh: string; en: string }) {
-  const fragment = document.createDocumentFragment();
-  LANGS.forEach((lang) => {
-    const el = document.createElement(tag);
-    el.classList.add('lang-block');
-    el.dataset.lang = lang;
-    el.textContent = text[lang] || text.zh;
-    el.setAttribute('lang', lang === 'zh' ? 'zh-Hans' : 'en');
-    fragment.appendChild(el);
-  });
-  return fragment;
+function createLangElement<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  lang: SupportedLanguage
+): HTMLElementTagNameMap[K] {
+  const element = document.createElement(tag);
+  element.classList.add('lang-block');
+  element.dataset.lang = lang;
+  element.setAttribute('lang', lang === 'zh' ? 'zh-Hans' : 'en');
+  return element;
 }
 
-function createLocalizedParagraph(text: { zh: string; en: string }) {
-  const fragment = document.createDocumentFragment();
-  LANGS.forEach((lang) => {
-    const paragraph = document.createElement('p');
-    paragraph.classList.add('lang-block');
-    paragraph.dataset.lang = lang;
-    paragraph.textContent = text[lang] || text.zh;
-    paragraph.setAttribute('lang', lang === 'zh' ? 'zh-Hans' : 'en');
-    fragment.appendChild(paragraph);
-  });
-  return fragment;
-}
+const INLINE_TOKEN = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^\)]+\))/g;
 
-function createLocalizedList(items: Array<{ zh: string; en: string }>) {
-  const fragment = document.createDocumentFragment();
-  LANGS.forEach((lang) => {
-    const list = document.createElement('ul');
-    list.classList.add('section-list', 'lang-block');
-    list.dataset.lang = lang;
-    list.setAttribute('lang', lang === 'zh' ? 'zh-Hans' : 'en');
-    items.forEach((item) => {
-      const li = document.createElement('li');
-      li.textContent = item[lang] || item.zh;
-      list.appendChild(li);
-    });
-    fragment.appendChild(list);
-  });
-  return fragment;
-}
+function appendInlineContent(target: HTMLElement, text: string) {
+  let lastIndex = 0;
+  for (const match of text.matchAll(INLINE_TOKEN)) {
+    const [token] = match;
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      target.appendChild(document.createTextNode(text.slice(lastIndex, index)));
+    }
 
-function renderSubsection(sectionEl: HTMLElement, subsection: HelpSubsection) {
-  if (subsection.heading) {
-    sectionEl.appendChild(createLocalizedHeading('h3', subsection.heading));
+    if (token.startsWith('**')) {
+      const strong = document.createElement('strong');
+      strong.textContent = token.slice(2, -2);
+      target.appendChild(strong);
+    } else if (token.startsWith('`')) {
+      const code = document.createElement('code');
+      code.textContent = token.slice(1, -1);
+      target.appendChild(code);
+    } else if (token.startsWith('[')) {
+      const linkMatch = token.match(/\[([^\]]+)\]\(([^)]+)\)/);
+      if (linkMatch) {
+        const anchor = document.createElement('a');
+        anchor.href = linkMatch[2];
+        anchor.textContent = linkMatch[1];
+        anchor.target = '_blank';
+        anchor.rel = 'noreferrer noopener';
+        target.appendChild(anchor);
+      }
+    }
+
+    lastIndex = index + token.length;
   }
-  subsection.paragraphs?.forEach((paragraph) => {
-    sectionEl.appendChild(createLocalizedParagraph(paragraph));
-  });
-  if (subsection.list?.length) {
-    sectionEl.appendChild(createLocalizedList(subsection.list));
+
+  if (lastIndex < text.length) {
+    target.appendChild(document.createTextNode(text.slice(lastIndex)));
   }
 }
 
-function renderSection(section: HelpSection) {
+function appendBlocks(container: HTMLElement, blocks: ContentBlock[]) {
+  blocks.forEach((block) => {
+    if (block.type === 'paragraph') {
+      const paragraph = document.createElement('p');
+      appendInlineContent(paragraph, block.text);
+      container.appendChild(paragraph);
+    } else if (block.type === 'list') {
+      const list = document.createElement('ul');
+      list.classList.add('section-list');
+      block.items.forEach((item) => {
+        const li = document.createElement('li');
+        appendInlineContent(li, item);
+        list.appendChild(li);
+      });
+      container.appendChild(list);
+    }
+  });
+}
+
+function renderSection(section: LocalizedSection) {
   const container = document.createElement('section');
   container.className = 'card help-section';
   container.id = section.id;
   container.setAttribute('tabindex', '-1');
 
-  container.appendChild(createLocalizedHeading('h2', section.title));
+  SUPPORTED_LANGUAGES.forEach((lang) => {
+    const content = section.content[lang];
+    const wrapper = createLangElement('div', lang);
 
-  section.summary?.forEach((paragraph) => {
-    container.appendChild(createLocalizedParagraph(paragraph));
+    const heading = document.createElement('h2');
+    heading.textContent = content.title || section.label[lang];
+    wrapper.appendChild(heading);
+
+    appendBlocks(wrapper, content.summary);
+
+    content.subsections.forEach((subsection) => {
+      if (subsection.heading) {
+        const subHeading = document.createElement('h3');
+        subHeading.textContent = subsection.heading;
+        wrapper.appendChild(subHeading);
+      }
+      appendBlocks(wrapper, subsection.blocks);
+    });
+
+    container.appendChild(wrapper);
   });
-
-  section.subsections?.forEach((subsection) => renderSubsection(container, subsection));
 
   return container;
 }
@@ -86,18 +117,16 @@ function renderToc(tocRoot: HTMLElement) {
   const list = document.createElement('div');
   list.className = 'help-toc-list';
 
-  tocOrder.forEach((item) => {
+  helpToc.forEach((item) => {
     const link = document.createElement('a');
     link.href = `#${item.id}`;
     link.className = 'help-toc-link';
     link.dataset.sectionTarget = item.id;
 
-    LANGS.forEach((lang) => {
-      const span = document.createElement('span');
-      span.classList.add('lang-block');
-      span.dataset.lang = lang;
-      span.textContent = item.label[lang] || item.label.zh;
-      span.setAttribute('lang', lang === 'zh' ? 'zh-Hans' : 'en');
+    SUPPORTED_LANGUAGES.forEach((lang) => {
+      const span = createLangElement('span', lang);
+      span.classList.add('help-toc-text');
+      span.textContent = item.label[lang];
       link.appendChild(span);
     });
 

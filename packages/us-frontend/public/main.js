@@ -53,6 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (page === 'home') {
     initHomePage();
   } else if (page === 'help') {
-    initHelpPage();
+    Promise.resolve(initHelpPage()).catch((error) => {
+      console.error('Failed to initialize help page', error);
+    });
   }
 });

@@ -237,6 +237,10 @@ main {
   padding: 6px 8px;
 }
 
+.help-toc-text {
+  display: block;
+}
+
 .help-toc a:focus-visible {
   outline: 2px solid #818cf8;
   outline-offset: 2px;

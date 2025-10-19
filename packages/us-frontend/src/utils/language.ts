@@ -1,5 +1,7 @@
 export type SupportedLanguage = 'zh' | 'en';
 
+export const SUPPORTED_LANGUAGES: SupportedLanguage[] = ['zh', 'en'];
+
 const STORAGE_KEY = 'us-frontend-language';
 
 export function detectLanguage(): SupportedLanguage {
