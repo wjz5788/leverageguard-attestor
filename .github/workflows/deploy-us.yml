@@ -40,7 +40,6 @@ jobs:
           APP_TAGLINE: ${{ secrets.APP_TAGLINE }}
         run: |
           set -eux
-          # 防 403，可留可删
           npm config set registry https://registry.npmmirror.com || true
 
           if [ -f packages/us-frontend/package.json ]; then
@@ -67,28 +66,32 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.US_SSH_KEY }}
 
-      - name: Add known_hosts
-        if: ${{ secrets.KNOWN_HOSTS != '' }}
+      - name: Add known_hosts (optional)
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          if [ -n "${{ secrets.KNOWN_HOSTS }}" ]; then
+            mkdir -p ~/.ssh
+            printf '%s\n' "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            echo "KNOWN_HOSTS not set. Skipping."
+          fi
 
       - name: Upload and activate on US
         env:
           HOST:  ${{ secrets.US_HOST }}
-          PORT:  ${{ secrets.US_PORT || '22' }}
+          PORT:  ${{ secrets.US_PORT }}
           USER:  ${{ secrets.US_USER }}
           BASE:  ${{ secrets.US_DEPLOY_PATH }}
           RUNID: ${{ github.run_id }}
         run: |
           set -eux
-          ssh -p "$PORT" $USER@$HOST "mkdir -p $BASE/releases/$RUNID"
-          scp -P "$PORT" us_frontend.tgz $USER@$HOST:$BASE/releases/$RUNID/
-          ssh -p "$PORT" $USER@$HOST bash -lc "
+          PORT="${PORT:-22}"
+          ssh -o StrictHostKeyChecking=no -p "$PORT" "$USER@$HOST" "mkdir -p '$BASE/releases/$RUNID'"
+          scp -o StrictHostKeyChecking=no -P "$PORT" us_frontend.tgz "$USER@$HOST":"$BASE/releases/$RUNID/"
+          ssh -o StrictHostKeyChecking=no -p "$PORT" "$USER@$HOST" bash -lc "
             set -eux
-            cd $BASE/releases/$RUNID
+            cd '$BASE/releases/$RUNID'
             tar -xzf us_frontend.tgz
-            ln -nfs $BASE/releases/$RUNID $BASE/current
+            ln -nfs '$BASE/releases/$RUNID' '$BASE/current'
             if command -v systemctl >/dev/null 2>&1; then sudo systemctl reload nginx || true; fi
-            test -f $BASE/current/__version || true
+            test -f '$BASE/current/__version' || true
           "
