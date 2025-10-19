@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LeverageGuard · US Frontend</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: radial-gradient(circle at top, #0f172a, #020617 55%);
+        color: #f8fafc;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        backdrop-filter: blur(12px);
+        background: rgba(2, 6, 23, 0.85);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .nav {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 16px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 24px;
+      }
+      .brand {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .brand-title {
+        font-size: 1.2rem;
+        font-weight: 600;
+      }
+      .brand-subtitle {
+        font-size: 0.75rem;
+        letter-spacing: 0.12em;
+        color: rgba(148, 163, 184, 0.8);
+        text-transform: uppercase;
+      }
+      .wallet-connect-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+      }
+      .wallet-button {
+        appearance: none;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 999px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.15s ease, opacity 0.15s ease;
+      }
+      .wallet-button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .wallet-button--primary {
+        background: linear-gradient(120deg, #4338ca, #6366f1);
+        color: white;
+      }
+      .wallet-button--primary:not(:disabled):hover {
+        transform: translateY(-1px);
+      }
+      .wallet-button--secondary {
+        background: rgba(148, 163, 184, 0.15);
+        color: rgba(226, 232, 240, 0.9);
+      }
+      .wallet-helper {
+        font-size: 0.75rem;
+        color: rgba(148, 163, 184, 0.8);
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 48px 24px 80px;
+        display: flex;
+        flex-direction: column;
+        gap: 32px;
+      }
+      .card {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(99, 102, 241, 0.2);
+        border-radius: 24px;
+        padding: 28px;
+        box-shadow: 0 30px 60px -35px rgba(99, 102, 241, 0.5);
+      }
+      .card h2 {
+        margin-top: 0;
+        margin-bottom: 12px;
+        font-size: 1.2rem;
+      }
+      .status-line {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-size: 0.9rem;
+        color: rgba(226, 232, 240, 0.9);
+      }
+      .status-line strong {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        color: rgba(148, 163, 184, 0.7);
+      }
+      a {
+        color: #818cf8;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="nav">
+        <div class="brand">
+          <span class="brand-title">LiqPass · US Preview</span>
+          <span class="brand-subtitle">Base Mainnet · Attestation Portal</span>
+        </div>
+        <div data-wallet-slot></div>
+      </div>
+    </header>
+    <main>
+      <section class="card">
+        <h2>Wallet Status</h2>
+        <div class="status-line">
+          <strong>Connection</strong>
+          <span data-wallet-status>Wallet disconnected</span>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Sign-In Placeholder</h2>
+        <p>
+          Once the wallet is connected on Base, a “Sign Login” action will ask MetaMask to create an
+          EIP-191 personal signature. The payload will be posted back to the attestor API in a
+          follow-up task.
+        </p>
+        <div class="status-line">
+          <strong>Latest Signature</strong>
+          <span data-signature-preview>Connect wallet to enable login</span>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Network Guard</h2>
+        <p>
+          The button enforces Base Mainnet (chain id <code>8453</code>). If the network is missing, MetaMask
+          will prompt to add the chain with RPC <code>https://mainnet.base.org</code> and explorer
+          <a href="https://basescan.org" target="_blank" rel="noreferrer">basescan.org</a>.
+        </p>
+      </section>
+    </main>
+    <script type="module" src="./public/main.js"></script>
+  </body>
+</html>
