@@ -1,8 +1,13 @@
 import './styles/main.css';
 
-import { initHelp } from './pages/help';
-import { initHome } from './pages/home';
-import { detectLanguage, persistLanguage, type SupportedLanguage } from './utils/language';
+import { routes } from './App';
+import { normalizePath } from './router';
+import {
+  SUPPORTED_LANGUAGES,
+  detectLanguage,
+  persistLanguage,
+  type SupportedLanguage,
+} from './utils/language';
 
 function applyLanguage(lang: SupportedLanguage, buttons: HTMLButtonElement[]) {
   document.body.dataset.currentLang = lang;
@@ -36,14 +41,40 @@ function initLanguageControls(): SupportedLanguage {
   return initialLang;
 }
 
-function initNavigation() {
-  const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+function buildNavigation() {
+  const navRoot = document.querySelector<HTMLElement>('[data-nav-links]');
+  if (!navRoot) {
+    return;
+  }
+
+  navRoot.innerHTML = '';
+
+  routes.forEach((route) => {
+    const link = document.createElement('a');
+    link.className = 'nav-link';
+    link.href = route.path;
+    link.dataset.navLink = '';
+    link.dataset.routeId = route.id;
+
+    SUPPORTED_LANGUAGES.forEach((lang) => {
+      const span = document.createElement('span');
+      span.className = 'lang-block';
+      span.dataset.lang = lang;
+      span.textContent = route.label[lang];
+      link.appendChild(span);
+    });
+
+    navRoot.appendChild(link);
+  });
+}
+
+function initNavigation(currentPath: string) {
   document.querySelectorAll<HTMLAnchorElement>('[data-nav-link]').forEach((link) => {
     const href = link.getAttribute('href');
     if (!href) {
       return;
     }
-    const normalized = href.replace(/\/+$/, '') || '/';
+    const normalized = normalizePath(href);
     const isActive = normalized === currentPath;
     if (isActive) {
       link.setAttribute('aria-current', 'page');
@@ -55,12 +86,14 @@ function initNavigation() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initLanguageControls();
-  initNavigation();
+  buildNavigation();
 
-  const page = document.body.dataset.page;
-  if (page === 'home') {
-    initHome();
-  } else if (page === 'help') {
-    initHelp();
+  const currentPath = normalizePath(window.location.pathname);
+  initNavigation(currentPath);
+
+  const activeRoute = routes.find((route) => route.path === currentPath);
+  if (activeRoute) {
+    document.body.dataset.page = activeRoute.id;
+    activeRoute.init?.();
   }
 });
