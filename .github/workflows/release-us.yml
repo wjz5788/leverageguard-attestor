@@ -15,11 +15,12 @@ jobs:
 
       - name: Pack web
         run: |
-          test -d web || mkdir -p web && echo placeholder > web/README.txt
+          test -d web || { mkdir -p web && echo placeholder > web/README.txt; }
           date +%Y%m%d-%H%M%S > web/__version
           tar -czf web_build.tgz web
 
-      - uses: webfactory/ssh-agent@v0.9.0
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.US_SSH_KEY }}
 
@@ -36,13 +37,6 @@ jobs:
           BASE: ${{ secrets.US_PATH }}
           TAG:  ${{ github.ref_name }}
         run: |
-          ssh -p "$PORT" $USER@$HOST "mkdir -p $BASE/releases/$TAG"
-          scp -P "$PORT" web_build.tgz $USER@$HOST:$BASE/releases/$TAG/
-          ssh -p "$PORT" $USER@$HOST bash -lc "
-            set -e
-            cd $BASE/releases/$TAG
-            tar -xzf web_build.tgz
-            ln -nfs $BASE/releases/$TAG $BASE/current
-            sudo systemctl reload nginx || true
-            test -f $BASE/current/web/__version
-          "
+          ssh -p "$PORT" "$USER@$HOST" "mkdir -p \"$BASE/releases/$TAG\""
+          scp -P "$PORT" web_build.tgz "$USER@$HOST:$BASE/releases/$TAG/"
+          ssh -p "$PORT" "$USER@$HOST" "set -e; cd \"$BASE/releases/$TAG\"; tar -xzf web_build.tgz; ln -nfs \"$BASE/releases/$TAG\" \"$BASE/current\"; sudo systemctl reload nginx || true; test -f \"$BASE/current/web/__version\""
