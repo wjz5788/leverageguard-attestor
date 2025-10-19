@@ -20,6 +20,12 @@ const indexSrc = path.join(projectRoot, 'index.html');
 const indexDest = path.join(distDir, 'index.html');
 fs.copyFileSync(indexSrc, indexDest);
 
+const helpSrc = path.join(projectRoot, 'help');
+if (fs.existsSync(helpSrc)) {
+  const helpDest = path.join(distDir, 'help');
+  copyDir(helpSrc, helpDest);
+}
+
 const publicSrc = path.join(projectRoot, 'public');
 if (fs.existsSync(publicSrc)) {
   const publicDest = path.join(distDir, 'public');

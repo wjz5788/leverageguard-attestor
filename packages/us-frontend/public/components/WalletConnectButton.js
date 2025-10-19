@@ -17,7 +17,12 @@ export class WalletConnectButton {
     this.container = options.container;
     this.network = options.network ?? BASE_MAINNET;
     this.callbacks = options.callbacks;
-    this.statusTarget = options.statusTarget;
+    this.statusTargets = Array.isArray(options.statusTargets)
+      ? options.statusTargets.slice()
+      : [];
+    if (options.statusTarget) {
+      this.statusTargets.push(options.statusTarget);
+    }
 
     this.state = { status: 'disconnected' };
     this.provider = window.ethereum;
@@ -253,9 +258,42 @@ export class WalletConnectButton {
     return 'Unable to process wallet request';
   }
 
-  updateStatusTarget(message) {
-    if (this.statusTarget) {
-      this.statusTarget.textContent = message;
+  translateStatus(message, lang) {
+    if (lang !== 'zh') {
+      return message;
     }
+
+    if (message.startsWith('Connected to ')) {
+      const address = message.replace('Connected to ', '');
+      return `已连接 ${address}`;
+    }
+
+    switch (message) {
+      case 'Wallet disconnected':
+        return '钱包未连接';
+      case 'MetaMask not detected. Open the official download page.':
+        return '未检测到 MetaMask，请前往官网下载。';
+      case 'Please switch back to Base (8453)':
+        return '请切换回 Base 主网（8453）';
+      case 'Signature ready — sending to API (placeholder)':
+        return '签名已就绪 — 等待提交 API（占位）';
+      case 'Request rejected in MetaMask':
+        return 'MetaMask 中拒绝了请求';
+      case 'Unable to process wallet request':
+        return '钱包请求处理失败';
+      default:
+        return message;
+    }
+  }
+
+  updateStatusTarget(message) {
+    if (!this.statusTargets || this.statusTargets.length === 0) {
+      return;
+    }
+
+    this.statusTargets.forEach((target) => {
+      const lang = target.dataset.lang === 'zh' ? 'zh' : 'en';
+      target.textContent = this.translateStatus(message, lang);
+    });
   }
 }

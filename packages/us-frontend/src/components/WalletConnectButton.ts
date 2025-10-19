@@ -5,6 +5,7 @@ import {
   WalletSignatureResult,
   WalletState,
 } from '../types/wallet';
+import type { SupportedLanguage } from '../utils/language';
 
 const METAMASK_DOWNLOAD_URL = 'https://metamask.io/download/';
 
@@ -20,13 +21,14 @@ export interface WalletConnectButtonOptions {
   network: NetworkConfig;
   callbacks?: WalletCallbacks;
   statusTarget?: HTMLElement;
+  statusTargets?: HTMLElement[];
 }
 
 export class WalletConnectButton {
   private readonly container: HTMLElement;
   private readonly network: NetworkConfig;
   private readonly callbacks?: WalletCallbacks;
-  private readonly statusTarget?: HTMLElement;
+  private readonly statusTargets: HTMLElement[];
 
   private state: WalletState = { status: 'disconnected' };
 
@@ -40,7 +42,10 @@ export class WalletConnectButton {
     this.container = options.container;
     this.network = options.network;
     this.callbacks = options.callbacks;
-    this.statusTarget = options.statusTarget;
+    this.statusTargets = options.statusTargets ?? [];
+    if (options.statusTarget) {
+      this.statusTargets.push(options.statusTarget);
+    }
 
     this.connectButton = document.createElement('button');
     this.connectButton.className = 'wallet-button wallet-button--primary';
@@ -273,9 +278,42 @@ export class WalletConnectButton {
     return 'Unable to process wallet request';
   }
 
-  private updateStatusTarget(message: string): void {
-    if (this.statusTarget) {
-      this.statusTarget.textContent = message;
+  private translateStatus(message: string, lang: SupportedLanguage | undefined): string {
+    if (lang !== 'zh') {
+      return message;
     }
+
+    if (message.startsWith('Connected to ')) {
+      const address = message.replace('Connected to ', '');
+      return `已连接 ${address}`;
+    }
+
+    switch (message) {
+      case 'Wallet disconnected':
+        return '钱包未连接';
+      case 'MetaMask not detected. Open the official download page.':
+        return '未检测到 MetaMask，请前往官网下载。';
+      case 'Please switch back to Base (8453)':
+        return '请切换回 Base 主网（8453）';
+      case 'Signature ready — sending to API (placeholder)':
+        return '签名已就绪 — 等待提交 API（占位）';
+      case 'Request rejected in MetaMask':
+        return 'MetaMask 中拒绝了请求';
+      case 'Unable to process wallet request':
+        return '钱包请求处理失败';
+      default:
+        return message;
+    }
+  }
+
+  private updateStatusTarget(message: string): void {
+    if (this.statusTargets.length === 0) {
+      return;
+    }
+
+    this.statusTargets.forEach((target) => {
+      const lang = (target.dataset.lang as SupportedLanguage | undefined) ?? 'en';
+      target.textContent = this.translateStatus(message, lang);
+    });
   }
 }
