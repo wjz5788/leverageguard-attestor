@@ -19,6 +19,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: us-prod
+    env:
+      KNOWN_HOSTS: ${{ secrets.KNOWN_HOSTS }}   # 供 if 判断
 
     steps:
       - name: Checkout
@@ -28,7 +30,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
+          cache: npm
           cache-dependency-path: |
             package-lock.json
             packages/us-frontend/package-lock.json
@@ -40,12 +42,11 @@ jobs:
           APP_TAGLINE: ${{ secrets.APP_TAGLINE }}
         run: |
           set -eux
-          # 防 403，可留可删
           npm config set registry https://registry.npmmirror.com || true
 
           if [ -f packages/us-frontend/package.json ]; then
             cd packages/us-frontend
-            npm ci
+            npm ci || npm i
             npm run build || npm run build:prod || true
             cd -
             OUT=packages/us-frontend/dist
@@ -68,23 +69,24 @@ jobs:
           ssh-private-key: ${{ secrets.US_SSH_KEY }}
 
       - name: Add known_hosts
-        if: ${{ secrets.KNOWN_HOSTS != '' }}
+        if: ${{ env.KNOWN_HOSTS != '' }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          printf '%s\n' "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
 
       - name: Upload and activate on US
         env:
           HOST:  ${{ secrets.US_HOST }}
-          PORT:  ${{ secrets.US_PORT || '22' }}
+          PORT:  ${{ secrets.US_PORT }}          # 默认端口在脚本内兜底
           USER:  ${{ secrets.US_USER }}
           BASE:  ${{ secrets.US_DEPLOY_PATH }}
           RUNID: ${{ github.run_id }}
         run: |
           set -eux
-          ssh -p "$PORT" $USER@$HOST "mkdir -p $BASE/releases/$RUNID"
-          scp -P "$PORT" us_frontend.tgz $USER@$HOST:$BASE/releases/$RUNID/
-          ssh -p "$PORT" $USER@$HOST bash -lc "
+          : "${PORT:=22}"
+          ssh -p "$PORT" "$USER@$HOST" "mkdir -p $BASE/releases/$RUNID"
+          scp -P "$PORT" us_frontend.tgz "$USER@$HOST:$BASE/releases/$RUNID/"
+          ssh -p "$PORT" "$USER@$HOST" bash -lc "
             set -eux
             cd $BASE/releases/$RUNID
             tar -xzf us_frontend.tgz
