@@ -6,6 +6,12 @@
     "module": "ESNext",
     "moduleResolution": "Node",
     "moduleDetection": "force",
+    "baseUrl": "./src",
+    "paths": {
+      "@runtime/*": ["runtime/*"]
+    },
+    "jsx": "react-jsx",
+    "jsxImportSource": "@runtime",
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,

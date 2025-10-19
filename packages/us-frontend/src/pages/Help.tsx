@@ -2,9 +2,41 @@ import {
   helpSections,
   helpToc,
   type ContentBlock,
+  type HelpSectionId,
   type LocalizedSection,
 } from '../content/help';
+import type { AnchorDefinition, PageDescriptor } from '../router';
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from '../utils/language';
+
+const HELP_ANCHORS: AnchorDefinition[] = [
+  {
+    id: 'what',
+    label: {
+      zh: '是什么',
+      en: 'What',
+    },
+  },
+  {
+    id: 'how',
+    label: {
+      zh: '如何运作',
+      en: 'How',
+    },
+  },
+  {
+    id: 'faq',
+    label: {
+      zh: '常见问题',
+      en: 'FAQ',
+    },
+  },
+];
+
+const SECTION_ANCHOR_MAP: Partial<Record<HelpSectionId, AnchorDefinition>> = {
+  overview: HELP_ANCHORS[0],
+  flow: HELP_ANCHORS[1],
+  faq: HELP_ANCHORS[2],
+};
 
 function createLangElement<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -78,7 +110,10 @@ function appendBlocks(container: HTMLElement, blocks: ContentBlock[]) {
 function renderSection(section: LocalizedSection) {
   const container = document.createElement('section');
   container.className = 'card help-section';
-  container.id = section.id;
+  const anchor = SECTION_ANCHOR_MAP[section.id];
+  const anchorId = anchor?.id ?? section.id;
+  container.id = anchorId;
+  container.dataset.sectionId = section.id;
   container.setAttribute('tabindex', '-1');
 
   SUPPORTED_LANGUAGES.forEach((lang) => {
@@ -86,7 +121,24 @@ function renderSection(section: LocalizedSection) {
     const wrapper = createLangElement('div', lang);
 
     const heading = document.createElement('h2');
-    heading.textContent = content.title || section.label[lang];
+    const defaultTitle = content.title || section.label[lang];
+    const anchorLabel = anchor?.label[lang];
+
+    if (anchorLabel && anchorLabel !== defaultTitle) {
+      const anchorBadge = document.createElement('span');
+      anchorBadge.className = 'help-anchor-label';
+      anchorBadge.textContent = anchorLabel;
+
+      const titleText = document.createElement('span');
+      titleText.className = 'help-section-title-text';
+      titleText.textContent = defaultTitle;
+
+      heading.appendChild(anchorBadge);
+      heading.appendChild(document.createTextNode(' · '));
+      heading.appendChild(titleText);
+    } else {
+      heading.textContent = defaultTitle;
+    }
     wrapper.appendChild(heading);
 
     appendBlocks(wrapper, content.summary);
@@ -119,14 +171,18 @@ function renderToc(tocRoot: HTMLElement) {
 
   helpToc.forEach((item) => {
     const link = document.createElement('a');
-    link.href = `#${item.id}`;
+    const anchor = SECTION_ANCHOR_MAP[item.id];
+    const anchorId = anchor?.id ?? item.id;
+    link.href = `#${anchorId}`;
     link.className = 'help-toc-link';
     link.dataset.sectionTarget = item.id;
+    link.dataset.sectionAnchor = anchorId;
 
     SUPPORTED_LANGUAGES.forEach((lang) => {
       const span = createLangElement('span', lang);
       span.classList.add('help-toc-text');
-      span.textContent = item.label[lang];
+      const anchorLabel = anchor?.label[lang];
+      span.textContent = anchorLabel ? `${anchorLabel} · ${item.label[lang]}` : item.label[lang];
       link.appendChild(span);
     });
 
@@ -140,15 +196,20 @@ function setupTocInteraction(tocRoot: HTMLElement) {
   tocRoot.querySelectorAll<HTMLAnchorElement>('a[href^="#"]').forEach((anchor) => {
     anchor.addEventListener('click', (event) => {
       event.preventDefault();
-      const targetId = anchor.getAttribute('href')?.slice(1);
-      if (!targetId) {
+      const anchorId = anchor.dataset.sectionAnchor ?? anchor.getAttribute('href')?.slice(1);
+      const sectionId = anchor.dataset.sectionTarget;
+      const target =
+        (anchorId && document.getElementById(anchorId)) ||
+        (sectionId
+          ? document.querySelector<HTMLElement>(`[data-section-id="${sectionId}"]`)
+          : null);
+
+      if (!target) {
         return;
       }
-      const target = document.getElementById(targetId);
-      if (target) {
-        target.focus({ preventScroll: true });
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 }
@@ -168,4 +229,16 @@ export function initHelp() {
 
   renderToc(tocRoot);
   setupTocInteraction(tocRoot);
+}
+
+export function HelpPage(): PageDescriptor {
+  return {
+    id: 'help',
+    label: {
+      zh: '帮助',
+      en: 'Help',
+    },
+    anchors: HELP_ANCHORS.map((anchor) => ({ ...anchor })),
+    init: initHelp,
+  };
 }
