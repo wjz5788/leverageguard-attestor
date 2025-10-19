@@ -1,0 +1,54 @@
+name: deploy-jp
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    environment: jp-verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 打包后端（若没有 attestor 目录，会创建占位，避免空包失败）
+      - name: Pack attestor
+        run: |
+          test -d attestor || mkdir -p attestor && echo placeholder > attestor/README.txt
+          tar -czf attestor_pkg.tgz attestor
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.JP_SSH_KEY }}
+
+      - name: Add known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+
+      - name: Upload and activate on JP
+        env:
+          HOST: ${{ secrets.JP_HOST }}
+          PORT: ${{ secrets.JP_PORT }}
+          USER: ${{ secrets.JP_USER }}
+          BASE: ${{ secrets.JP_PATH }}
+          SHA:  ${{ github.sha }}
+        run: |
+          ssh -p "$PORT" $USER@$HOST "mkdir -p $BASE/releases/$SHA"
+          scp -P "$PORT" attestor_pkg.tgz $USER@$HOST:$BASE/releases/$SHA/
+          ssh -p "$PORT" $USER@$HOST bash -lc "
+            set -e
+            cd $BASE/releases/$SHA
+            tar -xzf attestor_pkg.tgz
+            test -d $BASE/venv || python3 -m venv $BASE/venv
+            if [ -f attestor/requirements.txt ]; then
+              $BASE/venv/bin/pip install -U pip
+              $BASE/venv/bin/pip install -r attestor/requirements.txt
+            fi
+            ln -nfs $BASE/releases/$SHA $BASE/current
+            sudo systemctl restart attestor || true
+            curl -fsS http://127.0.0.1:8081/api/ping || true
+          "
