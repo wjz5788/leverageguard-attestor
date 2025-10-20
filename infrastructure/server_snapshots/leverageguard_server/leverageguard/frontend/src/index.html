@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeverageGuard 核心面板</title>
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <style>
+        body { font-family: Arial; margin: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #eee; border-radius: 6px; background: #f9f9f9; }
+        .section h2 { color: #007bff; margin-top: 0; font-size: 1.2em; }
+        .form-group { margin: 10px 0; display: flex; align-items: center; }
+        .form-group label { width: 150px; font-weight: bold; }
+        .form-group input { padding: 8px; width: 150px; border: 1px solid #ddd; border-radius: 4px; }
+        .form-group input[type="range"] { width: 200px; margin-right: 10px; }
+        .form-group .value-display { min-width: 50px; font-weight: bold; color: #007bff; }
+        .form-group .max-label { color: #666; font-size: 0.9em; margin-left: 5px; }
+        button { background: #28a745; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; margin: 5px 0; transition: background 0.3s; }
+        button:hover { background: #218838; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 4px; background: #e3f2fd; color: #1976d2; font-weight: bold; }
+        .result-box { margin: 10px 0; padding: 15px; border: 2px solid #007bff; border-radius: 6px; background: #e3f2fd; }
+        .result-box h3 { margin-top: 0; color: #007bff; }
+        .wallet-section { text-align: center; margin-bottom: 20px; }
+        #walletStatus { margin: 10px 0; font-size: 0.9em; }
+        .connect-btn { background: #6f42c1 !important; padding: 10px 20px; font-size: 1em; }
+        .error { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LeverageGuard 核心操作面板</h1>
+        
+        <!-- 钱包连接部分 -->
+        <div class="wallet-section">
+            <button id="connectWalletBtn" class="connect-btn" onclick="connect()">连接钱包</button>
+            <div id="walletStatus">未连接钱包</div>
+        </div>
+        
+        <!-- 所有功能整合在一个页面 -->
+        
+        <!-- 本金管理 -->
+        <div class="section">
+            <h2>1. 本金管理</h2>
+            <div class="form-group">
+                <label>存款金额 (USDC):</label>
+                <input id="depAmt" type="number" placeholder="50" min="0" max="500" step="0.01">
+                <span class="max-label">最大 500 USDC</span>
+                <button onclick="deposit()">存款</button>
+            </div>
+            <div class="form-group">
+                <label>取款金额 (USDC):</label>
+                <input id="wdAmt" type="number" placeholder="10" min="0" step="0.01">
+                <button onclick="withdraw()">取款</button>
+            </div>
+            <div class="form-group">
+                <label>当前本金:</label>
+                <span id="principal" class="value-display">0 USDC</span>
+                <button onclick="getPrincipal()">刷新</button>
+            </div>
+        </div>
+        
+        <!-- 杠杆调整 -->
+        <div class="section">
+            <h2>2. 杠杆设置</h2>
+            <div class="form-group">
+                <label>杠杆倍数:</label>
+                <input id="levRatio" type="range" min="1" max="100" value="5" step="1">
+                <span id="levVal" class="value-display">5x</span>
+                <span class="max-label">最大 100x</span>
+                <button onclick="adjustLeverage()">应用</button>
+            </div>
+            <div class="form-group">
+                <label>健康因子:</label>
+                <span id="liqRisk" class="value-display">N/A</span>
+                <button onclick="verifyLiquidation()">检查</button>
+            </div>
+        </div>
+        
+        <!-- 保险设置 -->
+        <div class="section">
+            <h2>3. 保险设置</h2>
+            <div class="form-group">
+                <label>保险费率 (%):</label>
+                <input id="insuranceRate" type="range" min="0.1" max="10" value="1" step="0.1">
+                <span id="insuranceRateVal" class="value-display">1%</span>
+                <button onclick="setInsuranceRate()">设置</button>
+            </div>
+            <div class="form-group">
+                <label>保险金额:</label>
+                <span id="insAmt" class="value-display">0 ETH</span>
+                <button onclick="getInsurance()">刷新</button>
+            </div>
+        </div>
+        
+        <!-- 赔付金额计算 -->
+        <div class="section">
+            <h2>4. 赔付计算</h2>
+            <div class="result-box">
+                <h3>赔付金额计算结果</h3>
+                <div class="form-group">
+                    <label>预计赔付金额:</label>
+                    <span id="payoutAmount" class="value-display">0 ETH</span>
+                </div>
+                <div class="form-group">
+                    <label>计算依据:</label>
+                    <span id="payoutCalculation">本金 × 杠杆 × 保险费率</span>
+                </div>
+                <button onclick="calculatePayout()">计算赔付</button>
+                <button onclick="claimInsurance()">领取赔付</button>
+                <div id="claimResult" class="status"></div>
+            </div>
+        </div>
+        
+        <!-- 快速操作 -->
+        <div class="section" style="text-align: center;">
+            <button onclick="simulateLiq()">模拟爆仓</button>
+            <button onclick="refreshAll()" style="background: #007bff;">刷新所有数据</button>
+        </div>
+    </div>
+
+    <script>
+        const CONTRACT_ADDR = '0x2af5cE1fD7Bc381d993055897B96EdBccE49EBf4';
+        const RPC = 'https://sepolia-rollup.arbitrum.io/rpc';
+        const ABI = [
+            {"inputs":[{"internalType":"address","name":"_user","type":"address"},{"internalType":"uint256","name":"_amount","type":"uint256"}],"name":"executePayout","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[],"name":"contractBalance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"_user","type":"address"},{"internalType":"uint256","name":"_amount","type":"uint256"}],"name":"deposit","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[{"internalType":"address","name":"_user","type":"address"},{"internalType":"uint256","name":"_amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[{"internalType":"address","name":"_user","type":"address"}],"name":"getUserBalance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"_user","type":"address"},{"internalType":"uint256","name":"_ratio","type":"uint256"}],"name":"adjustLeverage","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[{"internalType":"address","name":"_user","type":"address"}],"name":"getHealthFactor","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"_user","type":"address"}],"name":"liquidate","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[{"internalType":"address","name":"_user","type":"address"}],"name":"getInsurance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
+        ];
+        let web3, contract, account = null;
+        let currentInsuranceRate = 1; // 默认保险费率1%
+
+        // 钱包连接功能
+        async function connect() {
+            if (window.ethereum) {
+                try {
+                    // 请求账户访问权限
+                    const accs = await window.ethereum.request({method: 'eth_requestAccounts'});
+                    account = accs[0];
+                    
+                    // 初始化web3实例
+                    web3 = new Web3(window.ethereum);
+                    contract = new web3.eth.Contract(ABI, CONTRACT_ADDR);
+                    
+                    // 更新UI显示
+                    document.getElementById('walletStatus').innerText = '已连接: ' + account.substring(0, 6) + '...' + account.substring(account.length - 4);
+                    document.getElementById('connectWalletBtn').innerText = '更换钱包';
+                    
+                    // 监听账户变化
+                    window.ethereum.on('accountsChanged', function (accounts) {
+                        if (accounts.length > 0) {
+                            account = accounts[0];
+                            document.getElementById('walletStatus').innerText = '已连接: ' + account.substring(0, 6) + '...' + account.substring(account.length - 4);
+                        } else {
+                            account = null;
+                            document.getElementById('walletStatus').innerText = '未连接钱包';
+                            document.getElementById('connectWalletBtn').innerText = '连接钱包';
+                        }
+                    });
+                    
+                    // 初始查询数据
+                    refreshAll();
+                    
+                    alert('钱包连接成功！');
+                } catch(e) {
+                    console.error('连接失败:', e);
+                    alert('连接失败: ' + (e.message || '未知错误'));
+                }
+            } else {
+                alert('请安装MetaMask钱包插件');
+            }
+        }
+
+        // 检查是否有已连接的钱包
+        async function checkWallet() {
+            if (window.ethereum) {
+                try {
+                    const accounts = await window.ethereum.request({method: 'eth_accounts'});
+                    if (accounts.length > 0) {
+                        connect(); // 如果已有连接，自动连接
+                    }
+                } catch (e) {
+                    console.log('检查钱包连接状态失败:', e);
+                }
+            }
+        }
+
+        // 刷新所有数据
+        async function refreshAll() {
+            if (!account || !web3) return;
+            try {
+                await Promise.all([
+                    getPrincipal(),
+                    verifyLiquidation(),
+                    getInsurance()
+                ]);
+                calculatePayout(); // 重新计算赔付金额
+            } catch (e) {
+                console.error('刷新数据失败:', e);
+            }
+        }
+
+        // 资金操作
+        async function deposit() {
+            if (!account || !web3) return alert('请先连接钱包');
+            const amt = parseFloat(document.getElementById('depAmt').value);
+            if (isNaN(amt) || amt <= 0 || amt > 500) {
+                return alert('请输入有效的存款金额 (1-500 USDC)');
+            }
+            
+            try {
+                const weiAmt = web3.utils.toWei(amt.toString(), 'mwei'); // USDC 6位
+                await contract.methods.deposit(account, weiAmt).send({from: account});
+                alert('存款成功！');
+                await getPrincipal();
+                calculatePayout(); // 重新计算赔付金额
+            } catch(e) {
+                console.error('存款失败:', e);
+                alert('存款失败: ' + (e.message || '未知错误'));
+            }
+        }
+
+        async function withdraw() {
+            if (!account || !web3) return alert('请先连接钱包');
+            const amt = parseFloat(document.getElementById('wdAmt').value);
+            if (isNaN(amt) || amt <= 0) {
+                return alert('请输入有效的取款金额');
+            }
+            
+            try {
+                const weiAmt = web3.utils.toWei(amt.toString(), 'mwei');
+                await contract.methods.withdraw(account, weiAmt).send({from: account});
+                alert('取款成功！');
+                await getPrincipal();
+                calculatePayout(); // 重新计算赔付金额
+            } catch(e) {
+                console.error('取款失败:', e);
+                alert('取款失败: ' + (e.message || '未知错误'));
+            }
+        }
+
+        async function getPrincipal() {
+            if (!account || !web3) return;
+            try {
+                const bal = await contract.methods.getUserBalance(account).call();
+                const principalValue = parseFloat(web3.utils.fromWei(bal, 'mwei'));
+                document.getElementById('principal').innerText = principalValue.toFixed(2) + ' USDC';
+                return principalValue;
+            } catch(e) {
+                console.error('获取本金失败:', e);
+                document.getElementById('principal').innerText = '获取失败';
+            }
+        }
+
+        // 杠杆调整
+        document.getElementById('levRatio').oninput = function() {
+            document.getElementById('levVal').innerText = this.value + 'x';
+            // 实时更新赔付计算
+            calculatePayout();
+        };
+
+        document.getElementById('insuranceRate').oninput = function() {
+            const rate = parseFloat(this.value);
+            currentInsuranceRate = rate;
+            document.getElementById('insuranceRateVal').innerText = rate.toFixed(1) + '%';
+            // 实时更新赔付计算
+            calculatePayout();
+        };
+
+        async function adjustLeverage() {
+            if (!account || !web3) return alert('请先连接钱包');
+            const ratio = parseInt(document.getElementById('levRatio').value);
+            try {
+                await contract.methods.adjustLeverage(account, ratio).send({from: account});
+                alert('杠杆调整成功！');
+                await verifyLiquidation();
+            } catch(e) {
+                console.error('调整失败:', e);
+                alert('调整失败: ' + (e.message || '未知错误'));
+            }
+        }
+
+        // 保险费率设置（前端设置，实际合约可能需要相应方法）
+        function setInsuranceRate() {
+            const rate = parseFloat(document.getElementById('insuranceRate').value);
+            currentInsuranceRate = rate;
+            document.getElementById('insuranceRateVal').innerText = rate.toFixed(1) + '%';
+            calculatePayout(); // 重新计算赔付金额
+            alert('保险费率已设置为: ' + rate.toFixed(1) + '%');
+        }
+
+        // 爆仓验证
+        async function verifyLiquidation() {
+            if (!account || !web3) return;
+            try {
+                const factor = await contract.methods.getHealthFactor(account).call();
+                const healthFactor = parseFloat(factor) / 100;
+                const risk = healthFactor < 1 ? '高风险 (可能爆仓)' : '安全';
+                document.getElementById('liqRisk').innerText = healthFactor.toFixed(2) + ' | ' + risk;
+            } catch(e) {
+                console.error('验证失败:', e);
+                document.getElementById('liqRisk').innerText = '验证失败';
+            }
+        }
+
+        // 模拟爆仓
+        async function simulateLiq() {
+            if (!account || !web3) return alert('请先连接钱包');
+            try {
+                await contract.methods.liquidate(account).send({from: account});
+                alert('爆仓模拟成功！请检查赔付金额');
+                await verifyLiquidation();
+                await getInsurance();
+                calculatePayout();
+            } catch(e) {
+                console.error('模拟失败:', e);
+                alert('模拟失败: ' + (e.message || '未知错误'));
+            }
+        }
+
+        // 保险查询
+        async function getInsurance() {
+            if (!account || !web3) return;
+            try {
+                const ins = await contract.methods.getInsurance(account).call();
+                const insuranceValue = parseFloat(web3.utils.fromWei(ins, 'ether'));
+                document.getElementById('insAmt').innerText = insuranceValue.toFixed(6) + ' ETH';
+                return insuranceValue;
+            } catch(e) {
+                console.error('获取保险失败:', e);
+                document.getElementById('insAmt').innerText = '获取失败';
+            }
+        }
+
+        // 赔付金额计算
+        async function calculatePayout() {
+            if (!account || !web3) return;
+            
+            try {
+                // 获取当前本金
+                const bal = await contract.methods.getUserBalance(account).call();
+                const principalValue = parseFloat(web3.utils.fromWei(bal, 'mwei'));
+                
+                // 获取当前杠杆倍数
+                const leverageRatio = parseInt(document.getElementById('levRatio').value);
+                
+                // 获取当前保险费率
+                const insuranceRate = currentInsuranceRate / 100;
+                
+                // 计算赔付金额 (简化模型)
+                // 这里使用的公式是：赔付金额 = 本金 × 杠杆倍数 × 保险费率
+                const estimatedPayout = principalValue * leverageRatio * insuranceRate;
+                
+                // 显示计算结果
+                document.getElementById('payoutAmount').innerText = estimatedPayout.toFixed(6) + ' ETH';
+                document.getElementById('payoutCalculation').innerText = 
+                    principalValue.toFixed(2) + ' × ' + leverageRatio + ' × ' + (insuranceRate * 100).toFixed(1) + '%';
+                
+            } catch(e) {
+                console.error('计算赔付失败:', e);
+                document.getElementById('payoutAmount').innerText = '计算失败';
+            }
+        }
+
+        // 领取赔付
+        async function claimInsurance() {
+            if (!account || !web3) return alert('请先连接钱包');
+            try {
+                const insAmount = await contract.methods.getInsurance(account).call();
+                await contract.methods.executePayout(account, insAmount).send({from: account});
+                document.getElementById('claimResult').innerText = '赔付领取成功！';
+                setTimeout(() => {
+                    document.getElementById('claimResult').innerText = '';
+                }, 3000);
+                await getInsurance();
+                calculatePayout();
+            } catch(e) {
+                console.error('领取失败:', e);
+                alert('领取失败: ' + (e.message || '未知错误'));
+            }
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            checkWallet(); // 页面加载时检查是否已有连接的钱包
+        });
+
+        // 定期更新数据
+        setInterval(() => {
+            if(account && web3) {
+                refreshAll();
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

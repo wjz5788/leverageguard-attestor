@@ -1,0 +1,25 @@
+{
+  "name": "leverageguard-frontend",
+  "version": "1.0.0",
+  "description": "LeverageGuard DeFi Protection System Frontend",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx live-server src --port=8080 --host=0.0.0.0",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "defi",
+    "ethereum",
+    "arbitrum",
+    "leverage",
+    "insurance"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "live-server": "^1.2.2"
+  },
+  "dependencies": {
+    "web3": "^4.3.0"
+  }
+}

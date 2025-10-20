@@ -1,0 +1,27 @@
+name: ci
+on:
+  pull_request: { branches: [dev, main] }
+  push:         { branches: [dev, main] }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pack attestor
+        run: |
+          test -d attestor || mkdir -p attestor
+          tar -czf attestor_pkg.tgz attestor || true
+
+      - name: Pack web
+        run: |
+          test -d web || mkdir -p web
+          date +%Y%m%d-%H%M%S > web/__version || true
+          tar -czf web_build.tgz web || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles
+          path: |
+            attestor_pkg.tgz
+            web_build.tgz

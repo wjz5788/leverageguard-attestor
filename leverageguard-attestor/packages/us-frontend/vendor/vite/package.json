@@ -1,0 +1,8 @@
+{
+  "name": "vite",
+  "version": "0.0.0-local",
+  "type": "module",
+  "bin": {
+    "vite": "./bin/vite.js"
+  }
+}

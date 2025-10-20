@@ -1,0 +1,27 @@
+{
+  "ordId": "2938812509925187584",
+  "instId": "BTC-USDT-SWAP",
+  "window": {
+    "beginMs": 1760084937858,
+    "endMs": 1760086737858
+  },
+  "fillSummary": {
+    "total_fills": 1,
+    "total_pnl": 0.31434,
+    "total_fee": -0.47280597,
+    "approx_notional_sum": 94561.194,
+    "first_fill_ts": 1760085837858,
+    "last_fill_ts": 1760085837858
+  },
+  "billsCount": 2,
+  "liquidationSignals": 0,
+  "hasStrongEvidence": false,
+  "merkleRoot": "0xd2e6f177f439a1edae0500ff996e34d69cddf06afc7ff7389985a8356b7b7007",
+  "evidenceFiles": [
+    "bills.json",
+    "fills.json",
+    "meta.json",
+    "order.json"
+  ],
+  "generatedAt": "2025-10-11T06:35:06.870Z"
+}

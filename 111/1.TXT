@@ -1,0 +1,173 @@
+结论：给你一套“可直接交给 Codex 落地”的最小配置。含分支保护、Secrets 清单、CI 与两地部署 workflow 雏形、服务器信息模板、回滚与监控、SOP 文档骨架。你只需把表格里的空值补齐即可。
+
+一、分支保护（建议）
+保护分支：main、dev
+
+PR 审核：dev 1 人；main 2 人
+
+强制检查（两分支一致）：
+
+ci/node-lint-build
+ci/py-test
+规则：Require PR、Require linear history、Dismiss stale approvals、Block force-push、Delete禁止、Require status checks，选“Require branches to be up to date”。
+
+二、服务器信息模板（请补齐）
+角色	主机	端口	用户	部署目录	进程/服务	重启命令	健康检查
+日本·被动验证	JP_HOST=	22	deploy	/opt/liqpass/attestor	liqpass-attestor.service	sudo systemctl restart liqpass-attestor	curl -sf http://127.0.0.1:8000/healthz
+美国·前端静态	US_HOST=	22	deploy	/srv/web/us（含releases/与current/）	Nginx	sudo systemctl reload nginx	curl -sf http://127.0.0.1/healthz
+说明：美国节点 Nginx 已指向 /srv/web/us/current，/help/ 与 /__version 已配置；保留。
+
+三、GitHub Secrets（最小集合）
+通用
+
+SSH_PRIVATE_KEY：用于两台机。PEM 格式。
+KNOWN_HOSTS：ssh-keyscan -H JP_HOST US_HOST 结果。
+GIT_USER_EMAIL、GIT_USER_NAME（可选，用于打版本文件）
+日本后端（仅部署时使用，业务机上放 .env，不进 GitHub）
+
+JP_HOST, JP_PORT(默认22), JP_USER, JP_DEPLOY_PATH=/opt/liqpass/attestor
+（如需远程写入 .env）JP_ENV_B64：将 .env base64 后填入；否则留空，改为机上预置
+美国前端
+
+US_HOST, US_PORT, US_USER, US_DEPLOY_PATH=/srv/web/us
+四、CI（.github/workflows/ci.yml）
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+jobs:
+  node-lint-build:
+    name: ci/node-lint-build
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: packages/us-frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm', cache-dependency-path: 'packages/us-frontend/package-lock.json' }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+  py-test:
+    name: ci/py-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: |
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if command -v pytest >/dev/null 2>&1; then pytest -q; else echo "pytest not found, skip"; fi
+五、美国部署（.github/workflows/deploy-us.yml）
+name: deploy-us
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/us-frontend/**'
+      - '.github/workflows/deploy-us.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      US_HOST: ${{ secrets.US_HOST }}
+      US_PORT: ${{ secrets.US_PORT }}
+      US_USER: ${{ secrets.US_USER }}
+      US_PATH: ${{ secrets.US_DEPLOY_PATH }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm', cache-dependency-path: 'packages/us-frontend/package-lock.json' }
+      - working-directory: packages/us-frontend
+        run: |
+          npm ci
+          npm run build
+          echo "commit=${GITHUB_SHA::7}" > dist/__version
+          echo ok > dist/healthz
+      - name: Setup SSH
+        run: |
+          install -m 600 -D /dev/null ~/.ssh/id_rsa
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+      - name: Rsync release
+        run: |
+          REL="${GITHUB_SHA}"
+          ssh -p "${US_PORT:-22}" ${US_USER}@${US_HOST} "mkdir -p ${US_PATH}/releases/${REL} ${US_PATH}/current"
+          rsync -az -e "ssh -p ${US_PORT:-22}" packages/us-frontend/dist/ ${US_USER}@${US_HOST}:${US_PATH}/releases/${REL}/
+          ssh -p "${US_PORT:-22}" ${US_USER}@${US_HOST} "ln -sfn ${US_PATH}/releases/${REL} ${US_PATH}/current && sudo systemctl reload nginx"
+      - name: Smoke check
+        run: |
+          ssh -p "${US_PORT:-22}" ${US_USER}@${US_HOST} "curl -sf http://127.0.0.1/healthz && curl -sf http://127.0.0.1/__version"
+六、日本部署（.github/workflows/deploy-jp.yml）
+name: deploy-jp
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'attestor/**'
+      - 'src/**'
+      - 'requirements.txt'
+      - '.github/workflows/deploy-jp.yml'
+
+jobs:
+  rsync-restart:
+    runs-on: ubuntu-latest
+    env:
+      JP_HOST: ${{ secrets.JP_HOST }}
+      JP_PORT: ${{ secrets.JP_PORT }}
+      JP_USER: ${{ secrets.JP_USER }}
+      JP_PATH: ${{ secrets.JP_DEPLOY_PATH }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup SSH
+        run: |
+          install -m 600 -D /dev/null ~/.ssh/id_rsa
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+      - name: Upload code
+        run: |
+          REL="${GITHUB_SHA}"
+          ssh -p "${JP_PORT:-22}" ${JP_USER}@${JP_HOST} "mkdir -p ${JP_PATH}/releases/${REL}"
+          rsync -az -e "ssh -p ${JP_PORT:-22}" --exclude '.venv' ./ ${JP_USER}@${JP_HOST}:${JP_PATH}/releases/${REL}/
+      - name: Install & switch
+        run: |
+          REL="${GITHUB_SHA}"
+          ssh -p "${JP_PORT:-22}" ${JP_USER}@${JP_HOST} "\
+            cd ${JP_PATH}/releases/${REL} && \
+            python3 -m venv .venv && . .venv/bin/activate && \
+            if [ -f requirements.txt ]; then pip install -r requirements.txt; fi && \
+            ln -sfn ${JP_PATH}/releases/${REL} ${JP_PATH}/current && \
+            sudo systemctl restart liqpass-attestor && \
+            curl -sf http://127.0.0.1:8000/healthz"
+七、回滚与监控（最小方案）
+版本目录：releases/<gitsha> + current 符号链接。回滚：ln -sfn releases/<old> current，后端再 systemctl restart，前端 nginx reload。
+日志：后端由 systemd journal 收集；额外写 logs/YYYYMMDD/verify.log（包含 decision, reason, ordIdHash）。
+监控：GitHub Actions 部署后执行本地 curl -sf 健康检查；可选在 JP 加 systemd Restart=always。
+八、数据迁移到 v2（建议）
+若仍有 v1 证明，新增脚本 tools/migrate_v1_to_v2.py，输入旧 JSON，输出含 9 叶子与 ordIdHash 规则的新 attested_proof.json，并生成 docs/data/migration_map.csv（old_root,new_root,ordIdHash）。
+将验收清单写入文档并在 CI 中加一个 schema 校验步骤（后续再加）。
+九、SOP 文档骨架（docs/devops-workflow.md）
+# LiqPass DevOps 工作流（最小可行版）
+## 角色
+- JP：被动验证与存证；US：前端与帮助页
+## 分支策略
+- dev 开发，main 发版；保护与所需检查见仓库设置
+## 流程
+1) 需求→Codex 任务卡→生成 PR
+2) CI 运行：node-lint-build + py-test
+3) 审核：dev 1 人，main 2 人
+4) 合并 main 触发部署：
+   - US：构建前端→rsync 至 releases/ → 切换 current → nginx reload → /healthz, /__version
+   - JP：rsync 代码→venv 安装→切换 current→systemd restart→/healthz
+5) 回滚：切换 current 指向旧版本并重启
+## 运维要点
+- JP 每日检查 /proofs/<ordIdHash>/ 与 logs/YYYYMMDD/verify.log
+- US 界面仅四个交易对且仅永续合约，/help 明示
+- 文档与演示素材随改动同步更新
+十、下一步（你只需提供）
+补齐“服务器信息模板”表格。
+在 GitHub 新建上述三个 workflow 文件。
+填好 Secrets。
+合并一次到 main 做演练。验收标准：US /healthz 与 __version 返回 200；JP /healthz 返回 200，systemd 活跃。

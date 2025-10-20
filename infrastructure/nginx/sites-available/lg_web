@@ -1,0 +1,14 @@
+server {
+    listen 80;
+    server_name _;
+
+    root /srv/web/current/web;
+    index index.html;
+
+    location / {
+        try_files $uri /index.html;
+    }
+
+    access_log /var/log/nginx/lg_web.access.log;
+    error_log  /var/log/nginx/lg_web.error.log;
+}

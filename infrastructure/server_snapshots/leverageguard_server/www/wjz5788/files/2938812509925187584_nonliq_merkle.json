@@ -1,0 +1,21 @@
+{
+  "files": [
+    {
+      "file": "bills.json",
+      "sha256": "5577738e8dd45d66936b969fd03b017394a44b1b297eeabc91a0bf04fce20407"
+    },
+    {
+      "file": "fills.json",
+      "sha256": "9b758f539d4e02276f1656ef0999dd81953aca0b3b3e66a61a9e14b71cd0f905"
+    },
+    {
+      "file": "meta.json",
+      "sha256": "a27ea8787b92baec96873b6e8e451dba32c2aebf39294bc1cfadfec8dc23effe"
+    },
+    {
+      "file": "order.json",
+      "sha256": "dd0864fc0e3e59c53499e6c0b889fa03385ff0d4c444bb020abcdb18b673e480"
+    }
+  ],
+  "merkleRoot": "0xd2e6f177f439a1edae0500ff996e34d69cddf06afc7ff7389985a8356b7b7007"
+}

@@ -1,0 +1,25 @@
+{
+  "files": [
+    {
+      "file": "bills.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "file": "fills.json",
+      "sha256": "9da9a47ad0b0c4d718ac321c1960d090a7396f55b6a0babb24e2fd3d4e33228c"
+    },
+    {
+      "file": "instrument.json",
+      "sha256": "bec1c6e50ecc2cbd48c0786e8f3c2f56529e2da12d7a23198cdf007218e92034"
+    },
+    {
+      "file": "meta.json",
+      "sha256": "6fc528b605e078fbf87f69da397c5412782827f8806c8da2c12d727d17a699dc"
+    },
+    {
+      "file": "order.json",
+      "sha256": "ab198a1c5c86f6e0b67408ceb46b4dba6d74d2fe6c6f94905508ff32c1a79abc"
+    }
+  ],
+  "merkleRoot": "0x81aee4d25e1329bf032b7cfb587cd0bd0be6ff4bc0169c4e64f5e490f4b64087"
+}

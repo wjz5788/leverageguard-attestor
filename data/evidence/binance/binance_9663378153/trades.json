@@ -1,0 +1,18 @@
+[
+  {
+    "symbol": "FETUSDT",
+    "id": 591236793,
+    "orderId": 9663378153,
+    "side": "SELL",
+    "price": "0.5672000",
+    "qty": "1014",
+    "realizedPnl": "0",
+    "quoteQty": "575.1408000",
+    "commission": "0.28757040",
+    "commissionAsset": "USDT",
+    "time": 1759033910987,
+    "positionSide": "BOTH",
+    "buyer": false,
+    "maker": false
+  }
+]

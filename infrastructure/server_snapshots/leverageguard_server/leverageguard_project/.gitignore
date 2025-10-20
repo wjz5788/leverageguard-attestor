@@ -1,0 +1,75 @@
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# Python相关
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境
+venv/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 日志文件
+*.log
+logs/
+leverageguard.log
+
+# 数据库文件
+data/
+*.sqlite3
+*.db
+
+# 构建产物
+build/
+dist/
+*.egg-info/
+
+# IDE相关
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 测试覆盖率
+coverage/
+.coverage
+
+# 前端相关
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env
+
+# 包管理
+package-lock.json
+yarn.lock
+Pipfile.lock
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
+
+# 其他
+.env.*.local
+.npm
+.eslintcache
+.parcel-cache
+.next
+out
+.nuxt
+.vuepress/dist
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+.vscode-test
+.yarn-integrity

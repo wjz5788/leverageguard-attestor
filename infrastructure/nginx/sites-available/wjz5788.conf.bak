@@ -1,0 +1,51 @@
+server {
+  server_name wjz5788.com www.wjz5788.com;
+
+  # 代理到Next.js服务
+  location / {
+    root /var/www/wjz5788;
+    index index.html;
+    try_files $uri $uri/ =404;
+  }
+
+  # 前端在子路径 /attest 做 SPA 路由时的回退
+  location /attest/ {
+    alias /var/www/wjz5788/attest/;
+    try_files $uri /attest/index.html;
+  }
+
+  # 公开的摘要/下载目录
+  location /files/ {
+    alias /var/www/wjz5788/files/;
+    autoindex on;                     # 可浏览目录（需要的话）
+    add_header Access-Control-Allow-Origin "*";
+    add_header Cache-Control "public, max-age=300" always;
+    try_files $uri =404;
+  }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/wjz5788.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/wjz5788.com/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+
+}server {
+    if ($host = www.wjz5788.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    if ($host = wjz5788.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+  listen 80;
+  server_name wjz5788.com www.wjz5788.com;
+    return 404; # managed by Certbot
+
+
+
+
+}

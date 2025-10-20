@@ -1,0 +1,9 @@
+{
+  "ordId": "2940071038556348417",
+  "instId": "BTC-USDT-SWAP",
+  "beginMs": 1760122444933,
+  "endMs": 1760124244933,
+  "generatedAt": "2025-10-11T03:49:25.908Z",
+  "tool": "LeverageGuard Local Verifier 1.0",
+  "notes": "Publicly share only merkle.json and summary.json/csv; keep raw JSONs private."
+}

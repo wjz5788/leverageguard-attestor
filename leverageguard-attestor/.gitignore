@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.python-version
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Environment / Secrets
+.env
+.env.*
+env/*.env
+env/*.local
+env/*.secret
+*.key
+*.pem
+
+# Archives / Outputs
+*.log
+*.tmp
+*.swp
