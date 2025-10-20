@@ -1,0 +1,92 @@
+name: contracts-ci
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compile-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install solcx toolchain
+        run: |
+          set -eux
+          python -m pip install --upgrade pip
+          python -m pip install py-solc-x
+
+      - name: Compile contracts
+        run: |
+          set -eux
+          python - <<'PY'
+from pathlib import Path
+import json
+from solcx import install_solc, set_solc_version, compile_standard
+
+SOURCE_DIR = Path("contracts")
+if not SOURCE_DIR.exists():
+    raise SystemExit("contracts directory missing")
+
+install_solc("0.8.20")
+set_solc_version("0.8.20")
+
+sources = {}
+for path in SOURCE_DIR.glob("*.sol"):
+    sources[path.name] = {"content": path.read_text()}
+
+if not sources:
+    raise SystemExit("No Solidity sources found under contracts/")
+
+compiled = compile_standard(
+    {
+        "language": "Solidity",
+        "sources": sources,
+        "settings": {
+            "optimizer": {"enabled": True, "runs": 200},
+            "outputSelection": {"*": {"*": ["abi", "bin", "metadata"]}},
+        },
+    },
+    allow_paths=str(SOURCE_DIR.resolve()),
+)
+
+artifact_dir = Path("artifacts/contracts")
+artifact_dir.mkdir(parents=True, exist_ok=True)
+
+with (artifact_dir / "compiled.json").open("w", encoding="utf-8") as fp:
+    json.dump(compiled, fp, indent=2)
+
+for file_name, contracts in compiled.get("contracts", {}).items():
+    for contract_name, data in contracts.items():
+        base_path = artifact_dir / f"{Path(file_name).stem}_{contract_name}"
+        if "abi" in data:
+            with base_path.with_suffix(".abi.json").open("w", encoding="utf-8") as fp:
+                json.dump(data["abi"], fp, indent=2)
+        if "bin" in data:
+            with base_path.with_suffix(".bin").open("w", encoding="utf-8") as fp:
+                fp.write(data["bin"])
+PY
+
+      - name: Upload contract artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-artifacts
+          path: artifacts/contracts

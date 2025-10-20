@@ -1,0 +1,94 @@
+name: backend-ci
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - ".github/workflows/backend-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test-package:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONHASHSEED: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install base dependencies
+        run: |
+          set -eux
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+          for extra in requirements-dev.txt requirements-ci.txt; do
+            if [ -f "$extra" ]; then
+              python -m pip install -r "$extra"
+            fi
+          done
+          python -m pip install ruff black pytest
+
+      - name: Lint backend code
+        run: |
+          set -eux
+          if [ -d src ]; then
+            ruff check src
+            black --check src
+          fi
+          if [ -d scripts ]; then
+            ruff check scripts
+            black --check scripts
+          fi
+
+      - name: Run backend tests
+        run: |
+          set -eux
+          if [ -d tests ]; then
+            pytest tests
+          else
+            echo "tests/ not found, skipping pytest"
+          fi
+
+      - name: Create backend artifact
+        run: |
+          set -eux
+          mkdir -p build/backend dist
+          rsync -a --delete src/ build/backend/src/
+          if [ -d scripts ]; then
+            rsync -a --delete scripts/ build/backend/scripts/
+          fi
+          if [ -d tests ]; then
+            rsync -a --delete tests/ build/backend/tests/
+          fi
+          tar -czf dist/backend-src.tgz -C build/backend .
+          echo "commit=$(git rev-parse --short HEAD)" > dist/__version.txt
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-src
+          path: |
+            dist/backend-src.tgz
+            dist/__version.txt

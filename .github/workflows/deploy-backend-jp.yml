@@ -1,0 +1,138 @@
+name: deploy-backend-jp
+
+on:
+  workflow_run:
+    workflows: ["backend-ci"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: ID of the successful backend-ci workflow run to deploy
+        required: false
+
+concurrency:
+  group: deploy-backend-jp
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      ARTIFACT_RUN_ID: ${{ github.event.workflow_run.id || inputs.artifact_run_id }}
+    steps:
+      - name: Ensure artifact run id exists
+        run: |
+          if [ -z "${ARTIFACT_RUN_ID}" ]; then
+            echo "Artifact run id is required. Provide it via workflow_run trigger or workflow_dispatch input."
+            exit 1
+          fi
+
+      - name: Download backend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-src
+          path: artifacts/backend
+          run-id: ${{ env.ARTIFACT_RUN_ID }}
+
+      - name: Prepare release bundle
+        id: bundle
+        run: |
+          set -eux
+          mkdir -p release
+          tar -xzf artifacts/backend/backend-src.tgz -C release
+          VERSION_TAG="backend-${ARTIFACT_RUN_ID}"
+          if [ -f artifacts/backend/__version.txt ]; then
+            COMMIT_ID=$(grep -oE '[0-9a-f]{7,}' artifacts/backend/__version.txt || true)
+            [ -n "$COMMIT_ID" ] && VERSION_TAG="backend-${COMMIT_ID}"
+          fi
+          RELEASE_NAME="${VERSION_TAG}-${GITHUB_RUN_ID}"
+          tar -czf backend-release.tgz -C release .
+          echo "release_name=$RELEASE_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Load JP SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.JP_SSH_KEY }}
+
+      - name: Write known_hosts
+        if: ${{ secrets.JP_KNOWN_HOSTS != '' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.JP_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+
+      - name: Upload and activate backend on JP
+        env:
+          HOST: ${{ secrets.JP_HOST }}
+          PORT: ${{ secrets.JP_PORT }}
+          USER: ${{ secrets.JP_USER }}
+          BASE: ${{ secrets.JP_BACKEND_BASE }}
+          SERVICE: ${{ secrets.JP_BACKEND_SERVICE }}
+          HEALTHCHECK: ${{ secrets.JP_BACKEND_HEALTHCHECK }}
+          RELEASE_NAME: ${{ steps.bundle.outputs.release_name }}
+        run: |
+          set -eux
+          : "${HOST:?Missing JP_HOST secret}"
+          : "${USER:?Missing JP_USER secret}"
+          : "${BASE:?Missing JP_BACKEND_BASE secret}"
+          PORT="${PORT:-22}"
+
+          ssh -p "$PORT" "$USER@$HOST" "mkdir -p '$BASE/releases'"
+          scp -P "$PORT" backend-release.tgz "$USER@$HOST:$BASE/releases/$RELEASE_NAME.tgz"
+
+          ssh -p "$PORT" "$USER@$HOST" bash -s -- "$BASE" "$RELEASE_NAME" "$SERVICE" "$HEALTHCHECK" <<'EOSSH'
+set -eux
+BASE="$1"
+RELEASE_NAME="$2"
+SERVICE="$3"
+HEALTHCHECK="$4"
+
+mkdir -p "$BASE/releases"
+rm -rf "$BASE/releases/$RELEASE_NAME"
+mkdir -p "$BASE/releases/$RELEASE_NAME"
+tar -xzf "$BASE/releases/$RELEASE_NAME.tgz" -C "$BASE/releases/$RELEASE_NAME"
+rm "$BASE/releases/$RELEASE_NAME.tgz"
+
+if [ -d "$BASE/current" ]; then
+  PREVIOUS_TARGET=$(readlink -f "$BASE/current" || true)
+else
+  PREVIOUS_TARGET=""
+fi
+
+if [ -f "$BASE/releases/$RELEASE_NAME/requirements.txt" ] && command -v python3 >/dev/null 2>&1; then
+  python3 -m venv "$BASE/venv"
+  "$BASE/venv/bin/pip" install --upgrade pip
+  "$BASE/venv/bin/pip" install -r "$BASE/releases/$RELEASE_NAME/requirements.txt"
+elif [ -f "$BASE/releases/$RELEASE_NAME/requirements.txt" ]; then
+  echo "python3 not found on remote host, skipping dependency installation" >&2
+fi
+
+if [ -x "$BASE/releases/$RELEASE_NAME/scripts/migrate.sh" ]; then
+  "$BASE/releases/$RELEASE_NAME/scripts/migrate.sh"
+fi
+
+ln -nfs "$BASE/releases/$RELEASE_NAME" "$BASE/current"
+
+if [ -n "$SERVICE" ] && command -v systemctl >/dev/null 2>&1; then
+  sudo systemctl restart "$SERVICE" || sudo systemctl reload "$SERVICE" || true
+fi
+
+if [ -n "$HEALTHCHECK" ] && command -v curl >/dev/null 2>&1; then
+  if ! curl -fsS "$HEALTHCHECK"; then
+    echo "Health check failed, rolling back" >&2
+    if [ -n "$PREVIOUS_TARGET" ]; then
+      ln -nfs "$PREVIOUS_TARGET" "$BASE/current"
+      if [ -n "$SERVICE" ] && command -v systemctl >/dev/null 2>&1; then
+        sudo systemctl restart "$SERVICE" || sudo systemctl reload "$SERVICE" || true
+      fi
+    fi
+    exit 1
+  fi
+elif [ -n "$HEALTHCHECK" ]; then
+  echo "curl not available on remote host, skipping health check"
+fi
+EOSSH
