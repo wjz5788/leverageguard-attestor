@@ -1,0 +1,126 @@
+name: deploy-frontend-us
+
+on:
+  workflow_run:
+    workflows: ["frontend-ci"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: ID of the successful frontend-ci workflow run to deploy
+        required: false
+
+concurrency:
+  group: deploy-frontend-us
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      ARTIFACT_RUN_ID: ${{ github.event.workflow_run.id || inputs.artifact_run_id }}
+    steps:
+      - name: Ensure artifact run id exists
+        run: |
+          if [ -z "${ARTIFACT_RUN_ID}" ]; then
+            echo "Artifact run id is required. Provide it via workflow_run trigger or workflow_dispatch input."
+            exit 1
+          fi
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: us-frontend-dist
+          path: artifacts/frontend
+          run-id: ${{ env.ARTIFACT_RUN_ID }}
+
+      - name: Prepare release bundle
+        id: bundle
+        run: |
+          set -eux
+          mkdir -p release
+          tar -xzf artifacts/frontend/frontend-dist.tgz -C release
+          if [ -f artifacts/frontend/__version.txt ]; then
+            cp artifacts/frontend/__version.txt release/__version.txt
+            VERSION_TAG="frontend-$(grep -oE '[0-9a-f]{7,}' artifacts/frontend/__version.txt || echo "$ARTIFACT_RUN_ID")"
+          else
+            VERSION_TAG="frontend-${ARTIFACT_RUN_ID}"
+          fi
+          RELEASE_NAME="${VERSION_TAG}-${GITHUB_RUN_ID}"
+          tar -czf frontend-release.tgz -C release .
+          echo "release_name=$RELEASE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Load US web SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.US_WEB_SSH_KEY }}
+
+      - name: Write known_hosts
+        if: ${{ secrets.US_WEB_KNOWN_HOSTS != '' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.US_WEB_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+
+      - name: Upload and activate frontend on US
+        env:
+          HOST: ${{ secrets.US_WEB_HOST }}
+          PORT: ${{ secrets.US_WEB_PORT }}
+          USER: ${{ secrets.US_WEB_USER }}
+          BASE: ${{ secrets.US_WEB_BASE }}
+          SERVICE: ${{ secrets.US_WEB_SERVICE }}
+          HEALTHCHECK: ${{ secrets.US_WEB_HEALTHCHECK }}
+          RELEASE_NAME: ${{ steps.bundle.outputs.release_name }}
+        run: |
+          set -eux
+          : "${HOST:?Missing US_WEB_HOST secret}"
+          : "${USER:?Missing US_WEB_USER secret}"
+          : "${BASE:?Missing US_WEB_BASE secret}"
+          PORT="${PORT:-22}"
+
+          ssh -p "$PORT" "$USER@$HOST" "mkdir -p '$BASE/releases'"
+          scp -P "$PORT" frontend-release.tgz "$USER@$HOST:$BASE/releases/$RELEASE_NAME.tgz"
+
+          ssh -p "$PORT" "$USER@$HOST" bash -s -- "$BASE" "$RELEASE_NAME" "$SERVICE" "$HEALTHCHECK" <<'EOSSH'
+set -eux
+BASE="$1"
+RELEASE_NAME="$2"
+SERVICE="$3"
+HEALTHCHECK="$4"
+
+mkdir -p "$BASE/releases"
+rm -rf "$BASE/releases/$RELEASE_NAME"
+mkdir -p "$BASE/releases/$RELEASE_NAME"
+tar -xzf "$BASE/releases/$RELEASE_NAME.tgz" -C "$BASE/releases/$RELEASE_NAME"
+rm "$BASE/releases/$RELEASE_NAME.tgz"
+
+if [ -d "$BASE/current" ]; then
+  PREVIOUS_TARGET=$(readlink -f "$BASE/current" || true)
+else
+  PREVIOUS_TARGET=""
+fi
+
+ln -nfs "$BASE/releases/$RELEASE_NAME" "$BASE/current"
+
+if [ -n "$SERVICE" ] && command -v systemctl >/dev/null 2>&1; then
+  sudo systemctl reload "$SERVICE" || sudo systemctl restart "$SERVICE" || true
+fi
+
+if [ -n "$HEALTHCHECK" ] && command -v curl >/dev/null 2>&1; then
+  if ! curl -fsS "$HEALTHCHECK"; then
+    echo "Health check failed, rolling back" >&2
+    if [ -n "$PREVIOUS_TARGET" ]; then
+      ln -nfs "$PREVIOUS_TARGET" "$BASE/current"
+      if [ -n "$SERVICE" ] && command -v systemctl >/dev/null 2>&1; then
+        sudo systemctl reload "$SERVICE" || sudo systemctl restart "$SERVICE" || true
+      fi
+    fi
+    exit 1
+  fi
+elif [ -n "$HEALTHCHECK" ]; then
+  echo "curl not available on remote host, skipping health check"
+fi
+EOSSH
