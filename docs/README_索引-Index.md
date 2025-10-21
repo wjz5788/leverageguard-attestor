@@ -17,6 +17,7 @@
   - `03-02_模块化开发路线图-ModularRoadmap.md`：微服务化演进步骤
   - `03-03_核心赔付逻辑-CorePayoutLogic.md`：风险判定与赔付流程
   - `03-04_系统安全设计要点-SecurityHighlights.md`：输入校验与安全策略
+  - `03-05_美国服务器架构细化-USServerArchitecture.md`：美国节点前后端与数据库拆解
 - **04 后端实现 (Backend)**
   - `04-01_混合部署开发思路-HybridApproach.md`：链下计算 + 链上存证混合方案
   - `04-03_OKX批量验证脚本-OKXBatchVerifier.md`：脚本逻辑与使用说明
