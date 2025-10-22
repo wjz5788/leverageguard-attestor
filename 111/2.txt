@@ -1,0 +1,169 @@
+结论：方案正确，可落地。建议按下列清单补齐与简化，避免你之前遇到的 GitHub Actions 语法与主机指纹问题。
+
+# 必补项（不可省）
+
+* 远端前置：`deploy` 用户具备写 `/srv/web/us`、`/srv/app/jp` 权限；两机已安装 `rsync`、`nginx`、`systemd`、`python3-venv`；后端开放健康探针端口；UFW 放行。
+* 版本结构：`/releases/<stamp>/` + 软链 `current`。仅保留最近 3 个版本。
+* 健康探针：
+
+  * US：`/`、`/help/`、`/__version` 均返回 200；构建时写入 `dist/__version`（内容含 `GITHUB_SHA` 短哈希）。
+  * JP：`http://<JP_HOST>:<PORT>/healthz` 期望正文 `ok`。
+* 回滚：切 `current` → 上一版本；US reload Nginx；JP `systemctl restart liqpass-attestor-jp`；再次探针。
+
+# Secrets 与 SSH 细节
+
+* `KNOWN_HOSTS` 一律做成多行值（含 JP/US 两条），用 `ssh-keyscan -p <port> <host>` 预生成粘贴。
+* Actions 中**不要**写 `if: ${{ secrets.KNOWN_HOSTS != '' }}` 这类判断，易触发 “Unrecognized named-value: secrets”。改为运行时校验：
+
+  * `test -n "${KNOWN_HOSTS}" || { echo "KNOWN_HOSTS empty"; exit 1; }`
+* 写密钥与指纹：
+
+  * `printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519`
+  * `printf '%s\n' "${{ secrets.KNOWN_HOSTS }}" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts`
+* 统一 SSH 命令：
+
+  * `RSYNC_RSH="ssh -p ${PORT} -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"`
+
+# 工作流约束（两张卡共用）
+
+* 仅 `workflow_dispatch`。加 inputs：`release_tag`（可空，默认 `YYYYmmdd-HHMM-${{ github.sha[0:7] }}`）。
+* `concurrency`：`group: deploy-us` / `deploy-jp`，`cancel-in-progress: false`，防止并发踩链。
+* `permissions` 最小化：`contents: read`。
+* 日志必须打印：目标主机、版本目录、rsync 摘要、reload/restart 结果、三次探针值、最终 `current` 指向。
+
+# US 前端直推注意点
+
+* 构建：在 runner 上 `npm ci && npm run build`，仅同步 `dist/`。
+* Nginx 片段优先级：
+
+  * `location = /__version { alias /srv/web/us/current/web/__version; default_type text/plain; }`
+  * `location /help/ { alias /srv/web/us/current/web/help/; try_files $uri $uri/ =404; add_header Cache-Control "no-store"; }`
+  * `location / { try_files $uri /index.html; }`
+* 部署脚本：同步到 `/releases/<stamp>/web/`，`ln -sfn` 切换，`nginx -t && systemctl reload nginx` 后探针。
+* 常见坑：`alias` 必须以 `/` 结尾对目录；`/help/` 要在 `/` 之前定义；确保 `help/index.html` 被产出进 `dist/help/`。
+
+# JP 后端直推注意点
+
+* 包管理：优先 `uv` 或 `python -m venv .venv && . .venv/bin/activate && pip -U pip` 后再 `pip -r requirements.txt`。
+* 进程：`systemd` 单元使用 `WorkingDirectory=/srv/app/jp/current`、`ExecStart=/srv/app/jp/current/.venv/bin/uvicorn <module>:app --host 0.0.0.0 --port <PORT>`、`Restart=always`。
+* 数据迁移：若有 Alembic/自建迁移，放在部署脚本里可选执行，失败直接回滚。
+* 健康探针：连 3 次，退避 3/5/10 秒；全失败才回滚并重启上一个版本再探针。
+
+# 脚本结构建议（最小而稳）
+
+* `deploy/lib.sh`：公共函数（`log/info/warn/err`、`health_check`、`switch_current`、`rollback_to_prev`、`keep_latest 3`）。
+* `deploy/deploy-us.sh`、`deploy/deploy-jp.sh`：仅组装变量与调用 `lib.sh`。
+* `deploy/README.md`：一页纸：输入、触发、回滚步骤、常见错误。
+
+# 常见失败与对策
+
+* `Permission denied`：目标目录预建并 `chown -R deploy:deploy /srv/web/us /srv/app/jp`。
+* `host key verification failed`：`KNOWN_HOSTS` 不含端口指纹；用 `ssh-keyscan -p <port> <host>` 重生成。
+* `nginx -t` 报错：`alias` 路径不存在；确保版本目录内 `web/`、`help/`、`__version` 都已同步。
+* 后端健康失败：缺少 `.env` 或服务端口占用；在脚本内打印 `ss -lntp | grep <PORT>`，必要时回滚。
+
+# 可选加分（非必须）
+
+* 加 `dry-run` 目标：仅构建与 rsync `--dry-run`，不切链。
+* 产物签名：构建后对 `dist/` 或后端包做 `sha256sum`，部署时校验。
+* 简易告警：失败时用 GitHub Job Summary 输出回滚信息与最近 10 行服务日志。
+
+如果你需要，我可以直接输出以下可用文件（含占位变量与健壮回滚）：
+
+* `deploy/lib.sh`、`deploy/deploy-us.sh`、`deploy/deploy-jp.sh`
+* `.github/workflows/deploy-us.yml`、`.github/workflows/deploy-jp.yml`
+* `deploy/README.md`
+
+说明：如果你暂不改服务器，我会用 `<PORT>` 占位，默认 US Nginx 端口 80，JP 后端示例端口 8080。
+做法：用 Codex 下达“无测试、仅部署”的任务卡。Codex 只改仓库并生成最小部署脚本与可手动触发的部署工作流，作用是把构建产物或后端包直传到目标服务器并重载服务。
+
+# 前置
+
+* 仓库：你的 GitHub 仓库与分支（dev→JP 验证，main→US 发布）。
+* 服务器账号：各机的 deploy 用户、SSH 端口、目标目录。
+* GitHub Secrets（统一命名，分别填 JP/US 值）
+  `DEPLOY_USER`，`DEPLOY_SSH_KEY`，`US_HOST`，`US_SSH_PORT`，`JP_HOST`，`JP_SSH_PORT`，`KNOWN_HOSTS`
+
+# 通用任务卡模板（贴给 Codex）
+
+**标题**：最小直推部署（无测试）
+**目标**：在仓库中新增最小部署脚本与“手动触发”的部署工作流；通过 SSH+rsync/scp 将产物推到服务器并重载服务；仅做冒烟检查。
+**代码范围**：`.github/workflows/`、`deploy/`、必要的 Nginx/Service 占位文件或 README。
+**不要做**：不要写单元测试；不要引入复杂 CI；不要改业务逻辑。
+**输入参数与密钥**：使用仓库 Secrets 中的主机、端口、用户、私钥、known_hosts。
+**通用步骤要求**：
+
+1. 准备工作目录（本地构建或打包）。
+2. 通过 SSH（StrictHostKeyChecking=YES，使用 `KNOWN_HOSTS`）连接目标机。
+3. 同步到目标目录的 `release-{timestamp}` 子目录，完成后原子切换到 `current`。
+4. 前端：校验 Nginx 配置并 reload。后端：创建/复用 venv，安装依赖，restart systemd 服务。
+5. 冒烟检查：HTTP 200、健康探针返回预期字符串，打印到日志。
+6. 失败即回滚到上一个版本目录并再跑一次健康检查。
+   **交付物**：
+
+* `deploy/deploy-us.sh` 或 `deploy/deploy-jp.sh`（可运行脚本，含回滚与健康检查）
+* `.github/workflows/deploy-us.yml`、`.github/workflows/deploy-jp.yml`（`workflow_dispatch` 手动触发；无测试步骤）
+* `deploy/README.md`（说明如何触发和回滚）
+  **健康检查规范**：
+* US 前端：`GET http://<US_HOST>/`, `GET /help/`, `GET /__version`
+* JP 后端：`GET http://<JP_HOST>:<port>/healthz`
+  **回滚规范**：保留最近 3 个版本目录；切换 `current` 到上一个；重载服务；再次探针。
+
+# 任务卡实例 1：US 前端直推
+
+**标题**：US 前端直推到 Nginx（无测试）
+**分支**：main
+**目标目录**：`/srv/web/us`（版本目录形如 `/releases/20251020-2000`，软链 `current` 指向生效版本）
+**要求**：
+
+* 前端先本地构建，再把 `dist/` 同步到远端版本目录的 `web/`。
+* 校验并 reload Nginx；健康检查 `/`、`/help/`、`/__version`。
+* 失败回滚。
+  **Secrets 使用**：`US_HOST`、`US_SSH_PORT`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`、`KNOWN_HOSTS`。
+  **触发方式**：`deploy-us.yml` 仅 `workflow_dispatch`。
+
+# 任务卡实例 2：JP 后端直推
+
+**标题**：JP 后端直推到 systemd 服务（无测试）
+**分支**：dev
+**目标目录**：`/srv/app/jp`（版本目录 + `current` 软链）
+**服务名**：`liqpass-attestor-jp.service`
+**要求**：
+
+* 打包后端（不跑测试），同步代码到远端版本目录。
+* 在版本目录内创建/复用 venv，安装依赖，迁移（如有），再 `systemctl restart liqpass-attestor-jp`。
+* 健康检查 `GET /healthz`；失败回滚并重启上个版本。
+  **Secrets 使用**：`JP_HOST`、`JP_SSH_PORT`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`、`KNOWN_HOSTS`。
+  **触发方式**：`deploy-jp.yml` 仅 `workflow_dispatch`。
+
+# 触发与验收
+
+* 在 GitHub Actions 手动点运行：选择 `deploy-us` 或 `deploy-jp`，填入可选参数（如自定义版本号）。
+* 运行日志必须打印：同步摘要、重载/重启结果、探针返回值、最终版本目录。
+* 成功标准：US 三个探针 200；JP `/healthz` 200。
+
+需要我把上述两张卡片落成“可直接用的脚本与工作流文件”，我可直接给出完整文件内容。核实，提建议
+
+不满足。原因与补齐项如下。
+
+已具备
+
+* 多目录结构与 `apps/customer-web` 前端子项目已存在。仓库当前宣称“无 CI/CD，手工流程”为默认策略。([GitHub][1])
+
+缺失
+
+1. `.github/workflows/` 下的 `deploy-us.yml`、`deploy-jp.yml`（手动触发）。
+2. `deploy/` 目录与脚本：`lib.sh`、`deploy-us.sh`、`deploy-jp.sh`（含回滚与探针）。
+3. 前端产物规范：构建写入 `dist/__version`，并确保 `dist/help/` 存在以匹配 Nginx `/help/`。
+4. Nginx 片段或 README 指引：`/__version`、`/help/`、`/` 的 location 配置与校验步骤。
+5. JP 后端部署约定：`/srv/app/jp` 版本目录结构、`liqpass-attestor-jp.service` 名称与端口，健康探针 `/healthz`。
+6. 仓库 Secrets：`DEPLOY_USER`、`DEPLOY_SSH_KEY`、`US_HOST`、`US_SSH_PORT`、`JP_HOST`、`JP_SSH_PORT`、`KNOWN_HOSTS`。
+7. 工作流并发与 Known_hosts 写入的安全收敛做法。
+
+建议
+
+* 我直接补齐上述 1–4 的文件与脚本，按你现有主机与端口占位。
+* 你在仓库层面创建 6 中的 Secrets，并在服务器预建目标目录与权限。
+* 然后在 Actions 中用 `workflow_dispatch` 首次发布 US，再发布 JP。
+
+[1]: https://github.com/wjz5788/leverageguard-reboot "GitHub - wjz5788/leverageguard-reboot"

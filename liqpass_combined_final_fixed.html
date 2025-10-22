@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiqPass - 杠杆交易爆仓保障</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.1/ethers.umd.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#6366f1',
+            secondary: '#10b981',
+            danger: '#ef4444',
+            warning: '#f59e0b',
+            info: '#3b82f6',
+          },
+          fontFamily: {
+            inter: ['Inter', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .glass {
+        @apply bg-white/10 backdrop-blur-lg;
+      }
+      .card {
+        @apply rounded-3xl border border-white/10 bg-white/5 p-6;
+      }
+      .btn-primary {
+        @apply rounded-full bg-primary px-5 py-2 text-sm font-medium text-white shadow-lg shadow-primary/30 transition hover:bg-primary/90;
+      }
+      .btn-secondary {
+        @apply rounded-full bg-secondary px-5 py-2 text-sm font-medium text-white shadow-lg shadow-secondary/30 transition hover:bg-secondary/90;
+      }
+    }
+  </style>
+</head>
+<body class="font-inter text-white bg-gradient-to-b from-slate-950 to-slate-900 min-h-screen">
+  <div id="root" class="min-h-screen"></div>
+  
+  <script>
+    // 简化版React应用
+const React = window.React;
+const { useState, useEffect } = React;
+const { createRoot } = ReactDOM;
+
+// 简单的PLFlow组件
+const PLFlow = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  
+  useEffect(() => {
+    // 这里可以添加初始化逻辑
+    console.log('PLFlow组件已加载');
+  }, []);
+  
+  const handleConnectWallet = async () => {
+    try {
+      setLoading(true);
+      // 这里可以添加连接钱包的逻辑
+      console.log('连接钱包');
+      setLoading(false);
+    } catch (err) {
+      setError('连接钱包失败');
+      setLoading(false);
+    }
+  };
+  
+  return React.createElement('div', {
+    style: {
+      padding: '20px',
+      textAlign: 'center',
+      fontFamily: 'Arial, sans-serif'
+    }
+  }, [
+    React.createElement('h1', null, 'Liquidity Pass Protocol'),
+    React.createElement('p', null, '简化版前端应用正在运行'),
+    React.createElement('button', {
+      onClick: handleConnectWallet,
+      disabled: loading,
+      style: {
+        padding: '10px 20px',
+        fontSize: '16px',
+        cursor: loading ? 'not-allowed' : 'pointer'
+      }
+    }, loading ? '加载中...' : '连接钱包'),
+    error && React.createElement('div', {
+      style: { color: 'red', marginTop: '10px' }
+    }, error)
+  ]);
+};
+
+// 渲染应用
+const root = createRoot(document.getElementById('root'));
+root.render(React.createElement(PLFlow));
+  </script>
+</body>
+</html>

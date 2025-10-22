@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiqPass - 杠杆交易爆仓保障</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.1/ethers.umd.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#6366f1',
+            secondary: '#10b981',
+            danger: '#ef4444',
+            warning: '#f59e0b',
+            info: '#3b82f6',
+          },
+          fontFamily: {
+            inter: ['Inter', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .glass {
+        @apply bg-white/10 backdrop-blur-lg;
+      }
+      .card {
+        @apply rounded-3xl border border-white/10 bg-white/5 p-6;
+      }
+      .btn-primary {
+        @apply rounded-full bg-primary px-5 py-2 text-sm font-medium text-white shadow-lg shadow-primary/30 transition hover:bg-primary/90;
+      }
+      .btn-secondary {
+        @apply rounded-full bg-secondary px-5 py-2 text-sm font-medium text-white shadow-lg shadow-secondary/30 transition hover:bg-secondary/90;
+      }
+    }
+  </style>
+</head>
+<body class="font-inter text-white bg-gradient-to-b from-slate-950 to-slate-900 min-h-screen">
+  <div id="root" class="min-h-screen"></div>
+  
+  <script>
+    
+// React 和 ReactDOM
+const React = window.React;
+const { useState, useEffect, useRef, createContext, useContext } = React;
+const { createRoot } = ReactDOM;
+
+// 简单的应用组件
+function App() {
+  const [locale, setLocale] = useState('en');
+  
+  return React.createElement('div', { className: 'min-h-screen bg-gray-50' },
+    React.createElement('h1', null, '应用已加载'),
+    React.createElement('p', null, '正在修复语法错误...')
+  );
+}
+
+// 渲染应用
+if (typeof window !== "undefined") {
+  const rootElement = document.getElementById("root");
+  if (rootElement) {
+    ReactDOM.createRoot(rootElement).render(React.createElement(App));
+  }
+}
+
+  </script>
+</body>
+</html>

@@ -18,6 +18,9 @@ export interface WalletSignatureResult {
   message: string;
   signature: string;
   timestamp: string;
+  nonce?: string;
+  token?: string;
+  tokenExpiresAt?: number;
 }
 
 export interface EthereumRequestArguments<T = unknown> {

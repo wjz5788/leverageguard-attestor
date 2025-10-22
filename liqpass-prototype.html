@@ -16,7 +16,7 @@
     <div id="root"></div>
 
     <script type="module">
-      import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
+      import React, { useEffect, useMemo, useState, useCallback } from "https://esm.sh/react@18.2.0";
       import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
       import { ethers } from "https://esm.sh/ethers@6.9.0";
 
@@ -27,6 +27,92 @@
         "function attest(bytes32 root, string uri)",
         "function has(bytes32) view returns (bool)"
       ];
+
+      const SUPPORTED_LOCALES = ["zh-CN", "en-US"];
+      const LANGUAGE_LABELS = { "zh-CN": "中", "en-US": "EN" };
+
+      function formatMessage(template, vars = {}) {
+        if (typeof template !== "string") return "";
+        return template.replace(/\{(\w+)\}/g, (_, key) =>
+          key in vars ? String(vars[key]) : `{${key}}`
+        );
+      }
+
+      const LocaleContext = React.createContext({
+        locale: "zh-CN",
+        setLocale: () => {},
+        translate: (zh, en, vars) => formatMessage(zh, vars)
+      });
+
+      function useLocale() {
+        return React.useContext(LocaleContext);
+      }
+
+      function useTranslate() {
+        const { translate } = useLocale();
+        return translate;
+      }
+
+      function makeLocalizedMessage(zh, en, vars = {}) {
+        return {
+          zh: formatMessage(zh ?? "", vars),
+          en: formatMessage(en ?? zh ?? "", vars)
+        };
+      }
+
+      function getLocalized(message, locale) {
+        if (message == null) return "";
+        if (typeof message === "string") return message;
+        if (typeof message === "object") {
+          if (message[locale]) return message[locale];
+          if (message.zh) return message.zh;
+          if (message.en) return message.en;
+          const first = Object.values(message)[0];
+          if (typeof first === "string") return first;
+        }
+        return String(message);
+      }
+
+      function detectInitialLocale() {
+        if (typeof window !== "undefined") {
+          try {
+            const stored = window.localStorage?.getItem("liqpass.locale");
+            if (stored && SUPPORTED_LOCALES.includes(stored)) return stored;
+          } catch (_) {}
+          if (typeof navigator !== "undefined") {
+            const navLang = navigator.language || navigator.userLanguage;
+            if (typeof navLang === "string" && navLang.toLowerCase().startsWith("en")) {
+              return "en-US";
+            }
+          }
+        }
+        return "zh-CN";
+      }
+
+      function LocalizedRoot() {
+        const [locale, setLocale] = useState(() => detectInitialLocale());
+        const translate = React.useCallback(
+          (zh, en, vars = {}) => {
+            const template = locale === "en-US" ? (en ?? zh ?? "") : (zh ?? en ?? "");
+            return formatMessage(template, vars);
+          },
+          [locale]
+        );
+        useEffect(() => {
+          try {
+            window.localStorage?.setItem("liqpass.locale", locale);
+          } catch (_) {}
+        }, [locale]);
+        const value = useMemo(
+          () => ({ locale, setLocale, translate }),
+          [locale, translate]
+        );
+        return React.createElement(
+          LocaleContext.Provider,
+          { value },
+          React.createElement(RootApp)
+        );
+      }
 
       function parseCSV(text) {
         const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
@@ -152,128 +238,279 @@
       const UX_PRODUCTS = [
         {
           id: "OKX-DAY-100",
-          name: "当日爆仓保 · 定额赔付 100 USDT",
-          premium: "10 USDC",
-          leverageCap: "≤ 20x",
-          payoutCap: "100 USDT",
-          waitPeriod: "30 分钟等待期",
-          coverageWindow: "订单当日（UTC）内的强平/ADL 触发",
-          caution: "限每个钱包每日 1 单；仅支持 USDT 结算的正向合约。",
+          name: makeLocalizedMessage("当日爆仓保 · 定额赔付 100 USDT", "Same-day liquidation cover · Flat payout 100 USDT"),
+          premium: makeLocalizedMessage("10 USDC", "10 USDC"),
+          leverageCap: makeLocalizedMessage("≤ 20x", "≤ 20x"),
+          payoutCap: makeLocalizedMessage("100 USDT", "100 USDT"),
+          waitPeriod: makeLocalizedMessage("30 分钟等待期", "30-minute waiting period"),
+          coverageWindow: makeLocalizedMessage("订单当日（UTC）内的强平/ADL 触发", "Liquidation/ADL triggered within the order day (UTC)"),
+          caution: makeLocalizedMessage("限每个钱包每日 1 单；仅支持 USDT 结算的正向合约。", "Max 1 policy per wallet per day; only USDT-settled linear contracts."),
           faq: [
-            { q: "是否必须先绑定交易所？", a: "购买时可跳过，但申赔前需完成绑定；托管密钥或本地验证器任意一种即可。" },
-            { q: "如何判断强平？", a: "索引器读取 OKX 订单的 state=liquidated 或 adl=true，生成 Merkle proof 并上链。" }
+            {
+              q: makeLocalizedMessage("是否必须先绑定交易所？", "Do I need to link the exchange account first?"),
+              a: makeLocalizedMessage("购买时可跳过，但申赔前需完成绑定；托管密钥或本地验证器任意一种即可。", "You may skip during purchase, but must complete binding before submitting a claim; either custodial API keys or the local validator works.")
+            },
+            {
+              q: makeLocalizedMessage("如何判断强平？", "How do you detect liquidation?"),
+              a: makeLocalizedMessage("索引器读取 OKX 订单的 state=liquidated 或 adl=true，生成 Merkle proof 并上链。", "The indexer reads OKX orders with state=liquidated or adl=true, builds a Merkle proof, and submits it on-chain.")
+            }
           ],
-          pricingFormula: "premium = max(基础费率, notional × maintenanceMarginRate × 18%)",
+          pricingFormula: makeLocalizedMessage(
+            "premium = max(基础费率, notional × maintenanceMarginRate × 18%)",
+            "premium = max(base rate, notional × maintenanceMarginRate × 18%)"
+          ),
           sampleRates: [
-            { leverage: "≤10x", notional: "≤ 5,000 USDT", premium: "6 USDC", payout: "60 USDT" },
-            { leverage: "10x–20x", notional: "≤ 10,000 USDT", premium: "10 USDC", payout: "100 USDT" },
-            { leverage: ">20x", notional: "≤ 15,000 USDT", premium: "14 USDC", payout: "100 USDT (封顶)" }
+            {
+              leverage: makeLocalizedMessage("≤10x", "≤10x"),
+              notional: makeLocalizedMessage("≤ 5,000 USDT", "≤ 5,000 USDT"),
+              premium: makeLocalizedMessage("6 USDC", "6 USDC"),
+              payout: makeLocalizedMessage("60 USDT", "60 USDT")
+            },
+            {
+              leverage: makeLocalizedMessage("10x–20x", "10x–20x"),
+              notional: makeLocalizedMessage("≤ 10,000 USDT", "≤ 10,000 USDT"),
+              premium: makeLocalizedMessage("10 USDC", "10 USDC"),
+              payout: makeLocalizedMessage("100 USDT", "100 USDT")
+            },
+            {
+              leverage: makeLocalizedMessage(">20x", ">20x"),
+              notional: makeLocalizedMessage("≤ 15,000 USDT", "≤ 15,000 USDT"),
+              premium: makeLocalizedMessage("14 USDC", "14 USDC"),
+              payout: makeLocalizedMessage("100 USDT (封顶)", "100 USDT (cap)")
+            }
           ],
           claimRules: [
-            "订单在保障窗口内发生强平或 ADL。",
-            "同一订单仅可赔付一次；重复提交自动拒绝。",
-            "等待期结束后保单才生效，需同时校验 policy_ref 与 uid_hash。"
+            makeLocalizedMessage("订单在保障窗口内发生强平或 ADL。", "Liquidation or ADL occurs within the coverage window."),
+            makeLocalizedMessage("同一订单仅可赔付一次；重复提交自动拒绝。", "Each order can be reimbursed only once; duplicate submissions are rejected."),
+            makeLocalizedMessage("等待期结束后保单才生效，需同时校验 policy_ref 与 uid_hash。", "Policy activates after the waiting period and validates both policy_ref and uid_hash.")
           ],
           blacklist: [
-            "账户存在自成交、刷量或明显操纵行为。",
-            "同一 KYC 关联地址累计赔付超出额度。",
-            "被 OKX 标记为高风险或合约禁用账户。"
+            makeLocalizedMessage("账户存在自成交、刷量或明显操纵行为。", "Accounts with self-trading, wash trading, or obvious manipulation."),
+            makeLocalizedMessage("同一 KYC 关联地址累计赔付超出额度。", "Linked KYC addresses exceeding aggregated payout limits."),
+            makeLocalizedMessage("被 OKX 标记为高风险或合约禁用账户。", "Accounts flagged high-risk or futures-disabled by OKX.")
           ]
         },
         {
           id: "OKX-8H-60",
-          name: "8 小时时段保 · 赔付 60 USDT",
-          premium: "6 USDC",
-          leverageCap: "≤ 15x",
-          payoutCap: "60 USDT",
-          waitPeriod: "15 分钟等待期",
-          coverageWindow: "自购买起 8 小时的交易窗口",
-          caution: "适合高频交易者；提前平仓不影响保障但保费不退。",
+          name: makeLocalizedMessage("8 小时时段保 · 赔付 60 USDT", "8-hour window cover · Payout 60 USDT"),
+          premium: makeLocalizedMessage("6 USDC", "6 USDC"),
+          leverageCap: makeLocalizedMessage("≤ 15x", "≤ 15x"),
+          payoutCap: makeLocalizedMessage("60 USDT", "60 USDT"),
+          waitPeriod: makeLocalizedMessage("15 分钟等待期", "15-minute waiting period"),
+          coverageWindow: makeLocalizedMessage("自购买起 8 小时的交易窗口", "8-hour trading window after purchase"),
+          caution: makeLocalizedMessage("适合高频交易者；提前平仓不影响保障但保费不退。", "Ideal for active traders; early position closing keeps coverage but premium is non-refundable."),
           faq: [
-            { q: "如何处理多订单？", a: "支持同一 uid_hash 在窗口内多次强平，先到先得，赔付次数受限于产品设定。" },
-            { q: "是否覆盖反向合约？", a: "默认仅覆盖 USDT 计价；如需币本位需单独 SKU。" }
+            {
+              q: makeLocalizedMessage("如何处理多订单？", "How are multiple orders handled?"),
+              a: makeLocalizedMessage("支持同一 uid_hash 在窗口内多次强平，先到先得，赔付次数受限于产品设定。", "Supports multiple liquidations for the same uid_hash within the window, processed first-come-first-served up to the product limits.")
+            },
+            {
+              q: makeLocalizedMessage("是否覆盖反向合约？", "Does this cover inverse contracts?"),
+              a: makeLocalizedMessage("默认仅覆盖 USDT 计价；如需币本位需单独 SKU。", "By default only USDT-margined contracts are covered; coin-margined requires a separate SKU.")
+            }
           ],
-          pricingFormula: "premium = baseFee + fundingVolatilityAdjustment",
+          pricingFormula: makeLocalizedMessage(
+            "premium = baseFee + fundingVolatilityAdjustment",
+            "premium = baseFee + fundingVolatilityAdjustment"
+          ),
           sampleRates: [
-            { leverage: "≤5x", notional: "≤ 2,500 USDT", premium: "4 USDC", payout: "40 USDT" },
-            { leverage: "5x–10x", notional: "≤ 5,000 USDT", premium: "6 USDC", payout: "60 USDT" },
-            { leverage: "10x–15x", notional: "≤ 8,000 USDT", premium: "8 USDC", payout: "60 USDT" }
+            {
+              leverage: makeLocalizedMessage("≤5x", "≤5x"),
+              notional: makeLocalizedMessage("≤ 2,500 USDT", "≤ 2,500 USDT"),
+              premium: makeLocalizedMessage("4 USDC", "4 USDC"),
+              payout: makeLocalizedMessage("40 USDT", "40 USDT")
+            },
+            {
+              leverage: makeLocalizedMessage("5x–10x", "5x–10x"),
+              notional: makeLocalizedMessage("≤ 5,000 USDT", "≤ 5,000 USDT"),
+              premium: makeLocalizedMessage("6 USDC", "6 USDC"),
+              payout: makeLocalizedMessage("60 USDT", "60 USDT")
+            },
+            {
+              leverage: makeLocalizedMessage("10x–15x", "10x–15x"),
+              notional: makeLocalizedMessage("≤ 8,000 USDT", "≤ 8,000 USDT"),
+              premium: makeLocalizedMessage("8 USDC", "8 USDC"),
+              payout: makeLocalizedMessage("60 USDT", "60 USDT")
+            }
           ],
           claimRules: [
-            "限订单的触发时间在购买后 8 小时内。",
-            "ADL 事件同样视作触发，需提供订单号或 CSV 粘贴行。",
-            "当窗口内总赔付达到资金池上限时，将触发排队或退款。"
+            makeLocalizedMessage("限订单的触发时间在购买后 8 小时内。", "Liquidation must occur within 8 hours after purchase."),
+            makeLocalizedMessage("ADL 事件同样视作触发，需提供订单号或 CSV 粘贴行。", "ADL events also qualify; provide order ID or CSV excerpt."),
+            makeLocalizedMessage("当窗口内总赔付达到资金池上限时，将触发排队或退款。", "If pool limits are hit within the window, claims queue or refund.")
           ],
           blacklist: [
-            "API 快速开仓/平仓触发风控限速的用户。",
-            "存在多地址共享 API Key 的情况。",
-            "被列入风险观察名单的策略账户。"
+            makeLocalizedMessage("API 快速开仓/平仓触发风控限速的用户。", "Users triggering API rate limits with rapid open/close actions."),
+            makeLocalizedMessage("存在多地址共享 API Key 的情况。", "Multiple addresses sharing the same API key."),
+            makeLocalizedMessage("被列入风险观察名单的策略账户。", "Strategy accounts flagged on the risk watchlist.")
           ]
         },
         {
           id: "OKX-MONTH-200",
-          name: "月度回撤保 · 赔付 200 USDT",
-          premium: "20 USDC",
-          leverageCap: "≤ 10x",
-          payoutCap: "200 USDT",
-          waitPeriod: "24 小时等待期",
-          coverageWindow: "保障 30 天；聚合整月爆仓记录",
-          caution: "需完成 KYC；黑名单账户或重复理赔将被拒绝。",
+          name: makeLocalizedMessage("月度回撤保 · 赔付 200 USDT", "Monthly drawdown cover · Payout 200 USDT"),
+          premium: makeLocalizedMessage("20 USDC", "20 USDC"),
+          leverageCap: makeLocalizedMessage("≤ 10x", "≤ 10x"),
+          payoutCap: makeLocalizedMessage("200 USDT", "200 USDT"),
+          waitPeriod: makeLocalizedMessage("24 小时等待期", "24-hour waiting period"),
+          coverageWindow: makeLocalizedMessage("保障 30 天；聚合整月爆仓记录", "30-day coverage aggregating the month's liquidations"),
+          caution: makeLocalizedMessage("需完成 KYC；黑名单账户或重复理赔将被拒绝。", "KYC required; blacklisted or repeat-abuse accounts are rejected."),
           faq: [
-            { q: "是否支持分批理赔？", a: "一个月内可累计多次理赔，直至达到赔付上限或触发限赔阈值。" },
-            { q: "如何续期？", a: "合约支持自动续期参数，或由用户手动再次购买 SKU。" }
+            {
+              q: makeLocalizedMessage("是否支持分批理赔？", "Can payouts be split?"),
+              a: makeLocalizedMessage("一个月内可累计多次理赔，直至达到赔付上限或触发限赔阈值。", "Multiple claims within the month are allowed until the payout cap or throttle is hit.")
+            },
+            {
+              q: makeLocalizedMessage("如何续期？", "How do I renew coverage?"),
+              a: makeLocalizedMessage("合约支持自动续期参数，或由用户手动再次购买 SKU。", "Smart contract supports auto-renew parameters or users can repurchase the SKU manually.")
+            }
           ],
-          pricingFormula: "premium = 月度名义本金 × 风险系数表 (按杠杆分段)",
+          pricingFormula: makeLocalizedMessage(
+            "premium = 月度名义本金 × 风险系数表 (按杠杆分段)",
+            "premium = monthly notional × risk coefficient table (per leverage band)"
+          ),
           sampleRates: [
-            { leverage: "≤5x", notional: "≤ 20,000 USDT", premium: "16 USDC", payout: "160 USDT" },
-            { leverage: "5x–10x", notional: "≤ 30,000 USDT", premium: "20 USDC", payout: "200 USDT" },
-            { leverage: ">10x", notional: "≤ 40,000 USDT", premium: "26 USDC", payout: "200 USDT (封顶)" }
+            {
+              leverage: makeLocalizedMessage("≤5x", "≤5x"),
+              notional: makeLocalizedMessage("≤ 20,000 USDT", "≤ 20,000 USDT"),
+              premium: makeLocalizedMessage("16 USDC", "16 USDC"),
+              payout: makeLocalizedMessage("160 USDT", "160 USDT")
+            },
+            {
+              leverage: makeLocalizedMessage("5x–10x", "5x–10x"),
+              notional: makeLocalizedMessage("≤ 30,000 USDT", "≤ 30,000 USDT"),
+              premium: makeLocalizedMessage("20 USDC", "20 USDC"),
+              payout: makeLocalizedMessage("200 USDT", "200 USDT")
+            },
+            {
+              leverage: makeLocalizedMessage(">10x", ">10x"),
+              notional: makeLocalizedMessage("≤ 40,000 USDT", "≤ 40,000 USDT"),
+              premium: makeLocalizedMessage("26 USDC", "26 USDC"),
+              payout: makeLocalizedMessage("200 USDT (封顶)", "200 USDT (cap)")
+            }
           ],
           claimRules: [
-            "保单生效后记录用户 uid_hash 的所有强平订单，月末统一结算。",
-            "用户需保证关联地址一致，防止账号转移规避等待期。",
-            "若本月无强平，可在到期后领取返还奖励（如设置）。"
+            makeLocalizedMessage("保单生效后记录用户 uid_hash 的所有强平订单，月末统一结算。", "After activation, all liquidations for the uid_hash are aggregated and settled monthly."),
+            makeLocalizedMessage("用户需保证关联地址一致，防止账号转移规避等待期。", "Users must keep the associated address consistent to prevent waiting-period evasion."),
+            makeLocalizedMessage("若本月无强平，可在到期后领取返还奖励（如设置）。", "If no liquidation occurs, optional rebate rewards can be redeemed after expiry.")
           ],
           blacklist: [
-            "同一实体操作多个钱包规避额度的行为。",
-            "存在异常订单撤销或恶意刷量的策略。",
-            "列入 OKX 黑名单或司法冻结的账户。"
+            makeLocalizedMessage("同一实体操作多个钱包规避额度的行为。", "One entity using multiple wallets to bypass limits."),
+            makeLocalizedMessage("存在异常订单撤销或恶意刷量的策略。", "Strategies with abnormal cancelations or wash trading."),
+            makeLocalizedMessage("列入 OKX 黑名单或司法冻结的账户。", "Accounts on OKX blacklist or under judicial freeze.")
           ]
         }
       ];
 
       function LiqPassUX({ exchange = "OKX" }) {
+        const { locale, translate: tr } = useLocale();
+        const text = useCallback(
+          (msg, zh, en, vars = {}) => {
+            if (msg && typeof msg === "object" && !Array.isArray(msg)) {
+              return formatMessage(getLocalized(msg, locale), vars);
+            }
+            if (typeof msg === "string" || typeof msg === "number") {
+              return formatMessage(String(msg), vars);
+            }
+            const zhStr = zh ?? en ?? "";
+            const enStr = en ?? zh ?? "";
+            const template = locale === "en-US" ? enStr : zhStr;
+            return formatMessage(template || "", vars);
+          },
+          [locale]
+        );
         const UX_FLOW = useMemo(() => [
-          { title: "连接钱包", description: "前端请求以太坊钱包；用户签署 SIWE 字符串，后端校验返回 JWT，会话以 walletAddress 为唯一 ID。" },
-          { title: "浏览产品", description: "访客无需登录即可查看保费、杠杆/赔付上限、等待期、注意事项和 FAQ。" },
-          { title: `绑定 ${exchange}`, description: "支持托管密钥（只读）或本地验证器（密钥不出端）两种模式。" },
-          { title: "购买保单", description: "在 Base 链调用 purchasePolicy(skuId, params) 收款并生成 policyId / policy_ref。" },
-          { title: "正常交易", description: "索引器/本地验证器拉取 uid_hash 的订单 → 生成 Merkle 根 → 上链 attest(root, uri)。" },
-          { title: "申赔/申诉", description: "用户输入订单号自动匹配 proof；失败时可上传最小证据或由本地验证器重传。" }
+          {
+            title: makeLocalizedMessage("连接钱包", "Connect wallet"),
+            description: makeLocalizedMessage(
+              "前端请求以太坊钱包；用户签署 SIWE 字符串，后端校验返回 JWT，会话以 walletAddress 为唯一 ID。",
+              "Front-end requests the Ethereum wallet; user signs a SIWE message, backend validates and returns a JWT, using walletAddress as the session ID."
+            )
+          },
+          {
+            title: makeLocalizedMessage("浏览产品", "Browse products"),
+            description: makeLocalizedMessage(
+              "访客无需登录即可查看保费、杠杆/赔付上限、等待期、注意事项和 FAQ。",
+              "Visitors can review premium, leverage/payout caps, waiting periods, notes and FAQs without logging in."
+            )
+          },
+          {
+            title: makeLocalizedMessage(`绑定 ${exchange}`, `Link ${exchange}`),
+            description: makeLocalizedMessage(
+              "支持托管密钥（只读）或本地验证器（密钥不出端）两种模式。",
+              "Supports custodial API keys (read-only) or the local validator (keys stay client-side)."
+            )
+          },
+          {
+            title: makeLocalizedMessage("购买保单", "Purchase policy"),
+            description: makeLocalizedMessage(
+              "在 Base 链调用 purchasePolicy(skuId, params) 收款并生成 policyId / policy_ref。",
+              "Call purchasePolicy(skuId, params) on Base to collect premium and issue policyId / policy_ref."
+            )
+          },
+          {
+            title: makeLocalizedMessage("正常交易", "Normal trading"),
+            description: makeLocalizedMessage(
+              "索引器/本地验证器拉取 uid_hash 的订单 → 生成 Merkle 根 → 上链 attest(root, uri)。",
+              "Indexer or local validator fetches orders for uid_hash, generates Merkle root, and calls attest(root, uri) on-chain."
+            )
+          },
+          {
+            title: makeLocalizedMessage("申赔/申诉", "Claim / appeal"),
+            description: makeLocalizedMessage(
+              "用户输入订单号自动匹配 proof；失败时可上传最小证据或由本地验证器重传。",
+              "User inputs order ID to auto-match proofs; if missing, they can upload minimal evidence or let the local validator resubmit."
+            )
+          }
         ], [exchange]);
         const [selectedProductId, setSelectedProductId] = useState(UX_PRODUCTS[0]?.id ?? "");
         const selectedProduct = useMemo(
           () => UX_PRODUCTS.find((p) => p.id === selectedProductId) ?? UX_PRODUCTS[0],
           [selectedProductId]
         );
+        const currentProduct = selectedProduct ?? UX_PRODUCTS[0];
+        const localizedProduct = useMemo(() => {
+          if (!currentProduct) return null;
+          return {
+            ...currentProduct,
+            name: text(currentProduct.name),
+            premium: text(currentProduct.premium),
+            leverageCap: text(currentProduct.leverageCap),
+            payoutCap: text(currentProduct.payoutCap),
+            waitPeriod: text(currentProduct.waitPeriod),
+            coverageWindow: text(currentProduct.coverageWindow),
+            caution: text(currentProduct.caution),
+            pricingFormula: text(currentProduct.pricingFormula),
+            sampleRates: (currentProduct.sampleRates ?? []).map((row) => ({
+              leverage: text(row.leverage),
+              notional: text(row.notional),
+              premium: text(row.premium),
+              payout: text(row.payout),
+            })),
+            claimRules: (currentProduct.claimRules ?? []).map((rule) => text(rule)),
+            blacklist: (currentProduct.blacklist ?? []).map((rule) => text(rule)),
+            faq: (currentProduct.faq ?? []).map((item) => ({
+              q: text(item.q),
+              a: text(item.a),
+            })),
+          };
+        }, [currentProduct, text]);
         const [walletAddress, setWalletAddress] = useState("");
-        const [walletMessage, setWalletMessage] = useState("");
-        const [siweStatus, setSiweStatus] = useState("未登录");
+        const [walletMessage, setWalletMessage] = useState(null);
+        const [siweStatus, setSiweStatus] = useState(() => makeLocalizedMessage("未登录", "Not signed in"));
         const [sessionToken, setSessionToken] = useState("");
         const [activeBindMode, setActiveBindMode] = useState("custodial");
-        const [bindStatus, setBindStatus] = useState("");
+        const [bindStatus, setBindStatus] = useState(null);
         const [custodialForm, setCustodialForm] = useState({ apiKey: "", secretKey: "", passphrase: "" });
         const [localValidatorReady, setLocalValidatorReady] = useState(false);
         const [localFingerprint, setLocalFingerprint] = useState("");
-        const [purchaseStatus, setPurchaseStatus] = useState("");
+        const [purchaseStatus, setPurchaseStatus] = useState(null);
         const [orderInput, setOrderInput] = useState("");
-        const [claimStatus, setClaimStatus] = useState("");
-        const [appealStatus, setAppealStatus] = useState("");
+        const [claimStatus, setClaimStatus] = useState(null);
+        const [appealStatus, setAppealStatus] = useState(null);
 
         async function handleConnectWallet() {
           try {
             if (!window.ethereum) {
-              setWalletMessage("未检测到以太坊钱包扩展");
+              setWalletMessage(makeLocalizedMessage("未检测到以太坊钱包扩展", "No Ethereum wallet extension detected."));
               return;
             }
             const provider = new ethers.BrowserProvider(window.ethereum);
@@ -301,19 +538,20 @@
             const signer = await provider.getSigner();
             const account = accounts[0] ?? (await signer.getAddress());
             setWalletAddress(account);
-            setWalletMessage("已连接 Base 钱包");
+            setWalletMessage(makeLocalizedMessage("已连接 Base 钱包", "Connected to Base wallet."));
           } catch (err) {
-            setWalletMessage(`连接失败：${err?.message ?? err}`);
+            const reason = err && err.message ? err.message : String(err);
+            setWalletMessage(makeLocalizedMessage(`连接失败：${reason}`, `Connection failed: ${reason}`));
           }
         }
 
         async function handleSiweLogin() {
           if (!walletAddress) {
-            setWalletMessage("请先连接钱包");
+            setWalletMessage(makeLocalizedMessage("请先连接钱包", "Please connect your wallet first."));
             return;
           }
           const nonce = Math.random().toString(36).slice(2);
-          setSiweStatus("签名中...");
+          setSiweStatus(makeLocalizedMessage("签名中...", "Awaiting signature..."));
           try {
             if (!window.ethereum) throw new Error("钱包不可用");
             const provider = new ethers.BrowserProvider(window.ethereum);
@@ -323,120 +561,145 @@
             const tokenSuffix = walletAddress.slice(2, 8);
             const mockToken = `demo.${tokenSuffix}.${nonce}`;
             setSessionToken(mockToken);
-            setSiweStatus("SIWE 已通过");
-            setWalletMessage("后端将验证签名并返回 JWT（此处模拟）。");
+            setSiweStatus(makeLocalizedMessage("SIWE 已通过", "SIWE completed"));
+            setWalletMessage(makeLocalizedMessage("后端将验证签名并返回 JWT（此处模拟）。", "Backend will verify the signature and return a JWT (simulated)."));
           } catch (err) {
-            setSiweStatus("未登录");
-            setWalletMessage(`签名失败：${err?.message ?? err}`);
+            const reason = err && err.message ? err.message : String(err);
+            setSiweStatus(makeLocalizedMessage("未登录", "Not signed in"));
+            setWalletMessage(makeLocalizedMessage(`签名失败：${reason}`, `Signature failed: ${reason}`));
           }
         }
 
         function handleCustodialSubmit() {
           if (!custodialForm.apiKey || !custodialForm.secretKey || !custodialForm.passphrase) {
-            setBindStatus("请完整填写 API Key / Secret Key / Passphrase。");
+            setBindStatus(makeLocalizedMessage("请完整填写 API Key / Secret Key / Passphrase。", "Please fill in API Key / Secret Key / Passphrase."));
             return;
           }
           const masked = `ciphertext://${custodialForm.apiKey.slice(0, 4)}***`;
-          setBindStatus(`已本地加密并提交密文：${masked}（仅服务器可见密文，原文保留在前端内存中立即销毁）。`);
+          setBindStatus(makeLocalizedMessage(
+            `已本地加密并提交密文：${masked}（仅服务器可见密文，原文保留在前端内存中立即销毁）。`,
+            `Encrypted locally and submitted cipher: ${masked} (only backend sees the ciphertext; plaintext cleared immediately).`
+          ));
         }
 
         function handleLocalValidator() {
           setLocalValidatorReady(true);
           const fingerprint = `uid_hash_${Date.now().toString(16)}`;
           setLocalFingerprint(fingerprint);
-          setBindStatus(`本地验证器已启动，将定期拉取 ${exchange} 订单并生成最小化指纹。`);
+          setBindStatus(makeLocalizedMessage(
+            `本地验证器已启动，将定期拉取 ${exchange} 订单并生成最小化指纹。`,
+            `Local validator started; it will periodically pull ${exchange} orders and produce minimal fingerprints.`
+          ));
         }
 
         function handlePurchase() {
-          const ref = `${selectedProduct?.id ?? "SKU"}-${Date.now().toString(16)}`;
+          const ref = `${currentProduct?.id ?? "SKU"}-${Date.now().toString(16)}`;
           const randomSuffix = Math.random().toString(16).slice(2, 10);
           const mockTx = `0x${ref.replace(/[^0-9a-zA-Z]/g, "").slice(0, 12)}${Date.now().toString(16)}${randomSuffix}`;
-          setPurchaseStatus(`链上调用 purchasePolicy 已提交。policy_ref = ${ref}，txHash ≈ ${mockTx}`);
+          setPurchaseStatus(makeLocalizedMessage(
+            `链上调用 purchasePolicy 已提交。policy_ref = ${ref}，txHash ≈ ${mockTx}`,
+            `On-chain purchasePolicy submitted. policy_ref = ${ref}, txHash ≈ ${mockTx}`
+          ));
         }
 
         function handleClaim() {
           if (!orderInput.trim()) {
-            setClaimStatus("请输入订单号。");
+            setClaimStatus(makeLocalizedMessage("请输入订单号。", "Please enter an order ID."));
             return;
           }
-          setClaimStatus(`已匹配订单 ${orderInput}，准备 submitClaim(policyId, ${orderInput}, order_hash, rootId, proof)。`);
+          setClaimStatus(makeLocalizedMessage(
+            `已匹配订单 ${orderInput}，准备 submitClaim(policyId, ${orderInput}, order_hash, rootId, proof)。`,
+            `Matched order ${orderInput}, preparing submitClaim(policyId, ${orderInput}, order_hash, rootId, proof).`
+          ));
         }
 
         function handleAppeal() {
-          setAppealStatus("申诉已创建，仲裁角色将在 24 小时内复核。");
+          setAppealStatus(makeLocalizedMessage("申诉已创建，仲裁角色将在 24 小时内复核。", "Appeal created; arbitration role will review within 24 hours."));
         }
 
         return (
           React.createElement("div", { className: "bg-slate-950 text-slate-100" },
             React.createElement("div", { className: "relative overflow-hidden bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-950" },
               React.createElement("div", { className: "max-w-6xl mx-auto px-6 py-12 md:py-16" },
-                React.createElement("p", { className: "text-sm uppercase tracking-[0.3em] text-indigo-200/80" }, "多交易所合约保险（OKX 首发） · UX 流"),
-                React.createElement("h1", { className: "mt-4 text-3xl font-semibold md:text-4xl" }, `连接钱包 → 浏览产品 → 绑定 ${exchange} → 购买 → 交易监控 → 申赔 / 申诉`),
-                React.createElement("p", { className: "mt-4 max-w-3xl text-base text-indigo-100/80" }, `支持 SIWE / EIP-4361 登录，钱包地址即用户 ID。既可托管密钥（只读）也可启用本地验证器，确保 ${exchange} 凭证不出端。`),
+                React.createElement("p", { className: "text-sm uppercase tracking-[0.3em] text-indigo-200/80" }, text(null, "多交易所合约保险（OKX 首发） · UX 流", "Multi-exchange insurance (OKX first) · UX flow")),
+                React.createElement("h1", { className: "mt-4 text-3xl font-semibold md:text-4xl" }, text(null, "连接钱包 → 浏览产品 → 绑定 {exchange} → 购买 → 交易监控 → 申赔 / 申诉", "Connect wallet → browse products → link {exchange} → purchase → monitor trades → claim / appeal", { exchange })),
+                React.createElement("p", { className: "mt-4 max-w-3xl text-base text-indigo-100/80" }, text(null, "支持 SIWE / EIP-4361 登录，钱包地址即用户 ID。既可托管密钥（只读）也可启用本地验证器，确保 {exchange} 凭证不出端。", "Supports SIWE / EIP-4361 login with wallet address as the user ID. Choose custodial read-only keys or the local validator to keep {exchange} credentials on-device.", { exchange })),
                 React.createElement("div", { className: "mt-6 flex flex-wrap gap-3" },
                   React.createElement("button", {
                     type: "button",
                     onClick: handleConnectWallet,
                     className: "rounded-full bg-indigo-500 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-700/30 transition hover:bg-indigo-400"
-                  }, "1. 连接钱包"),
+                  }, text(null, "1. 连接钱包", "1. Connect wallet")),
                   React.createElement("button", {
                     type: "button",
                     onClick: handleSiweLogin,
                     className: "rounded-full border border-indigo-300/60 px-5 py-2 text-sm font-medium text-indigo-100 transition hover:border-indigo-200 hover:bg-indigo-500/10"
-                  }, "2. SIWE 登录（模拟）"),
+                  }, text(null, "2. SIWE 登录（模拟）", "2. SIWE login (mock)")),
                   walletAddress && React.createElement("span", {
                     className: "rounded-full border border-white/10 px-4 py-2 text-xs text-indigo-100/80"
                   }, `${walletAddress.slice(0, 10)}...${walletAddress.slice(-6)}`)
                 ),
                 React.createElement("div", { className: "mt-4 space-y-1 text-sm text-indigo-100/70" },
-                  React.createElement("p", null, `登录状态：${siweStatus}${sessionToken ? ` · JWT(模拟) = ${sessionToken}` : ""}`),
-                  walletMessage && React.createElement("p", null, walletMessage)
+                  React.createElement("p", null,
+                    `${text(null, "登录状态：", "Login status: ")}${text(siweStatus)}${sessionToken ? `${text(null, " · JWT(模拟) = ", " · JWT (mock) = ")}${sessionToken}` : ""}`
+                  ),
+                  walletMessage && React.createElement("p", null, text(walletMessage))
                 )
               )
             ),
             React.createElement("div", { className: "max-w-6xl mx-auto px-6 pb-16 space-y-12" },
               React.createElement("section", { className: "space-y-4 pt-12" },
-                React.createElement("h2", { className: "text-2xl font-semibold" }, "用户路径（UX Flow）"),
+                React.createElement("h2", { className: "text-2xl font-semibold" }, text(null, "用户路径（UX Flow）", "User journey (UX flow)")),
                 React.createElement("div", { className: "grid gap-4 md:grid-cols-3" },
-                  UX_FLOW.map((step, idx) =>
+                  UX_FLOW.map((step, idx) => {
+                    const stepTitle = text(step.title);
+                    const stepDesc = text(step.description);
+                    return (
                     React.createElement("div", {
-                      key: step.title,
+                      key: `${stepTitle}-${idx}`,
                       className: "rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur"
                     },
                       React.createElement("p", { className: "text-xs uppercase tracking-[0.3em] text-indigo-200/70" }, `Step ${idx + 1}`),
-                      React.createElement("h3", { className: "mt-3 text-lg font-semibold text-white" }, step.title),
-                      React.createElement("p", { className: "mt-2 text-sm text-slate-200/80" }, step.description)
+                      React.createElement("h3", { className: "mt-3 text-lg font-semibold text-white" }, stepTitle),
+                      React.createElement("p", { className: "mt-2 text-sm text-slate-200/80" }, stepDesc)
                     )
-                  )
+                    );
+                  })
                 )
               ),
               React.createElement("section", { className: "space-y-4" },
-                React.createElement("h2", { className: "text-2xl font-semibold" }, "合约保险产品列表"),
+                React.createElement("h2", { className: "text-2xl font-semibold" }, text(null, "合约保险产品列表", "Insurance product catalog")),
                 React.createElement("div", { className: "grid gap-4 md:grid-cols-3" },
                   UX_PRODUCTS.map((product) => {
                     const isActive = product.id === selectedProductId;
+                    const productName = text(product.name);
+                    const premium = text(product.premium);
+                    const leverageCap = text(product.leverageCap);
+                    const payoutCap = text(product.payoutCap);
+                    const waitPeriod = text(product.waitPeriod);
+                    const caution = text(product.caution);
                     return React.createElement("button", {
                       type: "button",
                       key: product.id,
                       onClick: () => {
                         setSelectedProductId(product.id);
-                        setPurchaseStatus("");
+                        setPurchaseStatus(null);
                       },
                       className: `rounded-2xl border p-5 text-left transition ${isActive ? "border-indigo-400 bg-indigo-400/10 shadow-lg shadow-indigo-500/20" : "border-white/10 bg-white/5 hover:border-indigo-400/60"}`
                     },
                       React.createElement("div", { className: "flex items-center justify-between text-xs uppercase tracking-widest" },
                         React.createElement("span", { className: "text-indigo-200/80" }, product.id),
-                        isActive && React.createElement("span", { className: "rounded-full bg-indigo-500/30 px-2 py-0.5 text-indigo-100" }, "当前")
+                        isActive && React.createElement("span", { className: "rounded-full bg-indigo-500/30 px-2 py-0.5 text-indigo-100" }, text(null, "当前", "Selected"))
                       ),
-                      React.createElement("h3", { className: "mt-3 text-lg font-semibold text-white" }, product.name),
+                      React.createElement("h3", { className: "mt-3 text-lg font-semibold text-white" }, productName),
                       React.createElement("ul", { className: "mt-4 space-y-1 text-sm text-slate-200/80" },
-                        React.createElement("li", null, `保费：${product.premium}`),
-                        React.createElement("li", null, `杠杆上限：${product.leverageCap}`),
-                        React.createElement("li", null, `赔付额上限：${product.payoutCap}`),
-                        React.createElement("li", null, `等待期：${product.waitPeriod}`),
-                        React.createElement("li", null, `注意事项：${product.caution}`)
+                        React.createElement("li", null, `${text(null, "保费：", "Premium: ")}${premium}`),
+                        React.createElement("li", null, `${text(null, "杠杆上限：", "Leverage cap: ")}${leverageCap}`),
+                        React.createElement("li", null, `${text(null, "赔付额上限：", "Payout cap: ")}${payoutCap}`),
+                        React.createElement("li", null, `${text(null, "等待期：", "Waiting period: ")}${waitPeriod}`),
+                        React.createElement("li", null, `${text(null, "注意事项：", "Notes: ")}${caution}`)
                       ),
-                      product.faq[0] && React.createElement("p", { className: "mt-4 text-xs text-indigo-200/70" }, `FAQ：${product.faq[0].q}`)
+                      product.faq[0] && React.createElement("p", { className: "mt-4 text-xs text-indigo-200/70" }, `${text(null, "FAQ：", "FAQ: ")}${text(product.faq[0].q)}`)
                     );
                   })
                 )
@@ -449,25 +712,25 @@
                   React.createElement("li", null, "计划集成 ", React.createElement("span", { className: "font-semibold text-indigo-200" }, "Paymaster"), " 降低 gas；连接器越多，", React.createElement("span", { className: "font-semibold text-indigo-200" }, "Base 写入/交互越多"))
                 )
               ),
-              selectedProduct && React.createElement("section", { className: "space-y-4" },
-                React.createElement("h2", { className: "text-2xl font-semibold" }, "产品详情"),
+              localizedProduct && React.createElement("section", { className: "space-y-4" },
+                React.createElement("h2", { className: "text-2xl font-semibold" }, text(null, "产品详情", "Product details")),
                 React.createElement("div", { className: "grid gap-6 md:grid-cols-2" },
                   React.createElement("div", { className: "rounded-2xl bg-white p-6 shadow-lg shadow-slate-900/10" },
-                    React.createElement("h3", { className: "text-lg font-semibold text-slate-900" }, "参数化定价公式"),
-                    React.createElement("p", { className: "mt-3 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-800" }, selectedProduct.pricingFormula),
-                    React.createElement("h3", { className: "mt-6 text-lg font-semibold text-slate-900" }, "示例费率表"),
+                    React.createElement("h3", { className: "text-lg font-semibold text-slate-900" }, text(null, "参数化定价公式", "Parameterized pricing formula")),
+                    React.createElement("p", { className: "mt-3 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-800" }, localizedProduct.pricingFormula),
+                    React.createElement("h3", { className: "mt-6 text-lg font-semibold text-slate-900" }, text(null, "示例费率表", "Sample rate table")),
                     React.createElement("div", { className: "mt-3 overflow-hidden rounded-xl border border-slate-200" },
                       React.createElement("table", { className: "min-w-full text-sm text-slate-800" },
                         React.createElement("thead", { className: "bg-slate-100" },
                           React.createElement("tr", null,
-                            React.createElement("th", { className: "px-3 py-2 text-left" }, "杠杆区间"),
-                            React.createElement("th", { className: "px-3 py-2 text-left" }, "名义本金"),
-                            React.createElement("th", { className: "px-3 py-2 text-left" }, "保费"),
-                            React.createElement("th", { className: "px-3 py-2 text-left" }, "赔付")
+                            React.createElement("th", { className: "px-3 py-2 text-left" }, text(null, "杠杆区间", "Leverage band")),
+                            React.createElement("th", { className: "px-3 py-2 text-left" }, text(null, "名义本金", "Notional")),
+                            React.createElement("th", { className: "px-3 py-2 text-left" }, text(null, "保费", "Premium")),
+                            React.createElement("th", { className: "px-3 py-2 text-left" }, text(null, "赔付", "Payout"))
                           )
                         ),
                         React.createElement("tbody", null,
-                          selectedProduct.sampleRates.map((row, idx) =>
+                          localizedProduct.sampleRates.map((row, idx) =>
                             React.createElement("tr", { key: idx, className: idx % 2 === 0 ? "bg-white" : "bg-slate-50" },
                               React.createElement("td", { className: "px-3 py-2" }, row.leverage),
                               React.createElement("td", { className: "px-3 py-2" }, row.notional),
@@ -480,21 +743,21 @@
                     )
                   ),
                   React.createElement("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-6" },
-                    React.createElement("h3", { className: "text-lg font-semibold text-white" }, "理赔规则"),
+                    React.createElement("h3", { className: "text-lg font-semibold text-white" }, text(null, "理赔规则", "Claim rules")),
                     React.createElement("ul", { className: "mt-3 space-y-2 text-sm text-slate-200/80" },
-                      selectedProduct.claimRules.map((rule, idx) =>
+                      localizedProduct.claimRules.map((rule, idx) =>
                         React.createElement("li", { key: idx, className: "list-inside list-disc" }, rule)
                       )
                     ),
-                    React.createElement("h3", { className: "mt-6 text-lg font-semibold text-white" }, "黑名单 / 限赔"),
+                    React.createElement("h3", { className: "mt-6 text-lg font-semibold text-white" }, text(null, "黑名单 / 限赔", "Blacklist / limits")),
                     React.createElement("ul", { className: "mt-3 space-y-2 text-sm text-slate-200/80" },
-                      selectedProduct.blacklist.map((rule, idx) =>
+                      localizedProduct.blacklist.map((rule, idx) =>
                         React.createElement("li", { key: idx, className: "list-inside list-disc" }, rule)
                       )
                     ),
                     React.createElement("h3", { className: "mt-6 text-lg font-semibold text-white" }, "FAQ"),
                     React.createElement("div", { className: "mt-3 space-y-3" },
-                      selectedProduct.faq.map((item, idx) =>
+                      localizedProduct.faq.map((item, idx) =>
                         React.createElement("div", { key: idx, className: "rounded-xl border border-white/10 bg-black/20 p-4" },
                           React.createElement("p", { className: "text-sm font-medium text-indigo-200" }, item.q),
                           React.createElement("p", { className: "mt-1 text-sm text-slate-200/70" }, item.a)
@@ -513,7 +776,7 @@
                     type: "button",
                     onClick: () => {
                       setActiveBindMode("custodial");
-                      setBindStatus("");
+                      setBindStatus(null);
                     },
                     className: `rounded-full px-4 py-2 text-sm transition ${activeBindMode === "custodial" ? "bg-indigo-500 text-white shadow-lg shadow-indigo-700/30" : "border border-white/10 bg-white/5 text-slate-200 hover:border-indigo-300/60"}`
                   }, "模式 A · 托管密钥（只读权限）"),
@@ -521,7 +784,7 @@
                     type: "button",
                     onClick: () => {
                       setActiveBindMode("local");
-                      setBindStatus("");
+                      setBindStatus(null);
                     },
                     className: `rounded-full px-4 py-2 text-sm transition ${activeBindMode === "local" ? "bg-indigo-500 text-white shadow-lg shadow-indigo-700/30" : "border border-white/10 bg-white/5 text-slate-200 hover:border-indigo-300/60"}`
                   }, "模式 B · 本地验证器（密钥不出端）")
@@ -529,7 +792,7 @@
                 React.createElement("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-slate-200/80" },
                   activeBindMode === "custodial"
                     ? React.createElement(React.Fragment, null,
-                        React.createElement("p", null, `填写 ${exchange} 提供的 API Key / Secret Key / Passphrase（只读权限），前端用钱包公钥或后端 KMS 公钥进行加密。`),
+                        React.createElement("p", null, text(null, `填写 ${exchange} 提供的 API Key / Secret Key / Passphrase（只读权限），前端用钱包公钥或后端 KMS 公钥进行加密。`, `Enter the ${exchange} API Key / Secret Key / Passphrase (read-only); encrypt locally with the wallet public key or backend KMS public key.`)),
                         React.createElement("div", { className: "mt-4 grid gap-4 md:grid-cols-3" },
                           React.createElement("input", {
                             className: "rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-white placeholder:text-slate-500",
@@ -550,60 +813,60 @@
                             onChange: (e) => setCustodialForm((prev) => ({ ...prev, passphrase: e.target.value }))
                           })
                         ),
-                        React.createElement("p", { className: "mt-3 text-xs text-slate-400" }, "数据在本地加密后上传；服务器仅保存密文和 uid_hash，对应钱包地址即账户 ID。"),
+                        React.createElement("p", { className: "mt-3 text-xs text-slate-400" }, text(null, "数据在本地加密后上传；服务器仅保存密文和 uid_hash，对应钱包地址即账户 ID。", "Data is encrypted locally before upload; backend only stores ciphertext + uid_hash, using wallet address as the account ID.")),
                         React.createElement("button", {
                           type: "button",
                           onClick: handleCustodialSubmit,
                           className: "mt-4 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-emerald-400"
-                        }, "本地加密并上传密文")
+                        }, text(null, "本地加密并上传密文", "Encrypt locally and upload cipher"))
                       )
                     : React.createElement(React.Fragment, null,
-                        React.createElement("p", null, "下载或启动「LiqPass Local Validator」插件，密钥留在本机，由插件拉取订单并仅上报最小化指纹。"),
+                        React.createElement("p", null, text(null, "下载或启动「LiqPass Local Validator」插件，密钥留在本机，由插件拉取订单并仅上报最小化指纹。", "Download or launch the “LiqPass Local Validator” plugin. Keys stay local; the plugin pulls orders and uploads only minimal fingerprints.")),
                         React.createElement("div", { className: "mt-4 flex flex-wrap gap-3" },
                           React.createElement("button", {
                             type: "button",
                             onClick: handleLocalValidator,
                             className: "rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-emerald-400"
-                          }, localValidatorReady ? "验证器已运行" : "启动本地验证器"),
+                          }, text(null, localValidatorReady ? "验证器已运行" : "启动本地验证器", localValidatorReady ? "Validator running" : "Start local validator")),
                           React.createElement("button", {
                             type: "button",
-                            onClick: () => setBindStatus("浏览器插件下载链接将通过内测邮箱下发（占位展示）。"),
+                            onClick: () => setBindStatus(makeLocalizedMessage("浏览器插件下载链接将通过内测邮箱下发（占位展示）。", "Browser plugin download link will be shared via private beta email (placeholder).")),
                             className: "rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-indigo-300/60"
-                          }, "下载浏览器插件（占位）")
+                          }, text(null, "下载浏览器插件（占位）", "Download browser plugin (placeholder)"))
                         ),
                         localValidatorReady && React.createElement("div", {
                           className: "mt-4 rounded-xl border border-indigo-400/40 bg-indigo-500/10 p-4 text-xs text-indigo-100"
                         },
-                          React.createElement("p", null, `uid_hash（示例）：${localFingerprint}`),
-                          React.createElement("p", { className: "mt-2" }, "插件将在本地生成 Merkle root，并定期将 rootId + proof 上报给后端索引器。")
+                          React.createElement("p", null, text(null, `uid_hash（示例）：${localFingerprint}`, `uid_hash (example): ${localFingerprint}`)),
+                          React.createElement("p", { className: "mt-2" }, text(null, "插件将在本地生成 Merkle root，并定期将 rootId + proof 上报给后端索引器。", "The plugin generates Merkle roots locally and periodically reports rootId + proof to the backend indexer."))
                         )
                       ),
-                  bindStatus && React.createElement("div", { className: "mt-4 text-sm text-emerald-300" }, bindStatus)
+                  bindStatus && React.createElement("div", { className: "mt-4 text-sm text-emerald-300" }, text(bindStatus))
                 )
               ),
               React.createElement("section", { className: "space-y-4" },
-                React.createElement("h2", { className: "text-2xl font-semibold" }, "购买链上保单"),
+                React.createElement("h2", { className: "text-2xl font-semibold" }, text(null, "购买链上保单", "Purchase on-chain policy")),
                 React.createElement("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-slate-200/80" },
-                  React.createElement("p", null, "选择 SKU 后，合约 `purchasePolicy(skuId, params)` 将收取保费（USDC）并返回 policyId / policy_ref，同时记录到链上。"),
+                  React.createElement("p", null, text(null, "选择 SKU 后，合约 `purchasePolicy(skuId, params)` 将收取保费（USDC）并返回 policyId / policy_ref，同时记录到链上。", "After selecting a SKU, the contract `purchasePolicy(skuId, params)` collects premium (USDC), returns policyId / policy_ref, and records on-chain.")),
                   React.createElement("div", { className: "mt-4 grid gap-4 md:grid-cols-2" },
                     React.createElement("div", null,
-                      React.createElement("p", { className: "text-xs uppercase tracking-[0.3em] text-indigo-200/70" }, "当前 SKU"),
-                      React.createElement("p", { className: "mt-2 text-lg font-semibold text-white" }, selectedProduct?.name ?? "请选择产品"),
-                      React.createElement("p", { className: "mt-2 text-sm text-slate-300/80" }, selectedProduct?.coverageWindow)
+                      React.createElement("p", { className: "text-xs uppercase tracking-[0.3em] text-indigo-200/70" }, text(null, "当前 SKU", "Current SKU")),
+                      React.createElement("p", { className: "mt-2 text-lg font-semibold text-white" }, localizedProduct?.name ?? text(null, "请选择产品", "Select a product")),
+                      React.createElement("p", { className: "mt-2 text-sm text-slate-300/80" }, localizedProduct?.coverageWindow ?? "")
                     ),
                     React.createElement("div", { className: "rounded-xl border border-white/10 bg-black/20 p-4" },
-                      React.createElement("p", null, React.createElement("span", { className: "font-medium text-indigo-100" }, "保费："), selectedProduct?.premium),
-                      React.createElement("p", { className: "mt-2" }, React.createElement("span", { className: "font-medium text-indigo-100" }, "杠杆上限："), selectedProduct?.leverageCap),
-                      React.createElement("p", { className: "mt-2" }, React.createElement("span", { className: "font-medium text-indigo-100" }, "赔付上限："), selectedProduct?.payoutCap),
-                      React.createElement("p", { className: "mt-2" }, React.createElement("span", { className: "font-medium text-indigo-100" }, "等待期："), selectedProduct?.waitPeriod)
+                      React.createElement("p", null, React.createElement("span", { className: "font-medium text-indigo-100" }, text(null, "保费：", "Premium: ")), localizedProduct?.premium ?? ""),
+                      React.createElement("p", { className: "mt-2" }, React.createElement("span", { className: "font-medium text-indigo-100" }, text(null, "杠杆上限：", "Leverage cap: ")), localizedProduct?.leverageCap ?? ""),
+                      React.createElement("p", { className: "mt-2" }, React.createElement("span", { className: "font-medium text-indigo-100" }, text(null, "赔付上限：", "Payout cap: ")), localizedProduct?.payoutCap ?? ""),
+                      React.createElement("p", { className: "mt-2" }, React.createElement("span", { className: "font-medium text-indigo-100" }, text(null, "等待期：", "Waiting period: ")), localizedProduct?.waitPeriod ?? "")
                     )
                   ),
                   React.createElement("button", {
                     type: "button",
                     onClick: handlePurchase,
                     className: "mt-4 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-emerald-400"
-                  }, "使用钱包支付并生成 policy_ref"),
-                  purchaseStatus && React.createElement("div", { className: "mt-3 text-sm text-emerald-300" }, purchaseStatus)
+                  }, text(null, "使用钱包支付并生成 policy_ref", "Pay with wallet and mint policy_ref")),
+                  purchaseStatus && React.createElement("div", { className: "mt-3 text-sm text-emerald-300" }, text(purchaseStatus))
                 )
               ),
               React.createElement("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-slate-200/80" },
@@ -629,7 +892,7 @@
                     }, "验证并提交 submitClaim")
                   ),
                   React.createElement("p", { className: "mt-3 text-xs text-slate-400" }, "合约校验 Merkle proof → 通过即自动赔付 / 记账；失败则返回原因并可发起申诉。"),
-                  claimStatus && React.createElement("div", { className: "mt-3 text-sm text-emerald-300" }, claimStatus)
+                  claimStatus && React.createElement("div", { className: "mt-3 text-sm text-emerald-300" }, text(claimStatus))
                 )
               ),
               React.createElement("section", { className: "space-y-4" },
@@ -653,7 +916,7 @@
                     }, "让本地验证器重新上报")
                   ),
                   React.createElement("p", { className: "mt-3 text-xs text-slate-400" }, "后台人工 / 规则机审接口将触发仲裁角色或合约的二次提交函数，确保漏单也可赔付。"),
-                  appealStatus && React.createElement("div", { className: "mt-3 text-sm text-emerald-300" }, appealStatus)
+                  appealStatus && React.createElement("div", { className: "mt-3 text-sm text-emerald-300" }, text(appealStatus))
                 )
               ),
               React.createElement("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-slate-200/80" },
@@ -900,6 +1163,7 @@
       }
 
       function RootApp() {
+        const { locale, setLocale, translate: tr } = useLocale();
         const [view, setView] = useState("ux");
         const [exchange, setExchange] = useState("OKX");
         return (
@@ -911,28 +1175,39 @@
                     React.createElement("span", { className: "text-lg font-semibold text-white" }, "LiqPass"),
                     React.createElement("span", { className: "rounded-full border border-white/10 px-2 py-0.5 text-xs text-slate-400" }, "Base Mainnet")
                   ),
-                  React.createElement("p", { className: "mt-1 text-xs text-slate-400" }, "多交易所适配器原型（OKX 首发）＋ 本地验证 & 上链留痕工具。")
+                  React.createElement("p", { className: "mt-1 text-xs text-slate-400" }, tr("多交易所适配器原型（OKX 首发）＋ 本地验证 & 上链留痕工具。", "Multi-exchange adapter prototype (OKX first) + local attestation & on-chain logging toolkit."))
                 ),
                 React.createElement("div", { className: "flex items-center gap-2" },
                   React.createElement("button", {
                     type: "button",
                     onClick: () => setView("ux"),
                     className: `rounded-full px-4 py-2 text-sm transition ${view === "ux" ? "bg-indigo-500 text-white shadow-lg shadow-indigo-700/30" : "border border-white/10 bg-white/5 text-slate-200 hover:border-indigo-300/60"}`
-                  }, "OKX 合约保险 UX"),
+                  }, tr("OKX 合约保险 UX", "OKX insurance UX")),
                   React.createElement("button", {
                     type: "button",
                     onClick: () => setView("attestor"),
                     className: `rounded-full px-4 py-2 text-sm transition ${view === "attestor" ? "bg-indigo-500 text-white shadow-lg shadow-indigo-700/30" : "border border-white/10 bg-white/5 text-slate-200 hover:border-indigo-300/60"}`
-                  }, "本地取证 / 上链工具"),
+                  }, tr("本地取证 / 上链工具", "Local attestation / on-chain tool")),
                   React.createElement("div", { className: "ml-2 flex items-center gap-1 text-xs" },
-                    React.createElement("span", { className: "opacity-70" }, "交易所："),
+                    React.createElement("span", { className: "opacity-70" }, tr("交易所：", "Exchange:")),
                     ["OKX", "Binance", "Gate"].map((ex) =>
                       React.createElement("button", {
                         key: ex,
                         type: "button",
                         onClick: () => setExchange(ex),
                         className: `rounded-full px-2 py-1 border ${exchange === ex ? "bg-indigo-500 text-white border-indigo-400" : "border-white/10 text-slate-200"}`
-                      }, `${ex}${ex === "OKX" ? " · 首发" : " · 规划中"}`)
+                      }, `${ex}${ex === "OKX" ? tr(" · 首发", " · live") : tr(" · 规划中", " · planned")}`)
+                    )
+                  ),
+                  React.createElement("div", { className: "ml-3 flex items-center gap-1 text-xs" },
+                    React.createElement("span", { className: "opacity-70" }, tr("语言：", "Language:")),
+                    SUPPORTED_LOCALES.map((code) =>
+                      React.createElement("button", {
+                        key: code,
+                        type: "button",
+                        onClick: () => setLocale(code),
+                        className: `rounded-full px-2 py-1 border ${locale === code ? "bg-indigo-500 text-white border-indigo-400" : "border-white/10 text-slate-200"}`
+                      }, LANGUAGE_LABELS[code] ?? code)
                     )
                   )
                 )
@@ -948,7 +1223,7 @@
       }
 
       const root = createRoot(document.getElementById("root"));
-      root.render(React.createElement(RootApp));
+      root.render(React.createElement(LocalizedRoot));
     </script>
   </body>
 </html>

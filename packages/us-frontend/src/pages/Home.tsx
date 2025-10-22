@@ -1,13 +1,5 @@
-import type { PageDescriptor } from '../router';
-import { initHome } from './home';
+import React from 'react';
 
-export function HomePage(): PageDescriptor {
-  return {
-    id: 'home',
-    label: {
-      zh: '产品总览',
-      en: 'Overview',
-    },
-    init: initHome,
-  };
+export function HomePage() {
+  return <h1>Home Page</h1>;
 }

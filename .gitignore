@@ -18,6 +18,7 @@ Thumbs.db
 # Environment / Secrets
 .env
 .env.*
+.env*
 env/*.env
 env/*.local
 env/*.secret
@@ -28,3 +29,5 @@ env/*.secret
 *.log
 *.tmp
 *.swp
+data/*.sqlite
+logs/*

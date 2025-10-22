@@ -12,7 +12,20 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/react-router-dom": "^5.3.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^4.1.15",
     "typescript": "file:vendor/typescript",
-    "vite": "file:vendor/vite"
+    "vite": "^5.3.1"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.15",
+    "react-router-dom": "^7.9.4"
   }
 }

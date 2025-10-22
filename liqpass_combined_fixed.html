@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>LiqPass — 爆仓保 (功能 + 帮助文档)</title>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .markdown-content h2 { font-size: 1.5rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 1rem; }
+      .markdown-content h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.75rem; }
+      .markdown-content p { margin-bottom: 0.75rem; line-height: 1.6; }
+      .markdown-content ul, .markdown-content ol { margin-bottom: 0.75rem; padding-left: 1.5rem; }
+      .markdown-content li { margin-bottom: 0.5rem; }
+      .markdown-content a { color: #60a5fa; text-decoration: underline; }
+      .markdown-content blockquote { border-left: 4px solid #4b5563; padding-left: 1rem; color: #9ca3af; margin: 0.75rem 0; }
+    </style>
+  </head>
+  <body class="bg-slate-950 text-slate-100">
+    <div id="root"></div>
+
+    <script type="module">
+      import React, { useEffect, useMemo, useState, useCallback } from "https://esm.sh/react@18.2.0";
+      import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
+      import { ethers } from "https://esm.sh/ethers@6.9.0";
+      import { 
+        Calculator, Upload, ListChecks, Hash, Shield, CheckCircle2, HelpCircle, 
+        BookOpen, ExternalLink, ChevronDown, ChevronUp
+      } from "https://esm.sh/lucide-react@0.323.0";
+      import { marked } from "https://esm.sh/marked@9.1.2";
+
+      marked.setOptions({ gfm: true, breaks: true });
+
+      const ADMIN_QS_KEY = "admin";
+      const ADMIN_TRUE_VALUES = ["1", "true", "yes"];
+      function detectAdminFlag() {
+        if (typeof window === "undefined") return false;
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const qs = params.get(ADMIN_QS_KEY);
+          if (qs && ADMIN_TRUE_VALUES.includes(qs.toLowerCase())) {
+            window.localStorage?.setItem("liqpass.admin", "1");
+            return true;
+          }
+          if (qs === "0" || qs === "false") {
+            window.localStorage?.removeItem("liqpass.admin");
+            return false;
+          }
+        } catch (_) {}
+        try {
+          const stored = window.localStorage?.getItem("liqpass.admin");
+          return stored === "1";
+        } catch (_) {
+          return false;
+        }
+      }
+      const ADMIN_ENABLED = detectAdminFlag();
+
+      /* -------------------- 本地化核心 -------------------- */
+      const SUPPORTED_LOCALES = ["zh-CN", "en-US"];
+      const LANGUAGE_LABELS = { "zh-CN": "中", "en-US": "EN" };
+
+      function formatMessage(template, vars = {}) {
+        if (typeof template !== "string") return "";
+        return template.replace(/\{(\w+)\}/g, (_, key) => (key in vars ? String(vars[key]) : `{${key}}`));
+      }
+
+      const LocaleContext = React.createContext({
+        locale: "zh-CN",
+        setLocale: () => {},
+        tr: (zh, en, vars) => formatMessage(zh, vars)
+      });
+
+      function useLocale() { return React.useContext(LocaleContext); }
+      function detectInitialLocale() {
+        if (typeof window !== "undefined") {
+          try {
+            const stored = window.localStorage?.getItem("liqpass.locale");
+            if (stored && SUPPORTED_LOCALES.includes(stored)) return stored;
+          } catch (_) {}
+          if (typeof navigator !== "undefined") {
+            const navLang = (navigator.language || navigator.userLanguage || "").toLowerCase();
+            if (navLang.startsWith("en")) return "en-US";
+          }
+        }
+        return "zh-CN";
+      }
+
+      /* -------------------- 多语言字典 -------------------- */
+      const DICT = {
+        zh: {
+          brand: "LiqPass",
+          chain: "Base 主网",
+          tab_ux: "OKX 合约险 · UX",
+          tab_quote: "报价（P/L→保费/赔付）",
+          tab_claim: "爆仓证据上传",
+          tab_attest: "证明封装",
+          tab_status: "状态追踪",
+          tab_appeal: "人工申诉",
+          tab_help: "帮助文档",
+          hero_title: "输入 P / L 出报价 → 上传爆仓证据 → 自动生成证明包 → 查看状态",
+          hero_sub: "仅围绕 本金 / 杠杆 / 保费 / 赔付额；自动生成 proof.json 并随申赔提交。",
+          pill_base: "Base 主网",
+          pill_okx: "OKX · 首发",
+
+          quote_title: "报价计算（仅演示）",
+          principal: "本金 (USDT)",
+          leverage: "杠杆 (×，≤100)",
+          btn_get_quote: "生成报价",
+          premium: "保费",
+          payout: "赔付额",
+          premium_ratio: "保费比例",
+          payout_ratio: "赔付比例",
+          quote_id: "报价编号",
+          valid_until: "有效期（10 分钟）",
+          pricing_ver: "价格版本",
+          err_range: "本金需在 50–500 USDT，杠杆需在 1–100。",
+
+          claim_title: "上传爆仓证据（OKX / JSON）",
+          choose_sample: "选择示例",
+          sample_none: "不使用示例",
+          sample_okx_liq: "示例：OKX 爆仓（LINK-USDT 强平）",
+          sample_binance_liq: "示例：币安爆仓（BTCUSDT 强平）",
+          or_paste: "或粘贴 JSON 文本",
+          json_input_label: "JSON 凭证（可选）",
+          appeal_title: "申诉通道",
+          appeal_intro: "自动校验未通过时，可提交申诉以人工复核。",
+          appeal_reason_label: "申诉说明",
+          appeal_reason_placeholder: "请描述强平细节、截图链接等补充信息。",
+          appeal_contact_label: "联系邮箱或 Telegram（可选）",
+          appeal_contact_placeholder: "例如：user@example.com / @handle",
+          btn_submit_appeal: "提交申诉",
+          appeal_submitted: "申诉已接收，我们将尽快处理。",
+          appeal_require_reason: "请填写申诉说明后再提交。",
+          appeal_reference: "申诉编号",
+          appeal_module_title: "人工申诉通道",
+          appeal_module_intro: "如对自动校验结果有疑问，请在此提交补充说明与截图。",
+          appeal_upload_label: "上传截图",
+          appeal_upload_helper: "支持 PNG、JPG、WEBP，单个文件 ≤ 5 MB。",
+          appeal_upload_selected: "已选择",
+          appeal_upload_remove: "移除截图",
+          appeal_preview_label: "截图预览",
+          appeal_file_too_large: "截图文件需小于 5 MB，请压缩后再试。",
+          appeal_file_error: "截图读取失败，请重试。",
+          btn_validate: "校验证据",
+          validation_result: "校验结果",
+          order_id_label: "订单号",
+          order_id_placeholder: "请输入与交易所一致的订单号",
+          pass: "通过",
+          fail: "失败",
+          claim_highlights: [
+            { title: "申诉", desc: "触发仲裁或人工复核；与链上记录保持一致，确保申诉闭环。" },
+            { title: "订单号", desc: "请填写交易所原始订单号，便于匹配 Merkle proof 与订单指纹。" },
+            { title: "凭证材料", desc: "上传 CSV/JSON 或截图提取的最小字段，支持本地验证器重新补交。" },
+          ],
+
+          attest_title: "证明封装（生成 Root & 模拟 Tx）",
+          btn_build_root: "生成 Root",
+          btn_attest: "提交存证 (Mock)",
+          root: "Merkle Root (演示)",
+          txhash: "交易哈希 (模拟)",
+
+          status_title: "最近申赔 / 存证（演示数据）",
+          steps_title: "用户路径（UX Flow）",
+          s1: { title: "报价", body: "输入本金与杠杆，计算保费/赔付额，生成 quote_id。" },
+          s2: { title: "申赔", body: "出现强平/ADL 时，上传样例或 JSON，自动校验关键信息。" },
+          s3: { title: "证明", body: "对关键字段做哈希生成 root，封装 proof.json 并可选上传链上（演示）。" },
+          s4: { title: "状态", body: "公开最近 N 笔 root/tx，评审可一键核对。" },
+          disclaimer: "免责声明：本组件为演示 UX，不构成投资建议；样例数据与上链交易均为模拟。",
+          
+          // 帮助文档相关
+          help_title: "帮助文档",
+          project_overview: "项目简介",
+          why_exchanges: "为什么选择这些交易所",
+          why_connect: "为什么用户愿意绑定交易所信息",
+          workflow: "产品与理赔流程",
+          data_privacy: "数据与隐私",
+          pricing: "定价与风控说明",
+          contact: "联系方式",
+          expand_all: "展开全部",
+          collapse_all: "收起全部",
+          toggle_section: "切换章节"
+        },
+        en: {
+          brand: "LiqPass",
+          chain: "Base Mainnet",
+          tab_ux: "OKX Insurance · UX",
+          tab_quote: "Quote (P/L → Premium/Payout)",
+          tab_claim: "Liquidation Evidence",
+          tab_attest: "Proof Builder",
+          tab_status: "Status",
+          tab_appeal: "Appeal",
+          tab_help: "Help Documentation",
+          hero_title: "Enter P/L → Upload Liq Evidence → Auto proof bundle → Track status",
+          hero_sub: "Only principal / leverage / premium / payout. proof.json is generated automatically for claims.",
+          pill_base: "Base Mainnet",
+          pill_okx: "OKX · First Launch",
+
+          quote_title: "Quote (Demo)",
+          principal: "Principal (USDT)",
+          leverage: "Leverage (×, ≤100)",
+          btn_get_quote: "Get Quote",
+          premium: "Premium",
+          payout: "Payout",
+          premium_ratio: "Premium Ratio",
+          payout_ratio: "Payout Ratio",
+          quote_id: "Quote ID",
+          valid_until: "Valid Until (10 min)",
+          pricing_ver: "Pricing Version",
+          err_range: "Principal must be 50–500 USDT and leverage 1–100.",
+
+          claim_title: "Upload Liquidation Evidence (OKX / JSON)",
+          choose_sample: "Choose Sample",
+          sample_none: "No Sample",
+          sample_okx_liq: "Sample: OKX Liquidation (LINK-USDT)",
+          sample_binance_liq: "Sample: Binance Liquidation (BTCUSDT)",
+          or_paste: "or paste JSON text",
+          json_input_label: "JSON Evidence (optional)",
+          appeal_title: "Appeal Channel",
+          appeal_intro: "Auto validation failed. Provide details for manual review.",
+          appeal_reason_label: "Appeal Notes",
+          appeal_reason_placeholder: "Describe liquidation details, links to proofs, etc.",
+          appeal_contact_label: "Contact Email or Telegram (optional)",
+          appeal_contact_placeholder: "e.g. user@example.com / @handle",
+          btn_submit_appeal: "Submit Appeal",
+          appeal_submitted: "Appeal received. We'll review soon.",
+          appeal_require_reason: "Please add appeal notes before submitting.",
+          appeal_reference: "Appeal Reference",
+          appeal_module_title: "Manual Appeal Desk",
+          appeal_module_intro: "If auto validation fails, add context and screenshots here for manual review.",
+          appeal_upload_label: "Upload Screenshot",
+          appeal_upload_helper: "Supports PNG, JPG, WEBP up to 5 MB.",
+          appeal_upload_selected: "Selected",
+          appeal_upload_remove: "Remove Screenshot",
+          appeal_preview_label: "Screenshot Preview",
+          appeal_file_too_large: "Screenshot must be smaller than 5 MB. Please compress and retry.",
+          appeal_file_error: "Failed to read screenshot. Please try again.",
+          btn_validate: "Validate Evidence",
+          validation_result: "Validation Result",
+          order_id_label: "Order ID",
+          order_id_placeholder: "Enter the exact exchange order ID",
+          pass: "PASS",
+          fail: "FAIL",
+          claim_highlights: [
+            { title: "Appeal", desc: "Trigger arbitration/manual review to close the loop with on-chain records." },
+            { title: "Order ID", desc: "Provide original exchange order ID to match Merkle proof & trade fingerprint." },
+            { title: "Evidence", desc: "Upload CSV/JSON or minimal fields; local validator may resubmit." },
+          ],
+
+          attest_title: "Proof Builder (Build Root & Mock Tx)",
+          btn_build_root: "Build Root",
+          btn_attest: "Submit Attestation (Mock)",
+          root: "Merkle Root (Demo)",
+          txhash: "Tx Hash (Mock)",
+
+          status_title: "Recent Claims / Attestations (Demo)",
+          steps_title: "User Flow",
+          s1: { title: "Quote", body: "Enter principal & leverage → compute premium/payout & quote_id." },
+          s2: { title: "Claim", body: "When liquidation/ADL occurs, upload sample or JSON for auto-validation." },
+          s3: { title: "Proof", body: "Hash key fields to form a root, wrap proof.json, optionally record on-chain (mock)." },
+          s4: { title: "Status", body: "Expose latest root/tx for auditability." },
+          disclaimer: "Disclaimer: Demo UX only; samples & on-chain tx are mocked with no real payout.",
+          
+          // Help documentation
+          help_title: "Help Documentation",
+          project_overview: "Project Overview",
+          why_exchanges: "Why These Exchanges",
+          why_connect: "Why Users Connect Exchange Data",
+          workflow: "Product & Claim Workflow",
+          data_privacy: "Data & Privacy",
+          pricing: "Pricing & Risk Control",
+          contact: "Contact",
+          expand_all: "Expand All",
+          collapse_all: "Collapse All",
+          toggle_section: "Toggle Section"
+        },
+      };
+
+      /* -------------------- 示例数据 -------------------- */
+      const SAMPLE_OKX_LIQ = {
+        exchange: "OKX",
+        pair: "LINK-USDT-SWAP",
+        event: "LIQUIDATION",
+        side: "LONG",
+        quantity: 176,
+        price: 13.516,
+        timestamp: "2024-05-02T13:30:50Z",
+      };
+      const SAMPLE_BINANCE_LIQ = {
+        exchange: "BINANCE",
+        pair: "BTCUSDT-PERP",
+        event: "LIQUIDATION",
+        side: "LONG",
+        quantity: 3,
+        price: 61000.5,
+        timestamp: "2024-05-02T13:31:12Z",
+      };
+
+      /* -------------------- 工具函数 -------------------- */
+      function classNames(...a) { return a.filter(Boolean).join(" "); }
+      async function sha256Hex(text) {
+        const enc = new TextEncoder();
+        const data = enc.encode(text);
+        const digest = await crypto.subtle.digest("SHA-256", data);
+        return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
+      }
+      const QUOTE_TTL_MIN = 10;
+      const LEVERAGE_MAX = 100;
+      const MAX_APPEAL_FILE_SIZE = 5 * 1024 * 1024;
+      function calcPremium(principal, leverage) {
+        const baseRatio = 0.05 + (leverage - 20) * 0.001 + (principal / 500) * 0.02;
+        const premiumRatio = Math.min(0.15, baseRatio);
+        return { premium: +(premiumRatio * principal).toFixed(2), premiumRatio: +premiumRatio.toFixed(4) };
+      }
+      function calcPayoutRatio(principal, leverage) {
+        const baseRatio = 0.25 + (leverage - 50) * 0.005 - (principal / 500) * 0.1;
+        return Math.min(0.5, Math.max(0.1, baseRatio));
+      }
+      function calcPayout(principal, leverage) {
+        const ratio = calcPayoutRatio(principal, leverage);
+        return { payout: +(ratio * principal).toFixed(2), payoutRatio: +ratio.toFixed(4) };
+      }
+      function copyToClipboard(text) {
+        if (typeof navigator !== "undefined" && navigator.clipboard) {
+          navigator.clipboard.writeText(text).catch(err => console.error('Copy failed:', err));
+        }
+      }
+
+      /* -------------------- 主要功能组件 -------------------- */
+      function PLFlow() {
+        const localeContext = useLocale();
+        const locale = localeContext.locale;
+        const langKey = locale === "en-US" ? "en" : "zh";
+        const t = DICT[langKey];
+        const [active, setActive] = useState("quote");
+
+        /* -------------------- 状态管理 -------------------- */
+        const [principal, setPrincipal] = useState(500);
+        const [leverage, setLeverage] = useState(10);
+        const [quote, setQuote] = useState(null);
+        const [quoteErr, setQuoteErr] = useState("");
+        const [sample, setSample] = useState("none");
+        const [jsonText, setJsonText] = useState("");
+        const [claimRes, setClaimRes] = useState(null);
+        const [orderId, setOrderId] = useState("");
+        const [appealNote, setAppealNote] = useState("");
+        const [appealContact, setAppealContact] = useState("");
+        const [appealStatus, setAppealStatus] = useState("");
+        const [appealTicket, setAppealTicket] = useState("");
+        const [manualAppealReason, setManualAppealReason] = useState("");
+        const [manualAppealContact, setManualAppealContact] = useState("");
+        const [manualAppealStatus, setManualAppealStatus] = useState("");
+        const [manualAppealTicket, setManualAppealTicket] = useState("");
+        const [manualAppealScreenshotName, setManualAppealScreenshotName] = useState("");
+        const [manualAppealScreenshotData, setManualAppealScreenshotData] = useState("");
+
+        const [root, setRoot] = useState("");
+        const [tx, setTx] = useState("");
+        const [status, setStatus] = useState([
+          {
+            when: "2025-10-11 05:30:57 UTC",
+            root: "0xb815fb0e7b1a244c84e366fe6203adb963122ef7379d7ad9b2411240639900ff",
+            tx: "0x27fd052c9450674457ad5f7f560fc2ea8fbe78534653b70f409a9d633720853e",
+            order: "wjz5788.com demo"
+          }
+        ]);
+        const [attachedProof, setAttachedProof] = useState(() => {
+          if (typeof window === "undefined") return null;
+          try {
+            const raw = window.localStorage?.getItem("liqpass.latestProof");
+            return raw ? JSON.parse(raw) : null;
+          } catch (_) {
+            return null;
+          }
+        });
+        const isAdmin = ADMIN_ENABLED;
+
+        /* -------------------- 副作用 -------------------- */
+        useEffect(() => {
+          if (!isAdmin && active === "attest") {
+            setActive("quote");
+          }
+        }, [isAdmin, active]);
+        useEffect(() => {
+          if (typeof window === "undefined") return;
+          const sync = () => {
+            try {
+              const raw = window.localStorage?.getItem("liqpass.latestProof");
+              setAttachedProof(raw ? JSON.parse(raw) : null);
+            } catch (_) {}
+          };
+          sync();
+          const onUpdate = () => sync();
+          window.addEventListener("storage", onUpdate);
+          window.addEventListener("liqpass:proof-updated", onUpdate);
+          return () => {
+            window.removeEventListener("storage", onUpdate);
+            window.removeEventListener("liqpass:proof-updated", onUpdate);
+          };
+        }, []);
+
+        const PRICING_VERSION = "pl-formula-v1";
+        useEffect(() => {
+          if (manualAppealStatus === "missing" && manualAppealReason.trim()) {
+            setManualAppealStatus("");
+          }
+        }, [manualAppealStatus, manualAppealReason]);
+
+        /* -------------------- 核心功能处理函数 -------------------- */
+        const computeQuote = useCallback((P, L) => {
+          const { premium, premiumRatio } = calcPremium(P, L);
+          const { payout, payoutRatio } = calcPayout(P, L);
+          const quoteId = `Q-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          const validTs = Date.now() + QUOTE_TTL_MIN * 60 * 1000;
+          const valid = new Date(validTs).toLocaleString();
+          return { payout, premium, premiumRatio, payoutRatio, quoteId, valid, validTs, pricingVersion: PRICING_VERSION };
+        }, []);
+
+        const handleGetQuote = useCallback(() => {
+          const P = Number(principal), L = Number(leverage);
+          if (!Number.isFinite(P) || !Number.isFinite(L) || P < 50 || P > 500 || L < 1 || L > LEVERAGE_MAX) {
+            setQuote(null);
+            setQuoteErr(t.err_range);
+            return;
+          }
+          setQuoteErr("");
+          const q = computeQuote(P, L);
+          setQuote(q);
+        }, [principal, leverage, computeQuote, t.err_range]);
+
+        const currentOrderRef = orderId || quote?.quoteId || "";
+        const proofMatchState = attachedProof
+          ? (!attachedProof.orderId || !currentOrderRef || attachedProof.orderId === currentOrderRef ? "match" : "mismatch")
+          : "none";
+
+        const buildEvidenceSummary = useCallback(() => {
+          const evidence =
+            sample === "okx_liq" ? SAMPLE_OKX_LIQ : sample === "binance_liq" ? SAMPLE_BINANCE_LIQ
+              : (() => { try { return JSON.parse(jsonText || "{}"); } catch { return {}; } })();
+          const requestedOrderId = currentOrderRef || `DEMO-${Date.now()}`;
+          const summary = {
+            order_id: requestedOrderId,
+            principal: Number(principal || 0),
+            leverage: Number(leverage || 0),
+            payout: quote?.payout ?? calcPayout(Number(principal||0), Number(leverage||0)).payout,
+            premium: quote?.premium ?? calcPremium(Number(principal||0), Number(leverage||0)).premium,
+            pricing_version: PRICING_VERSION,
+            evidence,
+          };
+          if (attachedProof) {
+            summary.proof_bundle = attachedProof;
+          }
+          return summary;
+        }, [sample, jsonText, quote, principal, leverage, attachedProof, currentOrderRef]);
+
+        const handleValidate = useCallback(async () => {
+          const summary = buildEvidenceSummary();
+          const input = JSON.stringify(summary);
+          const ok = summary.evidence?.event === "LIQUIDATION";
+          const proofBundle = attachedProof && (!attachedProof.orderId || attachedProof.orderId === summary.order_id) ? attachedProof : null;
+          const proofRoot = proofBundle?.root ?? await sha256Hex(input);
+          setClaimRes({ res: { ok, proof: proofRoot, proofBundle }, summary });
+          setRoot(proofRoot);
+          setAppealNote("");
+          setAppealContact("");
+          setAppealStatus("");
+          setAppealTicket("");
+        }, [buildEvidenceSummary, attachedProof]);
+
+        const handleBuildRoot = useCallback(async () => {
+          if (attachedProof?.root) {
+            setRoot(attachedProof.root);
+            return;
+          }
+          if (claimRes?.res && !claimRes.res.ok) return;
+          if (!claimRes) {
+            const summary = buildEvidenceSummary();
+            const proof = await sha256Hex(JSON.stringify(summary));
+            setClaimRes({ res: { ok: true, proof }, summary });
+            setRoot(proof);
+            return;
+          }
+          const leaf = JSON.stringify(claimRes.summary);
+          const newRoot = await sha256Hex(leaf + Date.now());
+          setRoot(newRoot);
+        }, [attachedProof, claimRes, buildEvidenceSummary]);
+
+        const handleAttest = useCallback(async () => {
+          if (claimRes?.res && !claimRes.res.ok) return;
+          if (!root) return;
+          const mockTx = await sha256Hex(root + Math.random());
+          setTx(mockTx);
+          setStatus((prev) => [
+            { when: new Date().toISOString(), root, tx: mockTx, order: claimRes?.summary?.order_id ?? "demo-order" },
+            ...prev.slice(0, 4),
+          ]);
+        }, [claimRes, root]);
+
+        const handleSubmitAppeal = useCallback(() => {
+          if (!appealNote.trim()) {
+            setAppealStatus("missing");
+            return;
+          }
+          setAppealStatus("submitting");
+          setTimeout(() => {
+            const ticket = `AP-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            setAppealTicket(ticket);
+            setAppealStatus("submitted");
+          }, 1000);
+        }, [appealNote]);
+
+        const handleManualAppealSubmit = useCallback(() => {
+          if (!manualAppealReason.trim()) {
+            setManualAppealStatus("missing");
+            return;
+          }
+          setManualAppealStatus("submitting");
+          setTimeout(() => {
+            const ticket = `AP-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            setManualAppealTicket(ticket);
+            setManualAppealStatus("submitted");
+          }, 1000);
+        }, [manualAppealReason]);
+
+        const handleManualAppealFile = useCallback((file) => {
+          if (!file) return;
+          if (file.size > MAX_APPEAL_FILE_SIZE) {
+            alert(t.appeal_file_too_large);
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            setManualAppealScreenshotData(e.target.result);
+            setManualAppealScreenshotName(file.name);
+          };
+          reader.onerror = () => {
+            alert(t.appeal_file_error);
+          };
+          reader.readAsDataURL(file);
+        }, [t]);
+
+        const handleManualAppealRemoveFile = useCallback(() => {
+          setManualAppealScreenshotData("");
+          setManualAppealScreenshotName("");
+        }, []);
+
+        const copyStatusValue = useCallback((text) => {
+          copyToClipboard(text);
+        }, []);
+
+        const renderAppealFeedback = (status, ticket) => {
+          if (!status || status === "missing" || status === "submitting") return null;
+          return React.createElement("div", { className: "mt-4 rounded-2xl bg-white/5 p-4" },
+            React.createElement("p", { className: "text-sm" }, t.appeal_submitted),
+            React.createElement("p", { className: "mt-1 text-sm text-white/60" }, `${t.appeal_reference}: ${ticket}`)
+          );
+        };
+
+        /* -------------------- UI 组件 -------------------- */
+        function Stat({ label, value }) {
+          return React.createElement("div", { className: "rounded-2xl border border-white/10 bg-white/5 p-4" },
+            React.createElement("p", { className: "text-sm text-white/60" }, label),
+            React.createElement("p", { className: "mt-1 text-lg font-semibold" }, value)
+          );
+        }
+
+        function StepCard({ idx, title, body, icon: Icon }) {
+          return React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6" },
+            React.createElement("div", { className: "flex items-center gap-3" },
+              React.createElement("div", { className: "rounded-full border border-indigo-500/30 bg-indigo-500/10 p-2 text-indigo-300" },
+                React.createElement("li", null, "**Quote**: User enters principal amount and leverage ratio, system calculates premium and payout amount, generates quote ID."),
+                React.createElement("li", null, "**Purchase**: User pays premium to secure liquidation protection."),
+                React.createElement("li", null, "**Trade**: User conducts leveraged trading on the exchange."),
+                React.createElement("li", null, "**Trigger**: If liquidation occurs, user submits claim on the platform."),
+                React.createElement("li", null, "**Validation**: System automatically verifies liquidation evidence and trade authenticity."),
+                React.createElement("li", null, "**Payout**: After successful validation, automatically calculate and distribute payout."),
+                React.createElement("li", null, "**Appeal**: If dissatisfied with validation result, user can submit manual appeal.")
+              )
+            )
+          ),
+          
+          React.createElement(HelpSection, { title: t.data_privacy, id: "privacy" },
+            React.createElement("div", { className: "space-y-4" },
+              React.createElement("p", null, "我们高度重视用户数据隐私保护，采取以下措施确保数据安全："),
+              React.createElement("ul", null,
+                React.createElement("li", null, "**本地处理**: 敏感交易数据在用户本地进行哈希处理，不上传原始数据。"),
+                React.createElement("li", null, "**最小化收集**: 仅收集必要的交易数据用于校验和理赔，不收集无关个人信息。"),
+                React.createElement("li", null, "**加密存储**: 所有数据传输和存储均采用高强度加密技术。"),
+                React.createElement("li", null, "**用户控制**: 用户对自己的数据拥有完全控制权，可以随时查看和删除个人数据。"),
+                React.createElement("li", null, "**区块链存证**: 仅将交易哈希等不可逆向推导的信息上链，保护原始数据隐私。")
+              ),
+              React.createElement("p", null, "We prioritize user data privacy with these protective measures:"),
+              React.createElement("ul", null,
+                React.createElement("li", null, "**Local Processing**: Sensitive transaction data is hashed locally before submission, with no raw data uploaded."),
+                React.createElement("li", null, "**Minimal Collection**: Only necessary transaction data is collected for validation and claims processing."),
+                React.createElement("li", null, "**Encrypted Storage**: All data transmission and storage use high-strength encryption."),
+                React.createElement("li", null, "**User Control**: Users maintain full control over their data with options to view and delete information."),
+                React.createElement("li", null, "**Blockchain Attestation**: Only non-reversible information like transaction hashes are recorded on-chain, protecting original data privacy.")
+              )
+            )
+          ),
+          
+          React.createElement(HelpSection, { title: t.pricing, id: "pricing" },
+            React.createElement("div", { className: "space-y-4" },
+              React.createElement("p", null, "定价与风控说明："),
+              React.createElement("ul", null,
+                React.createElement("li", null, "**基础费率**: 根据杠杆倍数和本金大小动态调整基础费率。杠杆越高，费率越高；本金越大，费率相对越低。"),
+                React.createElement("li", null, "**赔付比例**: 默认赔付比例为爆仓损失的 10%-50%，根据杠杆倍数和本金大小动态调整。"),
+                React.createElement("li", null, "**风控措施**: 对异常交易行为进行监控，包括频繁爆仓、操纵市场等行为。"),
+                React.createElement("li", null, "**限额管理**: 每个用户在一定时间内的最高赔付额度有限制，防止过度投保。"),
+                React.createElement("li", null, "**实时调整**: 系统会根据市场波动、用户行为等因素实时调整定价策略。")
+              ),
+              React.createElement("p", null, "Pricing and risk control explanation:"),
+              React.createElement("ul", null,
+                React.createElement("li", null, "**Base Rate**: Dynamically adjusted based on leverage and principal amount. Higher leverage results in higher rates; larger principal amounts receive relatively lower rates."),
+                React.createElement("li", null, "**Payout Ratio**: Default payout ratio is 10%-50% of liquidation loss, dynamically adjusted based on leverage and principal."),
+                React.createElement("li", null, "**Risk Monitoring**: System monitors for abnormal trading behaviors including frequent liquidations and market manipulation."),
+                React.createElement("li", null, "**Limit Management**: Each user has a maximum payout limit within a specified period to prevent over-insurance."),
+                React.createElement("li", null, "**Real-time Adjustment**: Pricing strategies are adjusted in real-time based on market volatility and user behavior.")
+              )
+            )
+          ),
+          
+          React.createElement(HelpSection, { title: t.contact, id: "contact" },
+            React.createElement("div", { className: "space-y-4" },
+              React.createElement("p", null, "如有任何问题或建议，请通过以下方式联系我们："),
+              React.createElement("ul", null,
+                React.createElement("li", null, "**官方网站**: https://wjz5788.com"),
+                React.createElement("li", null, "**GitHub**: https://github.com/wjz5788/leverageguard-attestor"),
+                React.createElement("li", null, "**Twitter**: @LiqPassOfficial"),
+                React.createElement("li", null, "**Email**: support@wjz5788.com")
+              ),
+              React.createElement("p", null, "For questions or suggestions, please contact us through:")
+            )
+          )
+        );
+
+        const tabItems = [
+          { key: "quote", label: t.tab_quote, icon: Calculator },
+          { key: "claim", label: t.tab_claim, icon: Upload },
+          { key: "attest", label: t.tab_attest, icon: Hash, adminOnly: true },
+          { key: "status", label: t.tab_status, icon: ListChecks },
+          { key: "appeal", label: t.tab_appeal, icon: HelpCircle },
+          { key: "help", label: t.tab_help, icon: BookOpen }
+        ].filter(tab => !tab.adminOnly || isAdmin);
+
+        /* -------------------- 主应用渲染 -------------------- */
+        const renderContent = () => {
+          switch (active) {
+            case "quote": return quoteView;
+            case "claim": return claimView;
+            case "attest": return attestView;
+            case "status": return statusView;
+            case "appeal": return appealView;
+            case "help": return helpView;
+            default: return quoteView;
+          }
+        };
+
+        return React.createElement("div", { className: "w-full max-w-6xl mx-auto px-4 py-8" },
+          React.createElement("header", { className: "mb-8 text-center" },
+            React.createElement("h1", { className: "text-4xl font-bold tracking-tight text-white mb-2" }, t.brand),
+            React.createElement("div", { className: "flex flex-wrap items-center justify-center gap-2 mb-4" },
+              React.createElement("span", { className: "rounded-full bg-indigo-500/20 px-3 py-1 text-xs font-medium text-indigo-200" }, t.pill_okx),
+              React.createElement("span", { className: "rounded-full bg-blue-500/20 px-3 py-1 text-xs font-medium text-blue-200" }, t.pill_base)
+            ),
+            React.createElement("p", { className: "text-lg text-white/60" }, t.hero_title),
+            React.createElement("p", { className: "text-sm text-white/40 max-w-3xl mx-auto mt-2" }, t.hero_sub)
+          ),
+          
+          React.createElement("div", { className: "mb-6 overflow-x-auto" },
+            React.createElement("nav", { className: "flex space-x-2 px-1" },
+              tabItems.map((tab) => {
+                const isActive = active === tab.key;
+                const Icon = tab.icon;
+                return React.createElement("button", {
+                  key: tab.key,
+                  onClick: () => setActive(tab.key),
+                  className: classNames(
+                    "rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap flex items-center gap-2 transition-all",
+                    isActive
+                      ? "bg-white/10 text-white shadow-lg shadow-white/5"
+                      : "bg-white/5 text-white/70 hover:bg-white/8 hover:text-white/90"
+                  )
+                },
+                  React.createElement(Icon, { size: 16 }),
+                  tab.label
+                );
+              })
+            )
+          ),
+          
+          renderContent(),
+          
+          React.createElement("footer", { className: "mt-10 pt-6 border-t border-white/10 text-center text-xs text-white/40" },
+            React.createElement("p", null, t.disclaimer)
+          )
+        );
+      }
+
+      /* -------------------- 主应用 -------------------- */
+      function App() {
+        const initialLocale = detectInitialLocale() || "zh-CN";
+        const [locale, setLocale] = useState(initialLocale);
+        const langKey = locale === "en-US" ? "en" : "zh";
+
+        React.useEffect(() => {
+          try {
+            window.localStorage?.setItem("liqpass.locale", locale);
+          } catch (_) {}
+        }, [locale]);
+
+        const t = (zh, en, vars = {}) => {
+          const template = langKey === "en" ? en : zh;
+          return formatMessage(template, vars);
+        };
+
+        return React.createElement(LocaleContext.Provider, { value: { locale, setLocale, tr: t } },
+          React.createElement("div", { className: "min-h-screen bg-gradient-to-b from-slate-950 to-slate-900" },
+            React.createElement("div", { className: "absolute top-4 right-4 z-10" },
+              React.createElement("select", {
+                className: "rounded-lg border border-white/10 bg-black/30 px-3 py-1 text-sm text-white focus:border-indigo-400 focus:outline-none",
+                value: locale,
+                onChange: (e) => setLocale(e.target.value)
+              },
+                SUPPORTED_LOCALES.map((loc) => React.createElement("option", { key: loc, value: loc }, LANGUAGE_LABELS[loc]))
+              )
+            ),
+            React.createElement(PLFlow)
+          )
+        );
+      }
+
+      /* -------------------- 渲染 -------------------- */
+      if (typeof window !== "undefined") {
+        const rootElement = document.getElementById("root");
+        if (rootElement) {
+          createRoot(rootElement).render(React.createElement(App));
+        }
+      }
+    </script>
+  </body>
+</html>Icon, { size: 20 })
+              ),
+              React.createElement("div", { className: "text-lg font-semibold" }, title)
+            ),
+            React.createElement("p", { className: "mt-3 text-sm text-white/70 leading-relaxed" }, body)
+          );
+        }
+
+        const highlightIcons = [Shield, CheckCircle2, Hash];
+
+        /* -------------------- 视图定义 -------------------- */
+        const quoteView = React.createElement("div", { className: "space-y-6" },
+          React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4" },
+            React.createElement("h3", { className: "text-lg font-semibold" }, t.quote_title),
+            React.createElement("div", { className: "grid gap-4 sm:grid-cols-2" },
+              React.createElement("div", { className: "space-y-2" },
+                React.createElement("label", { className: "block text-sm text-white/70" }, t.principal),
+                React.createElement("input", {
+                  className: "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none",
+                  type: "number",
+                  min: 50,
+                  max: 500,
+                  value: principal,
+                  onChange: (e) => setPrincipal(e.target.value)
+                })
+              ),
+              React.createElement("div", { className: "space-y-2" },
+                React.createElement("label", { className: "block text-sm text-white/70" }, t.leverage),
+                React.createElement("input", {
+                  className: "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none",
+                  type: "number",
+                  min: 1,
+                  max: LEVERAGE_MAX,
+                  value: leverage,
+                  onChange: (e) => setLeverage(e.target.value)
+                })
+              )
+            ),
+            React.createElement("button", {
+              type: "button",
+              onClick: handleGetQuote,
+              className: "w-full rounded-full bg-indigo-500 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-700/30 transition hover:bg-indigo-400"
+            }, t.btn_get_quote),
+            quoteErr ? React.createElement("p", { className: "text-sm text-rose-300" }, quoteErr) : null,
+            quote ? React.createElement("div", { className: "space-y-4" },
+              React.createElement("div", { className: "rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/80" },
+                React.createElement("div", { className: "grid gap-2 sm:grid-cols-2" },
+                  React.createElement("div", null, `${t.quote_id}: ${quote.quoteId}`),
+                  React.createElement("div", null, `${t.valid_until}: ${quote.valid}`),
+                  React.createElement("div", null, `${t.pricing_ver}: ${quote.pricingVersion}`)
+                )
+              ),
+              React.createElement("div", { className: "grid gap-3 sm:grid-cols-2" },
+                React.createElement(Stat, { label: t.premium, value: `${quote.premium.toFixed(2)} USDT` }),
+                React.createElement(Stat, { label: t.payout, value: `${quote.payout.toFixed(2)} USDT` }),
+                React.createElement(Stat, { label: t.premium_ratio, value: `${(quote.premiumRatio * 100).toFixed(2)}%` }),
+                React.createElement(Stat, { label: t.payout_ratio, value: `${(quote.payoutRatio * 100).toFixed(2)}%` })
+              )
+            ) : null
+          )
+        );
+
+        const claimView = React.createElement("div", { className: "space-y-6" },
+          React.createElement("div", { className: "grid gap-6 lg:grid-cols-[1.2fr,0.8fr]" },
+            React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4" },
+              React.createElement("h3", { className: "text-lg font-semibold" }, t.claim_title),
+              React.createElement("div", { className: "space-y-4 text-sm" },
+                React.createElement("label", { className: "block space-y-2 text-sm text-white/70" },
+                  React.createElement("span", null, t.choose_sample),
+                  React.createElement("select", {
+                    className: "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 focus:border-indigo-400 focus:outline-none",
+                    value: sample,
+                    onChange: (e) => setSample(e.target.value)
+                  },
+                    React.createElement("option", { value: "none" }, t.sample_none),
+                    React.createElement("option", { value: "okx_liq" }, t.sample_okx_liq),
+                    React.createElement("option", { value: "binance_liq" }, t.sample_binance_liq)
+                  )
+                ),
+                React.createElement("label", { className: "block space-y-2 text-sm text-white/70" },
+                  React.createElement("span", null, t.order_id_label),
+                  React.createElement("input", {
+                    className: "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none",
+                    value: orderId,
+                    onChange: (e) => setOrderId(e.target.value),
+                    placeholder: t.order_id_placeholder
+                  })
+                )
+              ),
+              proofMatchState === "match"
+                ? React.createElement("div", { className: "rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-xs text-emerald-200" },
+                    locale === "en-US"
+                      ? `Detected proof.json (order ${attachedProof?.orderId || "N/A"}) — it will be auto-attached.`
+                      : `已载入 proof.json（订单 ${attachedProof?.orderId || "未填写"}），提交时将自动附带。`
+                  )
+                : proofMatchState === "mismatch"
+                  ? React.createElement("div", { className: "rounded-2xl border border-amber-400/40 bg-amber-500/10 p-3 text-xs text-amber-200" },
+                      locale === "en-US"
+                        ? `proof.json belongs to order ${attachedProof?.orderId}; current order is ${currentOrderRef || "N/A"}. Please align before submitting.`
+                        : `当前 proof.json 关联订单 ${attachedProof?.orderId || "未知"}，与表单订单 ${currentOrderRef || "未填写"} 不一致，请对齐后提交。`
+                    )
+                  : React.createElement("div", { className: "rounded-2xl border border-white/10 border-dashed bg-black/20 p-3 text-xs text-white/60" },
+                      locale === "en-US"
+                        ? "No proof.json detected yet. The form will generate a temporary proof automatically."
+                        : "尚未检测到 proof.json；提交时将自动生成临时证明。"
+                    ),
+              React.createElement("div", { className: "flex flex-wrap items-center gap-3" },
+                React.createElement("button", {
+                  type: "button",
+                  onClick: handleValidate,
+                  className: "rounded-full bg-emerald-500 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-700/30 transition hover:bg-emerald-400"
+                }, t.btn_validate),
+                claimRes && claimRes.res && !claimRes.res.ok
+                  ? React.createElement("span", { className: "text-xs text-amber-300" }, locale === "en-US" ? "Auto-check failed — please submit an appeal." : "自动校验未通过，请提交申诉。")
+                  : null
+              ),
+              claimRes ? React.createElement("div", {
+                className: classNames(
+                  "rounded-2xl border p-4 text-sm",
+                  claimRes.res.ok ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-200" : "border-rose-400/60 bg-rose-400/10 text-rose-200"
+                )
+              },
+                React.createElement("div", { className: "font-medium" }, t.validation_result),
+                React.createElement("div", { className: "mt-1 text-sm" }, claimRes.res.ok ? t.pass : t.fail),
+                React.createElement("div", { className: "mt-2 text-xs text-white/90 break-all" }, `${locale === "en-US" ? "root" : "根"}: ${claimRes.res.proof}`),
+                claimRes.res.proofBundle
+                  ? React.createElement("div", { className: "mt-2 space-y-1 rounded-xl bg-black/20 p-3 text-xs text-white/70" },
+                      React.createElement("p", { className: "break-all" }, `leafHash: ${claimRes.res.proofBundle.leafHash}`),
+                      React.createElement("p", { className: "break-all" }, `fileSha256: ${claimRes.res.proofBundle.fileSha256}`),
+                      React.createElement("p", null, `${locale === "en-US" ? "proof length" : "Merkle 节点数"}: ${claimRes.res.proofBundle.merkleProof?.length ?? 0}`)
+                    )
+                  : null,
+                React.createElement("div", { className: "mt-2 max-h-48 overflow-auto rounded-xl bg-black/30 p-3 text-xs text-white/80" },
+                  React.createElement("pre", { className: "whitespace-pre-wrap break-all" }, JSON.stringify(claimRes.summary, null, 2))
+                )
+              ) : null
+            ),
+            React.createElement("div", { className: "space-y-4" },
+              React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4" },
+                React.createElement("h4", { className: "text-sm font-semibold uppercase tracking-[0.2em] text-white/60" }, locale === "en-US" ? "Claim Highlights" : "申赔要点"),
+                t.claim_highlights.map((item, idx) =>
+                  React.createElement("div", { key: idx, className: "rounded-2xl border border-white/10 bg-black/30 p-4" },
+                    React.createElement("div", { className: "flex items-center gap-3" },
+                      React.createElement(highlightIcons[idx % highlightIcons.length], { size: 18, className: "text-white/70" }),
+                      React.createElement("div", { className: "font-semibold text-white" }, item.title)
+                    ),
+                    React.createElement("p", { className: "mt-2 text-sm text-white/70 leading-relaxed" }, item.desc)
+                  )
+                )
+              )
+            )
+          )
+        );
+
+        const appealView = React.createElement("div", { className: "space-y-6" },
+          React.createElement("div", { className: "grid gap-6 lg:grid-cols-2" },
+            React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4" },
+              React.createElement("h3", { className: "text-lg font-semibold" }, t.appeal_title),
+              React.createElement("p", { className: "text-sm text-white/70" }, t.appeal_intro),
+              React.createElement("label", { className: "block space-y-2 text-sm text-white/70" },
+                React.createElement("span", null, t.appeal_reason_label),
+                React.createElement("textarea", {
+                  className: "min-h-[120px] w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none",
+                  value: appealNote,
+                  onChange: (e) => setAppealNote(e.target.value),
+                  placeholder: t.appeal_reason_placeholder
+                })
+              ),
+              React.createElement("label", { className: "block space-y-2 text-sm text-white/70" },
+                React.createElement("span", null, t.appeal_contact_label),
+                React.createElement("input", {
+                  className: "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none",
+                  value: appealContact,
+                  onChange: (e) => setAppealContact(e.target.value),
+                  placeholder: t.appeal_contact_placeholder
+                })
+              ),
+              React.createElement("div", { className: "flex items-center gap-3" },
+                React.createElement("button", {
+                  type: "button",
+                  onClick: handleSubmitAppeal,
+                  className: "rounded-full bg-indigo-500 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-700/30 transition hover:bg-indigo-400",
+                  disabled: appealStatus === "submitting"
+                }, t.btn_submit_appeal),
+                appealStatus === "submitting"
+                  ? React.createElement("span", { className: "text-xs text-white/70" }, locale === "en-US" ? "Submitting..." : "提交中...")
+                  : null
+              ),
+              renderAppealFeedback(appealStatus, appealTicket)
+            ),
+            React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4" },
+              React.createElement("h3", { className: "text-lg font-semibold" }, t.appeal_module_title),
+              React.createElement("p", { className: "text-sm text-white/70" }, t.appeal_module_intro),
+              React.createElement("label", { className: "block space-y-2 text-sm text-white/70" },
+                React.createElement("span", null, t.appeal_reason_label),
+                React.createElement("textarea", {
+                  className: "min-h-[120px] w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none",
+                  value: manualAppealReason,
+                  onChange: (e) => setManualAppealReason(e.target.value),
+                  placeholder: t.appeal_reason_placeholder
+                })
+              ),
+              React.createElement("label", { className: "block space-y-2 text-sm text-white/70" },
+                React.createElement("span", null, t.appeal_contact_label),
+                React.createElement("input", {
+                  className: "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-indigo-400 focus:outline-none",
+                  value: manualAppealContact,
+                  onChange: (e) => setManualAppealContact(e.target.value),
+                  placeholder: t.appeal_contact_placeholder
+                })
+              ),
+              React.createElement("label", { className: "block space-y-2 text-sm text-white/70" },
+                React.createElement("span", null, t.appeal_upload_label),
+                React.createElement("input", {
+                  type: "file",
+                  accept: "image/png,image/jpeg,image/webp",
+                  onChange: (e) => handleManualAppealFile(e.target.files?.[0] ?? null),
+                  className: "w-full text-xs text-white/70"
+                }),
+                React.createElement("p", { className: "text-xs text-white/40" }, t.appeal_upload_helper),
+                manualAppealScreenshotName
+                  ? React.createElement("div", { className: "flex items-center gap-3 text-xs text-white/60" },
+                      React.createElement("span", null, `${t.appeal_upload_selected}：${manualAppealScreenshotName}`),
+                      React.createElement("button", { type: "button", className: "rounded-full border border-white/20 px-2 py-1 text-xs text-white hover:border-indigo-300/60", onClick: handleManualAppealRemoveFile }, t.appeal_upload_remove)
+                    )
+                  : null
+              ),
+              React.createElement("div", { className: "flex items-center gap-3" },
+                React.createElement("button", {
+                  type: "button",
+                  onClick: handleManualAppealSubmit,
+                  className: "rounded-full bg-emerald-500 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-700/30 transition hover:bg-emerald-400",
+                  disabled: manualAppealStatus === "submitting"
+                }, t.btn_submit_appeal),
+                manualAppealStatus === "submitting"
+                  ? React.createElement("span", { className: "text-xs text-white/70" }, locale === "en-US" ? "Submitting..." : "提交中...")
+                  : null
+              ),
+              renderAppealFeedback(manualAppealStatus, manualAppealTicket)
+            )
+          )
+        );
+
+        const attestView = React.createElement("div", { className: "space-y-6" },
+          React.createElement("div", { className: "grid gap-6 lg:grid-cols-[1.1fr,0.9fr]" },
+            React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4" },
+              React.createElement("h3", { className: "text-lg font-semibold" }, t.attest_title),
+              React.createElement("div", { className: "flex flex-wrap items-center gap-3" },
+                React.createElement("button", {
+                  type: "button",
+                  onClick: handleBuildRoot,
+                  className: "rounded-full bg-indigo-500 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-700/30 transition hover:bg-indigo-400"
+                }, t.btn_build_root),
+                claimRes && claimRes.res && !claimRes.res.ok
+                  ? React.createElement("span", { className: "text-xs text-amber-300" }, locale === "en-US" ? "Fix validation issues before building a root." : "请先修正校验结果，再生成 Root。")
+                  : null
+              ),
+              root
+                ? React.createElement("div", { className: "rounded-2xl border border-white/10 bg-black/30 p-4 text-xs text-white/80 break-all" }, `${t.root}：${root}`)
+                : React.createElement("p", { className: "text-sm text-white/70" }, locale === "en-US" ? "Validate the claim first to prepare a Merkle leaf." : "请先完成证据校验，生成 Merkle leaf。"),
+              React.createElement("div", { className: "flex flex-wrap items-center gap-3" },
+                React.createElement("button", {
+                  type: "button",
+                  onClick: handleAttest,
+                  className: "rounded-full bg-emerald-500 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-700/30 transition hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed",
+                  disabled: !root || (claimRes && claimRes.res && !claimRes.res.ok)
+                }, t.btn_attest),
+                tx
+                  ? React.createElement("span", { className: "text-xs text-white/70 break-all" }, `${t.txhash}：${tx}`)
+                  : null
+              )
+            ),
+            React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4" },
+              React.createElement("h3", { className: "text-lg font-semibold" }, t.validation_result),
+              claimRes
+                ? React.createElement("div", { className: "max-h-72 overflow-auto rounded-2xl bg-black/30 p-4 text-xs text-white/80" },
+                    React.createElement("pre", { className: "whitespace-pre-wrap break-all" }, JSON.stringify(claimRes.summary, null, 2))
+                  )
+                : React.createElement("p", { className: "text-sm text-white/70" }, locale === "en-US" ? "Validate liquidation evidence to preview the proof payload." : "完成证据校验后，可预览证明 payload。"),
+              status.length
+                ? React.createElement("div", { className: "space-y-2 text-xs text-white/60" },
+                    React.createElement("p", null, locale === "en-US" ? "Latest Merkle root also appears under Status." : "最新 Root 记录可在\"状态追踪\"卡片查看。")
+                  )
+                : null
+            )
+          )
+        );
+
+        const statusView = React.createElement("div", { className: "space-y-6" },
+          React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4" },
+            React.createElement("h3", { className: "text-lg font-semibold" }, t.status_title),
+            status.length
+              ? status.map((item, idx) =>
+                  React.createElement("div", { key: idx, className: "rounded-2xl border border-white/10 bg-black/30 p-4 space-y-1 text-xs text-white/70" },
+                    React.createElement("div", { className: "text-sm font-semibold text-white" }, item.order),
+                    React.createElement("p", null, `${locale === "en-US" ? "Timestamp" : "时间"}：${item.when}`),
+                    React.createElement("p", { className: "break-all" }, `root：${item.root}`),
+                    React.createElement("p", { className: "break-all" }, `tx：${item.tx || "—"}`),
+                    React.createElement("div", { className: "flex flex-wrap gap-2 pt-2" },
+                      React.createElement("button", {
+                        className: "rounded-full border border-white/15 px-3 py-1 text-xs hover:border-indigo-300/70",
+                        onClick: () => copyStatusValue(item.root)
+                      }, locale === "en-US" ? "Copy root" : "复制 Root"),
+                      item.tx ? React.createElement("button", {
+                        className: "rounded-full border border-white/15 px-3 py-1 text-xs hover:border-indigo-300/70",
+                        onClick: () => copyStatusValue(item.tx)
+                      }, locale === "en-US" ? "Copy tx" : "复制 Tx") : null,
+                      item.tx ? React.createElement("a", {
+                        className: "rounded-full bg-indigo-500/20 px-3 py-1 text-xs text-indigo-200 hover:bg-indigo-500/40",
+                        target: "_blank",
+                        rel: "noreferrer",
+                        href: `https://basescan.org/tx/${item.tx}`
+                      }, "Basescan") : null
+                    )
+                  )
+                : React.createElement("p", { className: "text-sm text-white/70" }, locale === "en-US" ? "No on-chain attestations yet." : "暂未有上链存证记录。")
+          ),
+          React.createElement("div", { className: "space-y-4" },
+            React.createElement("h3", { className: "text-sm font-semibold uppercase tracking-[0.3em] text-white/60" }, t.steps_title),
+            React.createElement("div", { className: "grid gap-4 md:grid-cols-2 xl:grid-cols-4" },
+              React.createElement(StepCard, { idx: 1, title: t.s1.title, body: t.s1.body, icon: Calculator }),
+              React.createElement(StepCard, { idx: 2, title: t.s2.title, body: t.s2.body, icon: Upload }),
+              React.createElement(StepCard, { idx: 3, title: t.s3.title, body: t.s3.body, icon: Hash }),
+              React.createElement(StepCard, { idx: 4, title: t.s4.title, body: t.s4.body, icon: ListChecks })
+            )
+          )
+        );
+
+        /* -------------------- 帮助文档视图 -------------------- */
+        function HelpSection({ title, id, children }) {
+          const [isOpen, setIsOpen] = useState(false);
+          
+          return React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 mb-6 overflow-hidden" },
+            React.createElement("button", {
+              className: "w-full flex justify-between items-center p-6 text-left",
+              onClick: () => setIsOpen(!isOpen)
+            },
+              React.createElement("h3", { className: "text-lg font-semibold" }, title),
+              isOpen ? React.createElement(ChevronUp, { size: 20 }) : React.createElement(ChevronDown, { size: 20 })
+            ),
+            isOpen && React.createElement("div", { className: "p-6 pt-0 markdown-content" }, children)
+          );
+        }
+
+        const helpView = React.createElement("div", { className: "space-y-6" },
+          React.createElement("div", { className: "rounded-3xl border border-white/10 bg-white/5 p-6" },
+            React.createElement("h2", { className: "text-xl font-bold mb-4" }, t.help_title),
+            React.createElement("div", { className: "flex flex-wrap gap-2 mb-6" },
+              React.createElement("div", { className: "flex items-center gap-1 text-sm text-white/60" },
+                React.createElement("a", { 
+                  href: "https://wjz5788.com", 
+                  target: "_blank", 
+                  rel: "noopener noreferrer",
+                  className: "flex items-center gap-1 hover:text-indigo-300"
+                },
+                  "官网 / Website",
+                  React.createElement(ExternalLink, { size: 14 })
+                )
+              ),
+              React.createElement("span", { className: "text-white/40" }, "|"),
+              React.createElement("div", { className: "flex items-center gap-1 text-sm text-white/60" },
+                React.createElement("a", { 
+                  href: "https://github.com/wjz5788/leverageguard-attestor", 
+                  target: "_blank", 
+                  rel: "noopener noreferrer",
+                  className: "flex items-center gap-1 hover:text-indigo-300"
+                },
+                  "GitHub 仓库",
+                  React.createElement(ExternalLink, { size: 14 })
+                )
+              )
+            )
+          ),
+          
+          React.createElement(HelpSection, { title: t.project_overview, id: "overview" },
+            React.createElement("div", { className: "space-y-4" },
+              React.createElement("p", null, "爆仓保（LiqPass）为散户提供高杠杆交易的安全入口。通过\"保费—赔付\"机制，让原本风险厌恶的用户也能参与衍生品交易，从而扩大链上交易量、增加手续费收入，为 Base 生态带来新的用户群体。"),
+              React.createElement("p", null, "LiqPass provides retail traders with an insured gateway to high-leverage trading. By introducing a \"premium-payout\" mechanism, it allows risk-averse users to participate in derivative markets safely, expanding on-chain trading volume, boosting transaction fees, and attracting new users to the Base ecosystem.")
+            )
+          ),
+          
+          React.createElement(HelpSection, { title: t.why_exchanges, id: "exchanges" },
+            React.createElement("div", { className: "space-y-4" },
+              React.createElement("p", null, "我们选择了这些交易所作为首批接入对象，主要基于以下几点考虑："),
+              React.createElement("ul", null,
+                React.createElement("li", null, "**OKX**: 作为全球领先的数字资产交易平台，OKX 的合约交易功能丰富，用户群体庞大，是我们的首选合作伙伴。"),
+                React.createElement("li", null, "**Binance**: 全球最大的加密货币交易所，提供了全面的衍生品交易服务和 API 支持。"),
+                React.createElement("li", null, "**Bybit**: 在衍生品交易领域拥有丰富经验和活跃用户群体，技术对接相对成熟。")
+              ),
+              React.createElement("p", null, "These exchanges were selected as our initial integration partners based on several key factors:"),
+              React.createElement("ul", null,
+                React.createElement("li", null, "**OKX**: As a leading global digital asset trading platform with comprehensive futures trading features and a large user base, OKX is our primary partner."),
+                React.createElement("li", null, "**Binance**: The world's largest cryptocurrency exchange offering comprehensive derivatives trading services and robust API support."),
+                React.createElement("li", null, "**Bybit**: Rich experience in derivatives trading with an active user community and relatively mature technical integration capabilities.")
+              )
+            )
+          ),
+          
+          React.createElement(HelpSection, { title: t.why_connect, id: "connect" },
+            React.createElement("div", { className: "space-y-4" },
+              React.createElement("p", null, "用户愿意绑定交易所信息的原因主要包括："),
+              React.createElement("ul", null,
+                React.createElement("li", null, "**风险对冲**: 绑定交易所信息可以让用户在高杠杆交易中获得风险保障，降低爆仓带来的全部本金损失。"),
+                React.createElement("li", null, "**简化流程**: 自动获取交易数据，减少手动上传凭证的麻烦，提高理赔效率。"),
+                React.createElement("li", null, "**增强信任**: 链上存证确保理赔过程透明可信，用户可以验证每一笔交易的真实性。"),
+                React.createElement("li", null, "**费率优化**: 基于交易历史可以提供更个性化的保险费率，频繁交易者可能获得更好的价格。")
+              ),
+              React.createElement("p", null, "Key reasons users choose to connect their exchange accounts:"),
+              React.createElement("ul", null,
+                React.createElement("li", null, "**Risk Hedging**: Account connection provides protection against complete principal loss during liquidation in high-leverage trades."),
+                React.createElement("li", null, "**Simplified Process**: Automatic data retrieval reduces manual evidence uploads and streamlines claim processing."),
+                React.createElement("li", null, "**Enhanced Trust**: On-chain attestation ensures a transparent and verifiable claims process."),
+                React.createElement("li", null, "**Rate Optimization**: Trading history enables personalized insurance rates, potentially benefiting frequent traders with better pricing.")
+              )
+            )
+          ),
+          
+          React.createElement(HelpSection, { title: t.workflow, id: "workflow" },
+            React.createElement("div", { className: "space-y-4" },
+              React.createElement("p", null, "产品与理赔流程如下："),
+              React.createElement("ol", null,
+                React.createElement("li", null, "**报价**: 用户输入本金和杠杆比例，系统计算保费和赔付额，生成报价编号。"),
+                React.createElement("li", null, "**投保**: 用户支付保费，购买爆仓保障。"),
+                React.createElement("li", null, "**交易**: 用户在交易所进行杠杆交易。"),
+                React.createElement("li", null, "**触发**: 如发生爆仓，用户可在平台提交理赔申请。"),
+                React.createElement("li", null, "**校验**: 系统自动校验爆仓证据，验证交易真实性。"),
+                React.createElement("li", null, "**赔付**: 校验通过后，自动计算并发放赔付金。"),
+                React.createElement("li", null, "**申诉**: 如对校验结果有异议，可提交人工申诉。")
+              ),
+              React.createElement("p", null, "Product and claims workflow:"),
+              React.createElement("ol", null,
+                React.createElement(
