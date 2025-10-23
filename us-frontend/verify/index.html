@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LiqPass Verification · Base Mainnet</title>
+    <meta
+      name="description"
+      content="Submit Binance or OKX perpetual order evidence to generate a LiqPass verification request."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/public/styles/main.css" />
+  </head>
+  <body data-page="verify">
+    <header>
+      <div class="nav">
+        <div class="brand">
+          <span class="brand-title">LiqPass · Verification</span>
+          <span class="brand-subtitle">Base Mainnet · Attestation Portal</span>
+        </div>
+        <div class="nav-controls">
+          <nav class="nav-links" aria-label="Primary navigation" data-nav-links></nav>
+          <div class="language-toggle" aria-label="Language toggle">
+            <span class="lang-block" data-lang="zh">语言：</span>
+            <span class="lang-block" data-lang="en">Language:</span>
+            <button type="button" data-lang-option data-lang="zh">中</button>
+            <span>/</span>
+            <button type="button" data-lang-option data-lang="en">EN</button>
+          </div>
+          <div data-wallet-slot></div>
+        </div>
+      </div>
+    </header>
+    <main class="main-single-column verify-layout" data-verify-root>
+      <section class="card verify-intro">
+        <div class="lang-block" data-lang="zh">
+          <h1>上传订单证据 · 生成验证请求</h1>
+          <p>
+            当前版本仅接收 Binance 与 OKX 的 BTC 永续订单证据。请确认证据文件可以解析出
+            <code>instId</code> / <code>contractType</code> 等字段，便于系统校验。
+          </p>
+          <ul>
+            <li>支持合约：BTC-USDT-SWAP、BTC-USDC-SWAP、BTCUSDT、BTCUSDC（均为永续）</li>
+            <li>不支持：现货、交割合约、币本位或其他交易对</li>
+            <li>提交时系统会比对「表单选择」与「证据解析结果」，不一致将直接拒绝</li>
+          </ul>
+        </div>
+        <div class="lang-block" data-lang="en">
+          <h1>Submit Order Evidence · Generate Verification Payload</h1>
+          <p>
+            This preview accepts Binance and OKX BTC perpetual order evidence only. Ensure the uploaded file exposes
+            fields such as <code>instId</code> or <code>contractType</code> so the attestor can validate your request.
+          </p>
+          <ul>
+            <li>Supported contracts: BTC-USDT-SWAP, BTC-USDC-SWAP, BTCUSDT, BTCUSDC (perpetual only)</li>
+            <li>Unsupported: spot trades, delivery futures, coin-margined contracts, or any other pairs</li>
+            <li>The attestor compares your selections with parsed evidence; mismatches are rejected immediately</li>
+          </ul>
+        </div>
+      </section>
+
+      <form class="card verify-form" data-verify-form novalidate>
+        <ol class="verify-stepper" data-verify-stepper aria-label="Verification steps">
+          <li data-step="exchange">
+            <span class="lang-block" data-lang="zh">选择交易所</span>
+            <span class="lang-block" data-lang="en">Select exchange</span>
+          </li>
+          <li data-step="pair">
+            <span class="lang-block" data-lang="zh">选择交易对（永续）</span>
+            <span class="lang-block" data-lang="en">Choose perpetual pair</span>
+          </li>
+          <li data-step="order">
+            <span class="lang-block" data-lang="zh">输入订单号</span>
+            <span class="lang-block" data-lang="en">Enter order id</span>
+          </li>
+          <li data-step="evidence">
+            <span class="lang-block" data-lang="zh">上传证据并提交</span>
+            <span class="lang-block" data-lang="en">Upload evidence and submit</span>
+          </li>
+        </ol>
+
+        <p class="form-hint auth-status" data-verify-auth-status role="status"></p>
+
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="verify-exchange" class="form-label">
+              <span class="lang-block" data-lang="zh">交易所</span>
+              <span class="lang-block" data-lang="en">Exchange</span>
+            </label>
+            <select id="verify-exchange" data-verify-exchange required>
+              <option value="" selected>请选择 / Select…</option>
+            </select>
+            <p class="form-hint" data-verify-exchange-hint></p>
+          </div>
+
+          <div class="form-field">
+            <label for="verify-pair" class="form-label">
+              <span class="lang-block" data-lang="zh">交易对（永续）</span>
+              <span class="lang-block" data-lang="en">Perpetual pair</span>
+            </label>
+            <select id="verify-pair" data-verify-pair required disabled>
+              <option value="" selected>请选择 / Select…</option>
+            </select>
+            <p class="form-hint" data-verify-pair-hint></p>
+          </div>
+
+          <div class="form-field">
+            <label for="verify-order" class="form-label">
+              <span class="lang-block" data-lang="zh">订单号（仅限数字）</span>
+              <span class="lang-block" data-lang="en">Order ID (numeric only)</span>
+            </label>
+            <input
+              id="verify-order"
+              type="text"
+              inputmode="numeric"
+              pattern="\\d{6,}"
+              minlength="6"
+              data-verify-order
+              required
+            />
+            <p class="form-hint" data-verify-order-hint></p>
+          </div>
+
+          <div class="form-field">
+            <label for="verify-sku" class="form-label">
+              <span class="lang-block" data-lang="zh">保障 SKU</span>
+              <span class="lang-block" data-lang="en">Protection SKU</span>
+            </label>
+            <select id="verify-sku" data-verify-sku disabled>
+              <option value="" selected>加载中… / Loading…</option>
+            </select>
+            <p class="form-hint" data-verify-sku-hint></p>
+          </div>
+
+          <div class="form-field">
+            <label for="verify-env" class="form-label">
+              <span class="lang-block" data-lang="zh">运行环境</span>
+              <span class="lang-block" data-lang="en">Environment</span>
+            </label>
+            <select id="verify-env" data-verify-env disabled>
+              <option value="" selected>请选择 / Select…</option>
+            </select>
+            <p class="form-hint" data-verify-env-hint></p>
+          </div>
+
+          <div class="form-field">
+            <label for="verify-principal" class="form-label">
+              <span class="lang-block" data-lang="zh">计划投保本金（USDT）</span>
+              <span class="lang-block" data-lang="en">Principal (USDT)</span>
+            </label>
+            <input
+              id="verify-principal"
+              type="number"
+              min="0"
+              step="0.01"
+              inputmode="decimal"
+              data-verify-principal
+              placeholder="0.00"
+            />
+            <p class="form-hint" data-verify-principal-hint></p>
+          </div>
+
+          <div class="form-field">
+            <label for="verify-leverage" class="form-label">
+              <span class="lang-block" data-lang="zh">订单杠杆倍数</span>
+              <span class="lang-block" data-lang="en">Order leverage</span>
+            </label>
+            <input
+              id="verify-leverage"
+              type="number"
+              min="0"
+              step="0.01"
+              inputmode="decimal"
+              data-verify-leverage
+              placeholder="10"
+            />
+            <p class="form-hint" data-verify-leverage-hint></p>
+          </div>
+
+          <div class="form-field">
+            <label for="verify-refcode" class="form-label">
+              <span class="lang-block" data-lang="zh">Ref Code（可选）</span>
+              <span class="lang-block" data-lang="en">Ref code (optional)</span>
+            </label>
+            <input id="verify-refcode" type="text" data-verify-refcode placeholder="web-q4" />
+          </div>
+        </div>
+
+        <div class="verify-evidence">
+          <label class="form-label">
+            <span class="lang-block" data-lang="zh">上传订单证据文件</span>
+            <span class="lang-block" data-lang="en">Upload order evidence file</span>
+          </label>
+          <p class="form-hint">
+            <span class="lang-block" data-lang="zh">接受 JSON / TXT · 内容需包含交易所、交易对、合约类型字段。</span>
+            <span class="lang-block" data-lang="en"
+              >Accepts JSON / TXT. Evidence must contain exchange, pair, and contract type fields.</span
+            >
+          </p>
+
+          <div class="dropzone" data-verify-dropzone>
+            <input type="file" accept=".json,.txt,.log,.csv" data-verify-evidence />
+            <div class="dropzone-content">
+              <span class="lang-block" data-lang="zh">拖拽或点击选择文件</span>
+              <span class="lang-block" data-lang="en">Drag and drop or click to select</span>
+              <p class="dropzone-file" data-verify-evidence-name></p>
+            </div>
+          </div>
+
+          <div class="evidence-preview" data-verify-preview>
+            <header>
+              <strong>
+                <span class="lang-block" data-lang="zh">证据摘要</span>
+                <span class="lang-block" data-lang="en">Evidence summary</span>
+              </strong>
+              <button type="button" data-verify-clear>
+                <span class="lang-block" data-lang="zh">清除</span>
+                <span class="lang-block" data-lang="en">Clear</span>
+              </button>
+            </header>
+            <dl data-verify-summary></dl>
+            <pre data-verify-raw hidden></pre>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="reset" class="secondary" data-verify-reset>
+            <span class="lang-block" data-lang="zh">重置表单</span>
+            <span class="lang-block" data-lang="en">Reset</span>
+          </button>
+          <button type="submit" class="primary" data-verify-submit disabled>
+            <span class="lang-block" data-lang="zh">提交验证请求</span>
+            <span class="lang-block" data-lang="en">Submit verification</span>
+          </button>
+        </div>
+
+        <div class="form-feedback" role="alert" data-verify-feedback aria-live="polite"></div>
+      </form>
+
+      <section class="card verify-result" data-verify-result hidden>
+        <div class="lang-block" data-lang="zh">
+          <h2>验证请求生成成功</h2>
+          <p>
+            以下为日本节点返回的真实校验结果，请保存摘要以便后续补充证据、登记保单或发起理赔。
+          </p>
+        </div>
+        <div class="lang-block" data-lang="en">
+          <h2>Verification payload ready</h2>
+          <p>
+            The summary below comes from the upstream verifier. Keep it for additional evidence uploads, policy filing,
+            or future claims.
+          </p>
+        </div>
+        <dl class="result-summary" data-verify-result-details></dl>
+        <button type="button" class="secondary" data-verify-result-close>
+          <span class="lang-block" data-lang="zh">继续提交下一条</span>
+          <span class="lang-block" data-lang="en">Submit another</span>
+        </button>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

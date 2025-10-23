@@ -1,0 +1,302 @@
+{
+  "generatedAt": "2025-10-22T10:27:30.989Z",
+  "sources": {
+    "zh": "docs/LiqPass_HelpDoc_CN.md",
+    "en": "docs/LiqPass_HelpDoc_EN.md"
+  },
+  "sections": [
+    {
+      "id": "overview",
+      "label": {
+        "zh": "概述",
+        "en": "Overview"
+      },
+      "content": {
+        "zh": {
+          "title": "Overview",
+          "summary": [
+            {
+              "type": "paragraph",
+              "text": "**LiqPass** provides retail traders with an insured gateway to high-leverage trading. Through a premium–payout model, risk-averse users can safely enter derivatives markets, expanding on-chain trading volume, increasing transaction fees, and attracting new users to the Base ecosystem."
+            }
+          ],
+          "subsections": []
+        },
+        "en": {
+          "title": "Overview",
+          "summary": [
+            {
+              "type": "paragraph",
+              "text": "**LiqPass** provides retail traders with an insured gateway to high-leverage trading. Through a premium–payout model, risk-averse users can safely enter derivatives markets, expanding on-chain trading volume, increasing transaction fees, and attracting new users to the Base ecosystem."
+            }
+          ],
+          "subsections": []
+        }
+      }
+    },
+    {
+      "id": "flow",
+      "label": {
+        "zh": "使用流程",
+        "en": "Usage Flow"
+      },
+      "content": {
+        "zh": {
+          "title": "Usage Flow",
+          "summary": [],
+          "subsections": [
+            {
+              "heading": "Current Product",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "Currently, only fixed-amount liquidation insurance based on **principal and leverage** is provided. Users input principal and leverage when purchasing, and the system automatically calculates the premium and corresponding payout."
+                }
+              ]
+            },
+            {
+              "heading": "Purchase Process (Overview)",
+              "blocks": [
+                {
+                  "type": "list",
+                  "items": [
+                    "Connect wallet and log in;",
+                    "Select exchange and fill in read-only information;",
+                    "Input principal and leverage parameters;",
+                    "System calculates premium and payout amount;",
+                    "Policy becomes effective after payment."
+                  ]
+                }
+              ]
+            },
+            {
+              "heading": "Claim Process (Passive Mechanism)",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "LiqPass is a **passive claim mechanism** that does not actively monitor user trades. After liquidation, users submit order numbers or JSON files, and the system verifies order details and policy locally. If information matches, a payout is initiated; if automatic verification fails, users can submit screenshots and explanations for manual review."
+                },
+                {
+                  "type": "paragraph",
+                  "text": "Currently uses \"local offline verification + on-chain summary\" approach. Due to unstable access to OKX/Binance APIs from US-based cloud servers, only order summaries are used to generate **Merkle Root** for public on-chain verification."
+                }
+              ]
+            }
+          ]
+        },
+        "en": {
+          "title": "Usage Flow",
+          "summary": [],
+          "subsections": []
+        }
+      }
+    },
+    {
+      "id": "faq",
+      "label": {
+        "zh": "常见问题（FAQ）",
+        "en": "FAQ"
+      },
+      "content": {
+        "zh": {
+          "title": "FAQ",
+          "summary": [],
+          "subsections": [
+            {
+              "heading": "Core Purpose",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "The sole purpose of connecting a read-only API is to **verify the authenticity of a liquidation event**. When a user submits an order ID, the system checks—via read-only API—whether it exists, matches the parameters (symbol, leverage, settlement), contains a liquidation flag (`LIQUIDATION` / `ADL`), and belongs to the user."
+                },
+                {
+                  "type": "list",
+                  "items": [
+                    "Whether the order actually exists;",
+                    "Whether time, symbol, leverage, settlement price, etc. match;",
+                    "Whether it is indeed a liquidation (field contains `LIQUIDATION` or `ADL`);",
+                    "Whether the order truly belongs to the user and is not forged."
+                  ]
+                }
+              ]
+            },
+            {
+              "heading": "Security and Minimal Authorization",
+              "blocks": [
+                {
+                  "type": "list",
+                  "items": [
+                    "A user may hold multiple exchange accounts, but only **one** needs to be connected for LiqPass;",
+                    "All access is **read-only**, with no trading, withdrawal, or transfer rights;",
+                    "We recommend **separating the main account from high-leverage accounts** for safety;",
+                    "Examples:",
+                    "If the main account trades on **OKX**, bind **Binance** as the insured account;",
+                    "If mainly on **Binance**, bind **OKX**;",
+                    "If active on both, use **Gate.io** or another small account.",
+                    "Multiple high-leverage positions can be opened within the chosen exchange—no need to bind multiple platforms;",
+                    "Data are accessed only when verifying claims—never continuously."
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "text": "In short: LiqPass follows **“minimal authorization + account isolation”**, verifying truth while protecting user assets."
+                }
+              ]
+            }
+          ]
+        },
+        "en": {
+          "title": "FAQ",
+          "summary": [],
+          "subsections": [
+            {
+              "heading": "Core Purpose",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "The sole purpose of connecting a read-only API is to **verify the authenticity of a liquidation event**. When a user submits an order ID, the system checks—via read-only API—whether it exists, matches the parameters (symbol, leverage, settlement), contains a liquidation flag (`LIQUIDATION` / `ADL`), and belongs to the user."
+                }
+              ]
+            },
+            {
+              "heading": "Security and Minimal Authorization",
+              "blocks": [
+                {
+                  "type": "list",
+                  "items": [
+                    "A user may hold multiple exchange accounts, but only **one** needs to be connected for LiqPass;",
+                    "All access is **read-only**, with no trading, withdrawal, or transfer rights;",
+                    "We recommend **separating the main account from high-leverage accounts** for safety;",
+                    "Examples:",
+                    "If the main account trades on **OKX**, bind **Binance** as the insured account;",
+                    "If mainly on **Binance**, bind **OKX**;",
+                    "If active on both, use **Gate.io** or another small account.",
+                    "Multiple high-leverage positions can be opened within the chosen exchange—no need to bind multiple platforms;",
+                    "Data are accessed only when verifying claims—never continuously."
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "text": "In short: LiqPass follows **“minimal authorization + account isolation”**, verifying truth while protecting user assets."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "compliance",
+      "label": {
+        "zh": "接口与隐私 / 合规说明",
+        "en": "Interfaces & Privacy / Compliance"
+      },
+      "content": {
+        "zh": {
+          "title": "Interfaces & Privacy / Compliance",
+          "summary": [
+            {
+              "type": "list",
+              "items": [
+                "Client-side encryption; ciphertext-only storage;",
+                "No full trading history retained—only verification summaries;",
+                "Post-claim, a **Merkle Root** is committed on-chain;",
+                "Users can unbind and delete bindings at any time;",
+                "On-chain records contain no personally identifiable data."
+              ]
+            },
+            {
+              "type": "list",
+              "items": [
+                "Email: zmshyc@gmail.com",
+                "Website: https://wjz5788.com",
+                "Repo: https://github.com/wjz5788/leverageguard-attestor",
+                "Base Mainnet Contract: `0x9552b58d323993f84d01e3744f175f47a9462f94`"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "text": "*This is the Base Ecosystem Fund application edition; production release may differ.*"
+            }
+          ],
+          "subsections": [
+            {
+              "heading": "Pricing Principle",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "Premiums are derived from an internal model combining **risk probability, payout limit, and operating cost**, ensuring sustainable, fair, and auditable reserves."
+                }
+              ]
+            },
+            {
+              "heading": "Risk and Anti-Fraud",
+              "blocks": [
+                {
+                  "type": "list",
+                  "items": [
+                    "Waiting periods and payout caps deter arbitrage;",
+                    "Duplicate/anomalous accounts detection;",
+                    "Blacklist and manual overrides safeguard the pool."
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "en": {
+          "title": "Interfaces & Privacy / Compliance",
+          "summary": [
+            {
+              "type": "list",
+              "items": [
+                "Client-side encryption; ciphertext-only storage;",
+                "No full trading history retained—only verification summaries;",
+                "Post-claim, a **Merkle Root** is committed on-chain;",
+                "Users can unbind and delete bindings at any time;",
+                "On-chain records contain no personally identifiable data."
+              ]
+            },
+            {
+              "type": "list",
+              "items": [
+                "Email: zmshyc@gmail.com",
+                "Website: https://wjz5788.com",
+                "Repo: https://github.com/wjz5788/leverageguard-attestor",
+                "Base Mainnet Contract: `0x9552b58d323993f84d01e3744f175f47a9462f94`"
+              ]
+            },
+            {
+              "type": "paragraph",
+              "text": "*This is the Base Ecosystem Fund application edition; production release may differ.*"
+            }
+          ],
+          "subsections": [
+            {
+              "heading": "Pricing Principle",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "Premiums are derived from an internal model combining **risk probability, payout limit, and operating cost**, ensuring sustainable, fair, and auditable reserves."
+                }
+              ]
+            },
+            {
+              "heading": "Risk and Anti-Fraud",
+              "blocks": [
+                {
+                  "type": "list",
+                  "items": [
+                    "Waiting periods and payout caps deter arbitrage;",
+                    "Duplicate/anomalous accounts detection;",
+                    "Blacklist and manual overrides safeguard the pool."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
