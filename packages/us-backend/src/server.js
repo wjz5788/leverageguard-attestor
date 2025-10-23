@@ -218,8 +218,8 @@ app.post('/orders', (req, res, next) => {
   const idempoKey = req.headers['idempotency-key'];
   res.locals.logContext.idempoKey = idempoKey ?? null;
 
-  if (!idempoKey || typeof idempoKey !== 'string') {
-    const error = new Error('Missing Idempotency-Key header');
+  if (!idempoKey) {
+    const error = new Error('Missing idempotency key');
     error.statusCode = 400;
     return next(error);
   }
@@ -297,6 +297,26 @@ app.post('/orders', (req, res, next) => {
     };
 
     res.status(201).json(responsePayload);
+  } catch (error) {
+    error.statusCode = 500;
+    return next(error);
+  }
+});
+
+// Get order history for a specific wallet
+app.get('/orders/history', (req, res, next) => {
+  const { wallet } = req.query;
+  
+  if (!wallet || typeof wallet !== 'string') {
+    const error = new Error('Missing wallet address');
+    error.statusCode = 400;
+    return next(error);
+  }
+  
+  try {
+    const orders = db.prepare('SELECT * FROM orders WHERE wallet = ? ORDER BY createdAt DESC').all(wallet);
+    
+    res.status(200).json(orders);
   } catch (error) {
     error.statusCode = 500;
     return next(error);

@@ -67,22 +67,22 @@ export function initHome() {
 
       if (!connectedAddress) {
         target.textContent =
-          lang === 'zh' ? '连接钱包以启用登录' : 'Connect wallet to enable login';
+          lang === 'zh' ? 'Connect wallet to enable login' : 'Connect wallet to enable login';
         return;
       }
 
       if (authState.status === 'authenticating') {
         target.textContent =
           lang === 'zh'
-            ? `等待 ${shorten(connectedAddress)} 在 MetaMask 中签名…`
+            ? `Waiting for ${shorten(connectedAddress)} to sign in MetaMask…`
             : `Awaiting MetaMask signature for ${shorten(connectedAddress)}`;
         return;
       }
 
       if (authState.status === 'error') {
-        const message = authState.lastError ?? (lang === 'zh' ? '未知错误' : 'Unknown error');
+        const message = authState.lastError ?? (lang === 'zh' ? 'Unknown error' : 'Unknown error');
         target.textContent =
-          lang === 'zh' ? `签名失败：${message}` : `Authentication failed: ${message}`;
+          lang === 'zh' ? `Authentication failed: ${message}` : `Authentication failed: ${message}`;
         return;
       }
 
@@ -102,14 +102,14 @@ export function initHome() {
 
         if (lang === 'zh') {
           const parts = [
-            `已登录 ${shorten(connectedAddress)}`,
-            tokenPreview ? `Token：${tokenPreview}` : 'Token：已激活',
+            `Logged in as ${shorten(connectedAddress)}`,
+            tokenPreview ? `Token: ${tokenPreview}` : 'Token: Active',
           ];
           if (previewText) {
-            parts.push(`签名：${previewText}`);
+            parts.push(`Signature: ${previewText}`);
           }
           if (expiry) {
-            parts.push(`有效期：${expiry}`);
+            parts.push(`Valid until: ${expiry}`);
           }
           target.textContent = parts.join('\n');
         } else {
@@ -130,7 +130,7 @@ export function initHome() {
 
       target.textContent =
         lang === 'zh'
-          ? `准备以 ${shorten(connectedAddress)} 登录`
+          ? `Ready to log in as ${shorten(connectedAddress)}`
           : `Ready to sign in as ${shorten(connectedAddress)}`;
     });
   };

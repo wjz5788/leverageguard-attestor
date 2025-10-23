@@ -46,163 +46,163 @@ interface ParsedEvidenceSummary {
 const COPY = {
   hints: {
     exchangeDefault: {
-      zh: '当前仅支持 Binance 与 OKX，后续将扩展更多交易所。',
+      zh: 'Currently supports Binance and OKX only; more exchanges will follow.',
       en: 'Currently supports Binance and OKX only; more exchanges will follow.',
     },
     pairDefault: {
-      zh: '请先选择交易所，随后可选择对应的永续交易对。',
+      zh: 'Select an exchange first to unlock the allowed perpetual trading pairs.',
       en: 'Select an exchange first to unlock the allowed perpetual trading pairs.',
     },
     pairNotice: {
-      zh: '支持的交易对：BTC 永续（USDT 或 USDC 保证金）。',
+      zh: 'Supported pairs: BTC perpetual contracts (USDT or USDC margined).',
       en: 'Supported pairs: BTC perpetual contracts (USDT or USDC margined).',
     },
     orderDefault: {
-      zh: '请输入交易所返回的原始订单号（仅限数字）。',
+      zh: 'Enter the original numeric order id issued by the exchange.',
       en: 'Enter the original numeric order id issued by the exchange.',
     },
     orderInvalid: {
-      zh: '订单号需为至少 6 位数字，且不含其他字符。',
+      zh: 'Order id must contain at least six digits and no other characters.',
       en: 'Order id must contain at least six digits and no other characters.',
     },
     skuLoading: {
-      zh: '正在加载 SKU 列表，请稍候…',
+      zh: 'Loading SKU definitions…',
       en: 'Loading SKU definitions…',
     },
     skuDefault: {
-      zh: '请选择保障 SKU（例如 DAY_24H_FIXED）。',
+      zh: 'Select the insurance SKU (e.g. DAY_24H_FIXED).',
       en: 'Select the insurance SKU (e.g. DAY_24H_FIXED).',
     },
     envDefault: {
-      zh: '请选择运行环境：模拟盘或正式盘。',
+      zh: 'Choose the operating environment: simulated or production.',
       en: 'Choose the operating environment: simulated or production.',
     },
     principalDefault: {
-      zh: '请输入计划投保本金（单位 USDT）。',
+      zh: 'Enter the intended insured principal in USDT.',
       en: 'Enter the intended insured principal in USDT.',
     },
     principalInvalid: {
-      zh: '本金需为大于 0 的数字。',
+      zh: 'Principal must be a numeric value greater than zero.',
       en: 'Principal must be a numeric value greater than zero.',
     },
     leverageDefault: {
-      zh: '请输入订单杠杆倍数（例如 10）。',
+      zh: 'Enter the order leverage multiplier (e.g. 10).',
       en: 'Enter the order leverage multiplier (e.g. 10).',
     },
     leverageInvalid: {
-      zh: '杠杆需为正整数或小数。',
+      zh: 'Leverage must be a positive number.',
       en: 'Leverage must be a positive number.',
     },
     evidenceIdle: {
-      zh: '上传 JSON / TXT 证据，内容需包含 instId / contractType 等字段。',
+      zh: 'Upload JSON/TXT evidence containing fields like instId or contractType.',
       en: 'Upload JSON/TXT evidence containing fields like instId or contractType.',
     },
     evidenceProcessing: {
-      zh: '正在解析证据文件…',
+      zh: 'Parsing the evidence file…',
       en: 'Parsing the evidence file…',
     },
     evidenceMismatch: {
-      zh: '证据内容与表单选择不一致，请检查交易对或重新导出文件。',
+      zh: 'Evidence does not match your selections; please verify the trading pair or re-export the file.',
       en: 'Evidence does not match your selections; please verify the trading pair or re-export the file.',
     },
     evidenceReady: {
-      zh: '证据匹配成功，可提交验证请求。',
+      zh: 'Evidence matches your selections. Ready to submit the verification request.',
       en: 'Evidence matches your selections. Ready to submit the verification request.',
     },
   },
   feedback: {
     missingFields: {
-      zh: '请先填写交易所、永续交易对、订单号，并成功解析证据后再提交。',
+      zh: 'Select the exchange, perpetual pair, enter the order id, and upload valid evidence before submitting.',
       en: 'Select the exchange, perpetual pair, enter the order id, and upload valid evidence before submitting.',
     },
     fileError: {
-      zh: '无法读取或解析该文件，请确认其为 JSON/TXT 格式并包含有效字段。',
+      zh: 'Unable to read or parse the file. Ensure it is JSON/TXT and contains the required fields.',
       en: 'Unable to read or parse the file. Ensure it is JSON/TXT and contains the required fields.',
     },
     mismatch: {
-      zh: '表单选择与证据解析结果不一致，已阻止提交。',
+      zh: 'Form selections do not match the evidence content; submission blocked.',
       en: 'Form selections do not match the evidence content; submission blocked.',
     },
     cryptoUnavailable: {
-      zh: '浏览器不支持 SHA-256 哈希，无法生成验证请求。',
+      zh: 'SHA-256 hashing is unavailable in this browser; cannot prepare the verification payload.',
       en: 'SHA-256 hashing is unavailable in this browser; cannot prepare the verification payload.',
     },
     submissionFailed: {
-      zh: '提交失败，请稍后重试或联系值班同学。',
+      zh: 'Submission failed. Please retry later or contact the on-call teammate.',
       en: 'Submission failed. Please retry later or contact the on-call teammate.',
     },
     submissionSuccess: {
-      zh: '验证请求已生成，可查看摘要并继续下一笔提交。',
+      zh: 'Verification payload prepared. Review the summary below or submit another request.',
       en: 'Verification payload prepared. Review the summary below or submit another request.',
     },
     authRequired: {
-      zh: '请先在顶部完成钱包签名登录，系统需要 Authorization 才能调用后端 API。',
+      zh: 'Please complete the wallet sign-in first so the Authorization token is available.',
       en: 'Please complete the wallet sign-in first so the Authorization token is available.',
     },
     skuLoadFailed: {
-      zh: '无法加载 SKU 列表，已使用默认配置，请稍后刷新以获取完整数据。',
+      zh: 'Failed to load SKU definitions. A fallback option is used; refresh later for full data.',
       en: 'Failed to load SKU definitions. A fallback option is used; refresh later for full data.',
     },
     upstreamUnauthorized: {
-      zh: '令牌失效或未授权，请重新点击“Sign Login” 完成签名。',
-      en: 'Token missing or expired. Please click “Sign Login” again to refresh authentication.',
+      zh: 'Token missing or expired. Please click "Sign Login" again to refresh authentication.',
+      en: 'Token missing or expired. Please click "Sign Login" again to refresh authentication.',
     },
     upstreamError: {
-      zh: '后端返回错误，请检查订单信息或稍后重试。',
+      zh: 'Upstream service returned an error. Check your order details or retry later.',
       en: 'Upstream service returned an error. Check your order details or retry later.',
     },
   },
   summary: {
-    fileName: { zh: '文件名', en: 'File name' },
-    fileSize: { zh: '文件大小', en: 'File size' },
-    parsedExchange: { zh: '解析交易所', en: 'Parsed exchange' },
-    parsedPair: { zh: '解析交易对', en: 'Parsed pair' },
-    parsedInstType: { zh: '合约类型 (instType)', en: 'Contract type (instType)' },
-    parsedContractType: { zh: '合约模式 (contractType)', en: 'Contract mode (contractType)' },
-    warnings: { zh: '解析提示', en: 'Parse notes' },
-    orderHash: { zh: 'OrderId 哈希', en: 'OrderId hash' },
-    skuCode: { zh: 'SKU 编号', en: 'SKU code' },
-    env: { zh: '环境', en: 'Environment' },
-    principal: { zh: '本金 (USDT)', en: 'Principal (USDT)' },
-    leverage: { zh: '杠杆倍数', en: 'Leverage' },
-    wallet: { zh: '签名钱包', en: 'Wallet' },
-    exchange: { zh: '提交交易所', en: 'Exchange' },
-    pair: { zh: '提交交易对', en: 'Trading pair' },
-    orderId: { zh: '提交订单号', en: 'Order id' },
-    evidenceDigest: { zh: '证据文件 SHA-256', en: 'Evidence SHA-256' },
-    eligibility: { zh: '资格结果', en: 'Eligibility' },
-    premium: { zh: '保费', en: 'Premium' },
-    payoutCap: { zh: '赔付上限', en: 'Payout cap' },
-    currency: { zh: '币种', en: 'Currency' },
-    policyId: { zh: '保单编号', en: 'Policy id' },
-    evidenceHint: { zh: '证据提示', en: 'Evidence hint' },
-    diagnostics: { zh: '诊断信息', en: 'Diagnostics' },
-    processedAt: { zh: '生成时间', en: 'Processed at' },
-    parsedSide: { zh: '解析方向', en: 'Parsed side' },
-    parsedAvgPx: { zh: '解析均价', en: 'Parsed avgPx' },
-    parsedQty: { zh: '解析数量', en: 'Parsed qty' },
-    parsedLiqPx: { zh: '解析强平价', en: 'Parsed liqPx' },
+    fileName: { zh: 'File name', en: 'File name' },
+    fileSize: { zh: 'File size', en: 'File size' },
+    parsedExchange: { zh: 'Parsed exchange', en: 'Parsed exchange' },
+    parsedPair: { zh: 'Parsed pair', en: 'Parsed pair' },
+    parsedInstType: { zh: 'Contract type (instType)', en: 'Contract type (instType)' },
+    parsedContractType: { zh: 'Contract mode (contractType)', en: 'Contract mode (contractType)' },
+    warnings: { zh: 'Parse notes', en: 'Parse notes' },
+    orderHash: { zh: 'OrderId hash', en: 'OrderId hash' },
+    skuCode: { zh: 'SKU code', en: 'SKU code' },
+    env: { zh: 'Environment', en: 'Environment' },
+    principal: { zh: 'Principal (USDT)', en: 'Principal (USDT)' },
+    leverage: { zh: 'Leverage', en: 'Leverage' },
+    wallet: { zh: 'Wallet', en: 'Wallet' },
+    exchange: { zh: 'Exchange', en: 'Exchange' },
+    pair: { zh: 'Trading pair', en: 'Trading pair' },
+    orderId: { zh: 'Order id', en: 'Order id' },
+    evidenceDigest: { zh: 'Evidence SHA-256', en: 'Evidence SHA-256' },
+    eligibility: { zh: 'Eligibility', en: 'Eligibility' },
+    premium: { zh: 'Premium', en: 'Premium' },
+    payoutCap: { zh: 'Payout cap', en: 'Payout cap' },
+    currency: { zh: 'Currency', en: 'Currency' },
+    policyId: { zh: 'Policy id', en: 'Policy id' },
+    evidenceHint: { zh: 'Evidence hint', en: 'Evidence hint' },
+    diagnostics: { zh: 'Diagnostics', en: 'Diagnostics' },
+    processedAt: { zh: 'Processed at', en: 'Processed at' },
+    parsedSide: { zh: 'Parsed side', en: 'Parsed side' },
+    parsedAvgPx: { zh: 'Parsed avgPx', en: 'Parsed avgPx' },
+    parsedQty: { zh: 'Parsed qty', en: 'Parsed qty' },
+    parsedLiqPx: { zh: 'Parsed liqPx', en: 'Parsed liqPx' },
   },
   statuses: {
-    accepted: { zh: '已接受（占位）', en: 'Accepted (mock)' },
+    accepted: { zh: 'Accepted (mock)', en: 'Accepted (mock)' },
   },
 };
 
 const MISMATCH_MESSAGES: Record<string, CopyBlock> = {
   'parsed-pair-missing': {
-    zh: '证据中未找到交易对字段（instId / symbol），请重新导出或确认文件内容。',
+    zh: 'Trading pair field (instId / symbol) not found in evidence. Please re-export or verify the file content.',
     en: 'The evidence is missing the trading pair field (instId / symbol). Re-export the file or verify its contents.',
   },
   'pair-mismatch': {
-    zh: '证据中的交易对与表单选择不一致，请确认均为受支持的 BTC 永续合约。',
+    zh: 'The trading pair in the evidence does not match the form selection. Please ensure both are supported BTC perpetual contracts.',
     en: 'The trading pair inside the evidence differs from your selection. Verify both are supported BTC perpetuals.',
   },
   'inst-type-mismatch': {
-    zh: '证据中的 instType 与预期不符，应为 SWAP 永续合约。',
+    zh: 'The instType in the evidence does not match expectations. Should be SWAP perpetual contract.',
     en: 'The evidence instType does not match the expected SWAP perpetual contract.',
   },
   'contract-type-mismatch': {
-    zh: '证据中的 contractType 与预期不符，应为 PERPETUAL 永续合约。',
+    zh: 'The contractType in the evidence does not match expectations. Should be PERPETUAL perpetual contract.',
     en: 'The evidence contractType does not match the expected PERPETUAL perpetual contract.',
   },
 };
@@ -220,7 +220,7 @@ const ENVIRONMENT_OPTIONS: EnvironmentOption[] = [
     value: 'okx-simulated',
     exchanges: ['OKX'],
     label: {
-      zh: 'OKX 模拟盘',
+      zh: 'OKX Demo',
       en: 'OKX Simulated',
     },
   },
@@ -228,14 +228,14 @@ const ENVIRONMENT_OPTIONS: EnvironmentOption[] = [
     value: 'binance-futures-testnet',
     exchanges: ['Binance'],
     label: {
-      zh: 'Binance 合约测试网',
+      zh: 'Binance Contract Testnet',
       en: 'Binance Futures Testnet',
     },
   },
   {
     value: 'prod',
     label: {
-      zh: '正式环境',
+      zh: 'Production Environment',
       en: 'Production',
     },
   },
@@ -549,10 +549,10 @@ function renderResultSummary(
       typeof response.eligible === 'boolean'
         ? response.eligible
           ? lang === 'zh'
-            ? '符合'
+            ? 'Match'
             : 'Eligible'
           : lang === 'zh'
-          ? '不符合'
+          ? 'Mismatch'
           : 'Not eligible'
         : '—',
       lang,
@@ -645,17 +645,17 @@ function updateAuthStatusDisplay(
     state = 'disconnected';
     message =
       lang === 'zh'
-        ? '钱包未连接。请在顶部完成连接与签名登录。'
+        ? 'Wallet not connected. Please connect and sign in at the top.'
         : 'Wallet disconnected. Connect and sign in above.';
   } else if (auth.status === 'authenticating') {
     state = 'loading';
     message =
       lang === 'zh'
-        ? `等待 ${shorten(auth.address)} 在 MetaMask 中确认签名…`
+        ? `Waiting for ${shorten(auth.address)} to confirm signature in MetaMask…`
         : `Waiting for ${shorten(auth.address)} to confirm the signature in MetaMask…`;
   } else if (auth.status === 'error') {
     state = 'error';
-    const err = auth.lastError || (lang === 'zh' ? '签名失败' : 'Authentication failed');
+    const err = auth.lastError || (lang === 'zh' ? 'Signature verification failed. Please confirm the signature in MetaMask.' : 'Authentication failed');
     message = err;
   } else if (authStateReady(auth)) {
     state = 'ready';
@@ -666,8 +666,8 @@ function updateAuthStatusDisplay(
       : null;
     if (lang === 'zh') {
       message = expiry
-        ? `已认证 ${shorten(auth.address)} · Token 有效至 ${expiry}`
-        : `已认证 ${shorten(auth.address)} · Token 已激活`;
+        ? `Authenticated as ${shorten(auth.address)} · Token valid until ${expiry}`
+        : `Authenticated as ${shorten(auth.address)} · Token active`;
     } else {
       message = expiry
         ? `Authenticated as ${shorten(auth.address)} · token valid until ${expiry}`
@@ -677,7 +677,7 @@ function updateAuthStatusDisplay(
     state = 'pending';
     message =
       lang === 'zh'
-        ? `已连接 ${shorten(auth.address)} · 请点击“Sign Login” 完成签名`
+        ? `Connected as ${shorten(auth.address)} · Click "Sign Login" to authenticate`
         : `Connected as ${shorten(auth.address)} · click “Sign Login” to authenticate`;
   }
 
@@ -814,7 +814,7 @@ function updatePairOptions(
   pairSelect.innerHTML = '';
   const defaultOption = document.createElement('option');
   defaultOption.value = '';
-  defaultOption.textContent = lang === 'zh' ? '请选择' : 'Select…';
+  defaultOption.textContent = lang === 'zh' ? 'Please select' : 'Select…';
   pairSelect.appendChild(defaultOption);
 
   if (!exchangeId) {
@@ -843,7 +843,7 @@ function updateExchangeOptions(elements: FormElements, lang: SupportedLanguage) 
 
   const defaultOption = document.createElement('option');
   defaultOption.value = '';
-  defaultOption.textContent = lang === 'zh' ? '请选择' : 'Select…';
+  defaultOption.textContent = lang === 'zh' ? 'Please select' : 'Select…';
   exchangeSelect.appendChild(defaultOption);
 
   EXCHANGE_OPTIONS.forEach((option) => {

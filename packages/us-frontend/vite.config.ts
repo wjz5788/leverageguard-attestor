@@ -17,12 +17,33 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         help: resolve(__dirname, 'help/index.html'),
         verify: resolve(__dirname, 'verify/index.html'),
+        claim: resolve(__dirname, 'claim/index.html'),
+        products: resolve(__dirname, 'products/index.html'),
+        product: resolve(__dirname, 'product/index.html'),
       },
     },
   },
   server: {
     fs: {
       allow: ['..'],
+    },
+    proxy: {
+      '/catalog': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/orders': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/claim': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/healthz': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
 });

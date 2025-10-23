@@ -4,18 +4,20 @@ import { HomePage } from './pages/Home';
 import { HelpPage } from './pages/Help';
 import { VerifyPage } from './pages/Verify';
 import { ClaimPage } from './pages/Claim';
+import { OrderHistoryPage } from './pages/OrderHistory';
 import { ProductsPage } from './pages/Products';
 import { ProductDetailPage } from './pages/ProductDetail';
 import QuoteDemo from './pages/QuoteDemo';
 
-const routes = [
-  Route({ path: '/', element: { id: 'home', label: { zh: '首页', en: 'Home' }, component: HomePage } }),
-  Route({ path: '/quote-demo', element: { id: 'quote-demo', label: { zh: '报价演示', en: 'Quote Demo' }, component: QuoteDemo } }),
-  Route({ path: '/products', element: { id: 'products', label: { zh: '产品', en: 'Products' }, component: ProductsPage } }),
-  Route({ path: '/product/:id', element: { id: 'product-detail', label: { zh: '产品详情', en: 'Product Detail' }, component: ProductDetailPage } }),
-  Route({ path: '/verify', element: { id: 'verify', label: { zh: '验证', en: 'Verify' }, component: VerifyPage } }),
-  Route({ path: '/claim', element: { id: 'claim', label: { zh: '理赔', en: 'Claim' }, component: ClaimPage } }),
-  Route({ path: '/help', element: { id: 'help', label: { zh: '帮助', en: 'Help' }, component: HelpPage } }),
+const routes: RouteConfig[] = [
+  Route({ path: '/', element: { id: 'home', label: { zh: 'Home', en: 'Home' }, component: HomePage } }),
+  Route({ path: '/quote-demo', element: { id: 'quote-demo', label: { zh: 'Quote Demo', en: 'Quote Demo' }, component: QuoteDemo } }),
+  Route({ path: '/products', element: { id: 'products', label: { zh: 'Products', en: 'Products' }, component: ProductsPage } }),
+  Route({ path: '/product/:id', element: { id: 'product-detail', label: { zh: 'Product Detail', en: 'Product Detail' }, component: ProductDetailPage } }),
+  Route({ path: '/verify', element: { id: 'verify', label: { zh: 'Verify', en: 'Verify' }, component: VerifyPage } }),
+  Route({ path: '/claim', element: { id: 'claim', label: { zh: 'Claim', en: 'Claim' }, component: ClaimPage } }),
+  Route({ path: '/history', element: { id: 'history', label: { zh: 'Order History', en: 'Order History' }, component: OrderHistoryPage } }),
+  Route({ path: '/help', element: { id: 'help', label: { zh: 'Help', en: 'Help' }, component: HelpPage } }),
 ];
 
 function getCurrentPath(): string {
@@ -47,7 +49,7 @@ export default function App() {
                   path === r.path ? 'text-white' : 'text-slate-400'
                 }`}
               >
-                {r.label.zh}
+                {r.label.en}
               </a>
             ))}
           </nav>

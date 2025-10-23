@@ -53,15 +53,15 @@ const QuoteCalculator: React.FC<QuoteCalculatorProps> = ({
 
   const validateInputs = useCallback((principalValue: number, leverageValue: number): string => {
     if (isNaN(principalValue) || isNaN(leverageValue)) {
-      return '请输入有效的数字';
+      return 'Please enter valid numbers';
     }
     
     if (principalValue < MIN_PRINCIPAL || principalValue > MAX_PRINCIPAL) {
-      return `本金必须在 ${MIN_PRINCIPAL}-${MAX_PRINCIPAL} USDT 之间`;
+      return `Principal must be between ${MIN_PRINCIPAL}-${MAX_PRINCIPAL} USDT`;
     }
     
     if (leverageValue < MIN_LEVERAGE || leverageValue > MAX_LEVERAGE) {
-      return `杠杆倍数必须在 ${MIN_LEVERAGE}-${MAX_LEVERAGE} 倍之间`;
+      return `Leverage must be between ${MIN_LEVERAGE}-${MAX_LEVERAGE}x`;
     }
     
     return '';
@@ -103,7 +103,7 @@ const QuoteCalculator: React.FC<QuoteCalculatorProps> = ({
       setQuote(quoteData);
       onQuoteGenerated?.(quoteData);
     } catch (err) {
-      setError('生成报价失败，请重试');
+      setError('Failed to generate quote, please try again');
     } finally {
       setLoading(false);
     }
@@ -121,19 +121,19 @@ const QuoteCalculator: React.FC<QuoteCalculatorProps> = ({
     const now = new Date();
     const diff = date.getTime() - now.getTime();
     const minutes = Math.floor(diff / (1000 * 60));
-    return `${minutes}分钟后过期`;
+    return `Expires in ${minutes} minutes`;
   };
 
   return (
     <div className={`quote-calculator ${className}`}>
       <div className="bg-white rounded-lg shadow-lg p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">报价计算</h2>
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">Quote Calculator</h2>
         
         {/* Input Form */}
         <div className="space-y-4 mb-6">
           <div>
             <label htmlFor="principal" className="block text-sm font-medium text-gray-700 mb-2">
-              本金 (USDT)
+              Principal (USDT)
             </label>
             <input
               id="principal"
@@ -147,13 +147,13 @@ const QuoteCalculator: React.FC<QuoteCalculatorProps> = ({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <p className="text-xs text-gray-500 mt-1">
-              范围: {MIN_PRINCIPAL}-{MAX_PRINCIPAL} USDT
+              Range: {MIN_PRINCIPAL}-{MAX_PRINCIPAL} USDT
             </p>
           </div>
           
           <div>
             <label htmlFor="leverage" className="block text-sm font-medium text-gray-700 mb-2">
-              杠杆倍数
+              Leverage
             </label>
             <input
               id="leverage"
@@ -167,7 +167,7 @@ const QuoteCalculator: React.FC<QuoteCalculatorProps> = ({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <p className="text-xs text-gray-500 mt-1">
-              范围: {MIN_LEVERAGE}-{MAX_LEVERAGE} 倍
+              Range: {MIN_LEVERAGE}-{MAX_LEVERAGE}x
             </p>
           </div>
           
@@ -176,7 +176,7 @@ const QuoteCalculator: React.FC<QuoteCalculatorProps> = ({
             disabled={loading || !principal || !leverage}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? '计算中...' : '获取报价'}
+            {loading ? 'Calculating...' : 'Get Quote'}
           </button>
         </div>
 
@@ -195,42 +195,42 @@ const QuoteCalculator: React.FC<QuoteCalculatorProps> = ({
         {quote && (
           <div className="space-y-4">
             <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-              <h3 className="text-lg font-semibold text-blue-800 mb-3">报价详情</h3>
+              <h3 className="text-lg font-semibold text-blue-800 mb-3">Quote Details</h3>
               
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="bg-white rounded-md p-3">
-                  <div className="text-sm text-gray-600">报价 ID</div>
+                  <div className="text-sm text-gray-600">Quote ID</div>
                   <div className="text-sm font-mono text-gray-800 break-all">{quote.id}</div>
                 </div>
                 
                 <div className="bg-white rounded-md p-3">
-                  <div className="text-sm text-gray-600">有效期</div>
+                  <div className="text-sm text-gray-600">Validity</div>
                   <div className="text-sm font-medium text-gray-800">{formatExpiry(quote.expiresAt)}</div>
                 </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-white rounded-md p-4">
-                  <div className="text-sm text-gray-600 mb-1">保费</div>
+                  <div className="text-sm text-gray-600 mb-1">Premium</div>
                   <div className="text-2xl font-bold text-green-600">{formatCurrency(quote.premium)} USDT</div>
-                  <div className="text-xs text-gray-500">费率: {formatPercentage(quote.premiumRate)}%</div>
+                  <div className="text-xs text-gray-500">Rate: {formatPercentage(quote.premiumRate)}%</div>
                 </div>
                 
                 <div className="bg-white rounded-md p-4">
-                  <div className="text-sm text-gray-600 mb-1">赔付额</div>
+                  <div className="text-sm text-gray-600 mb-1">Payout</div>
                   <div className="text-2xl font-bold text-blue-600">{formatCurrency(quote.payout)} USDT</div>
-                  <div className="text-xs text-gray-500">比例: {formatPercentage(quote.payoutRate)}%</div>
+                  <div className="text-xs text-gray-500">Rate: {formatPercentage(quote.payoutRate)}%</div>
                 </div>
               </div>
             </div>
             
             {/* Summary Stats */}
             <div className="bg-gray-50 rounded-md p-4">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">计算摘要</h4>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Calculation Summary</h4>
               <div className="text-xs text-gray-600 space-y-1">
-                <div>本金: {formatCurrency(quote.principal)} USDT × 杠杆: {quote.leverage}倍</div>
-                <div>保费 = {formatCurrency(quote.principal)} × {quote.leverage} × {formatPercentage(PREMIUM_RATE)}% = {formatCurrency(quote.premium)} USDT</div>
-                <div>赔付 = {formatCurrency(quote.principal)} × {quote.leverage} × {formatPercentage(PAYOUT_RATE)}% = {formatCurrency(quote.payout)} USDT</div>
+                <div>Principal: {formatCurrency(quote.principal)} USDT × Leverage: {quote.leverage}x</div>
+                <div>Premium = {formatCurrency(quote.principal)} × {quote.leverage} × {formatPercentage(PREMIUM_RATE)}% = {formatCurrency(quote.premium)} USDT</div>
+                <div>Payout = {formatCurrency(quote.principal)} × {quote.leverage} × {formatPercentage(PAYOUT_RATE)}% = {formatCurrency(quote.payout)} USDT</div>
               </div>
             </div>
           </div>

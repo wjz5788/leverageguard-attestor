@@ -8,22 +8,24 @@ export interface ExchangeOption {
   description: LocalizedText;
 }
 
-export const EXCHANGE_OPTIONS: ExchangeOption[] = [
+export const EXCHANGES: ExchangeOption[] = [
   {
-    id: 'OKX',
+    id: 'okx',
     label: { zh: 'OKX', en: 'OKX' },
     description: {
-      zh: '支持 BTC-USDT-SWAP 与 BTC-USDC-SWAP 永续合约',
+      zh: 'Supports BTC-USDT-SWAP and BTC-USDC-SWAP perpetual contracts',
       en: 'Supports BTC-USDT-SWAP and BTC-USDC-SWAP perpetual contracts',
     },
+    envs: ['prod', 'demo'],
   },
   {
-    id: 'Binance',
+    id: 'binance',
     label: { zh: 'Binance', en: 'Binance' },
     description: {
-      zh: '支持 BTCUSDT 与 BTCUSDC 永续合约',
+      zh: 'Supports BTCUSDT and BTCUSDC perpetual contracts',
       en: 'Supports BTCUSDT and BTCUSDC perpetual contracts',
     },
+    envs: ['prod', 'test'],
   },
 ];
 
@@ -42,9 +44,9 @@ export const TRADING_PAIR_OPTIONS: TradingPairOption[] = [
   {
     id: 'BTC-USDT-SWAP',
     exchangeId: 'OKX',
-    label: { zh: 'BTC-USDT-SWAP 永续', en: 'BTC-USDT-SWAP Perpetual' },
+    label: { zh: 'BTC-USDT-SWAP Perpetual', en: 'BTC-USDT-SWAP Perpetual' },
     notice: {
-      zh: 'USDT 保证金 · 永续合约 · 正向',
+      zh: 'USDT collateral · Perpetual · Linear',
       en: 'USDT collateral · Perpetual · Linear',
     },
     expectedInstType: 'SWAP',
@@ -52,9 +54,9 @@ export const TRADING_PAIR_OPTIONS: TradingPairOption[] = [
   {
     id: 'BTC-USDC-SWAP',
     exchangeId: 'OKX',
-    label: { zh: 'BTC-USDC-SWAP 永续', en: 'BTC-USDC-SWAP Perpetual' },
+    label: { zh: 'BTC-USDC-SWAP Perpetual', en: 'BTC-USDC-SWAP Perpetual' },
     notice: {
-      zh: 'USDC 保证金 · 永续合约 · 正向',
+      zh: 'USDC collateral · Perpetual · Linear',
       en: 'USDC collateral · Perpetual · Linear',
     },
     expectedInstType: 'SWAP',
@@ -62,9 +64,9 @@ export const TRADING_PAIR_OPTIONS: TradingPairOption[] = [
   {
     id: 'BTCUSDT',
     exchangeId: 'Binance',
-    label: { zh: 'BTCUSDT 永续', en: 'BTCUSDT Perpetual' },
+    label: { zh: 'BTCUSDT Perpetual', en: 'BTCUSDT Perpetual' },
     notice: {
-      zh: 'USDT 保证金 · 永续合约 · U 本位',
+      zh: 'USDT collateral · Perpetual · USDT-margined',
       en: 'USDT collateral · Perpetual · USDT-margined',
     },
     expectedContractType: 'PERPETUAL',
@@ -72,9 +74,9 @@ export const TRADING_PAIR_OPTIONS: TradingPairOption[] = [
   {
     id: 'BTCUSDC',
     exchangeId: 'Binance',
-    label: { zh: 'BTCUSDC 永续', en: 'BTCUSDC Perpetual' },
+    label: { zh: 'BTCUSDC Perpetual', en: 'BTCUSDC Perpetual' },
     notice: {
-      zh: 'USDC 保证金 · 永续合约 · U 本位',
+      zh: 'USDC collateral · Perpetual · USDC-margined',
       en: 'USDC collateral · Perpetual · USDC-margined',
     },
     expectedContractType: 'PERPETUAL',

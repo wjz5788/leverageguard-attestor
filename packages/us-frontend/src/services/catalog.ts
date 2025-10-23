@@ -18,6 +18,15 @@ export async function getSkus(): Promise<Sku[]> {
     return data as Sku[];
   } catch (error) {
     console.error('Failed to fetch SKUs:', error);
-    return []; // Return an empty array on error
+    // Provide more user-friendly error messages
+    if (error instanceof Error) {
+      if (error.message.includes('Failed to fetch')) {
+        throw new Error('Unable to connect to backend service, please check your network connection');
+      }
+      if (error.message.includes('HTTP error')) {
+        throw new Error(`Server error: ${error.message}`);
+      }
+    }
+    throw new Error('Failed to fetch product list, please try again later');
   }
 }

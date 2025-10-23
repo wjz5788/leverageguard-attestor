@@ -10,6 +10,7 @@ export interface AnchorDefinition {
 export interface PageDescriptor {
   id: string;
   label: LocalizedText;
+  component?: React.ComponentType;
   init?: () => void;
   anchors?: AnchorDefinition[];
 }
@@ -21,6 +22,7 @@ export interface RouteProps {
 
 export interface RouteDefinition extends PageDescriptor {
   path: string;
+  component?: React.ComponentType;
 }
 
 function ensureLeadingSlash(path: string): string {
@@ -42,6 +44,7 @@ export function Route(props: RouteProps): RouteDefinition {
     path: normalizePath(props.path),
     id: props.element.id,
     label: { ...props.element.label },
+    component: props.element.component,
     init: props.element.init,
     anchors,
   };

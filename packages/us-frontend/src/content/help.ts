@@ -52,33 +52,33 @@ interface SectionConfig {
 const SECTION_CONFIG: SectionConfig[] = [
   {
     id: 'overview',
-    label: { zh: '概述', en: 'Overview' },
+    label: { zh: 'Overview', en: 'Overview' },
     sourcePatterns: {
-      zh: [/^项目简介/i],
+      zh: [/^Project Overview/i],
       en: [/^Project Overview/i],
     },
   },
   {
     id: 'flow',
-    label: { zh: '使用流程', en: 'Usage Flow' },
+    label: { zh: 'Usage Flow', en: 'Usage Flow' },
     sourcePatterns: {
-      zh: [/产品与理赔流程/i],
+      zh: [/Product & Claim Workflow/i],
       en: [/Product & Claim Workflow/i],
     },
   },
   {
     id: 'faq',
-    label: { zh: '常见问题（FAQ）', en: 'FAQ' },
+    label: { zh: 'FAQ', en: 'FAQ' },
     sourcePatterns: {
-      zh: [/为什么用户愿意绑定交易所信息/i],
+      zh: [/Why Users Connect Exchange Data/i],
       en: [/Why Users Connect Exchange Data/i],
     },
   },
   {
     id: 'compliance',
-    label: { zh: '接口与隐私 / 合规说明', en: 'Interfaces & Privacy / Compliance' },
+    label: { zh: 'Interfaces & Privacy / Compliance', en: 'Interfaces & Privacy / Compliance' },
     sourcePatterns: {
-      zh: [/数据与隐私/i, /定价与风控说明/i, /联系方式/i],
+      zh: [/Data and Privacy/i, /Pricing and Risk Control/i, /Contact/i],
       en: [/Data and Privacy/i, /Pricing and Risk Control/i, /Contact/i],
     },
   },

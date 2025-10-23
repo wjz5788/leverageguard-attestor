@@ -381,45 +381,45 @@ export class WalletConnectButton {
       if (message.includes('· signing request')) {
         const [prefix, suffix] = message.split('·');
         const addr = prefix.replace('Connected to ', '').trim();
-        return `已连接 ${addr} · 正在签名请求…`;
+        return `Connected to ${addr} · Signing request…`;
       }
       const address = message.replace('Connected to ', '');
-      return `已连接 ${address}`;
+      return `Connected to ${address}`;
     }
 
     if (message.startsWith('Authenticated as ')) {
       const [prefix, suffix] = message.split('·').map((part) => part.trim());
       const address = prefix.replace('Authenticated as ', '');
       if (!suffix) {
-        return `已认证 ${address}`;
+        return `Authenticated as ${address}`;
       }
       if (suffix.startsWith('token valid until')) {
         const expiry = suffix.replace('token valid until', '').trim();
-        return `已认证 ${address} · Token 有效至 ${expiry}`;
+        return `Authenticated as ${address} · Token valid until ${expiry}`;
       }
       if (suffix.startsWith('token active')) {
-        return `已认证 ${address} · Token 已激活`;
+        return `Authenticated as ${address} · Token active`;
       }
-      return `已认证 ${address} · ${suffix}`;
+      return `Authenticated as ${address} · ${suffix}`;
     }
 
     switch (message) {
       case 'Wallet disconnected':
-        return '钱包未连接';
+        return 'Wallet disconnected';
       case 'MetaMask not detected. Open the official download page.':
-        return '未检测到 MetaMask，请前往官网下载。';
+        return 'MetaMask not detected. Open the official download page.';
       case 'Please switch back to Base (8453)':
-        return '请切换回 Base 主网（8453）';
+        return 'Please switch back to Base (8453)';
       case 'Connected to wallet':
-        return '钱包已连接';
+        return 'Connected to wallet';
       case 'Connecting wallet…':
-        return '正在连接钱包…';
+        return 'Connecting wallet…';
       case 'Request rejected in MetaMask':
-        return 'MetaMask 中拒绝了请求';
+        return 'Request rejected in MetaMask';
       case 'Unable to process wallet request':
-        return '钱包请求处理失败';
+        return 'Unable to process wallet request';
       case 'Confirm the login signature in MetaMask':
-        return '请在 MetaMask 中确认签名';
+        return 'Confirm the login signature in MetaMask';
       default:
         return message;
     }
