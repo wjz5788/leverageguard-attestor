@@ -181,10 +181,15 @@ export class WalletConnectButton {
       return;
     }
 
-    const timestamp = new Date().toISOString();
-    const message = `LeverageGuard.us login\nNetwork: ${this.network.chainName}\nTime: ${timestamp}`;
+    this.signButton.textContent = 'Signing…';
+    this.signButton.disabled = true;
+    this.helperText.textContent = 'Confirm the login signature in MetaMask';
+    this.updateStatusTarget(`Connected to ${this.state.address} · signing request…`);
 
     try {
+      const timestamp = new Date().toISOString();
+      const message = `LeverageGuard.us login\nNetwork: ${this.network.chainName}\nTime: ${timestamp}`;
+
       const signature = await this.provider.request({
         method: 'personal_sign',
         params: [message, this.state.address],
@@ -198,16 +203,21 @@ export class WalletConnectButton {
       };
 
       this.signButton.textContent = 'Signed';
-      this.signButton.disabled = true;
-      this.updateStatusTarget('Signature ready — sending to API (placeholder)');
+      this.signButton.disabled = false;
+      this.helperText.textContent = `Network: ${this.network.chainName} · Signed`;
+      this.updateStatusTarget(`Authenticated as ${this.state.address}`);
+      
       this.callbacks?.onSign?.(result);
 
+      // 3秒后重置签名按钮状态
       window.setTimeout(() => {
         this.signButton.textContent = 'Sign Login';
         this.signButton.disabled = false;
-      }, 1600);
+      }, 3000);
     } catch (error) {
       const messageText = this.describeError(error);
+      this.signButton.textContent = 'Retry Sign';
+      this.signButton.disabled = false;
       this.helperText.textContent = messageText;
       this.updateStatusTarget(messageText);
     }

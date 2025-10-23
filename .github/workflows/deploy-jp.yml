@@ -13,11 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 打包后端（若没有 attestor 目录，会创建占位，避免空包失败）
-      - name: Pack attestor
+      # 打包日本验证服务
+      - name: Build JP verify
         run: |
-          test -d attestor || mkdir -p attestor && echo placeholder > attestor/README.txt
-          tar -czf attestor_pkg.tgz attestor
+          set -eux
+          if [ -f packages/jp-verify/package.json ]; then
+            cd packages/jp-verify
+            npm ci || npm i
+            cd -
+          fi
+          
+          # 打包验证服务代码
+          rm -rf jp_verify_dist
+          mkdir -p jp_verify_dist
+          rsync -a --delete --exclude ".git" --exclude "node_modules" packages/jp-verify/ jp_verify_dist/
+          echo "commit=$(git rev-parse --short HEAD)" > jp_verify_dist/__version
 
       - name: Load SSH key
         uses: webfactory/ssh-agent@v0.9.0
@@ -29,6 +39,9 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
 
+      - name: Pack artifact
+        run: tar -czf jp_verify.tgz -C jp_verify_dist .
+
       - name: Upload and activate on JP
         env:
           HOST: ${{ secrets.JP_HOST }}
@@ -38,17 +51,24 @@ jobs:
           SHA:  ${{ github.sha }}
         run: |
           ssh -p "$PORT" $USER@$HOST "mkdir -p $BASE/releases/$SHA"
-          scp -P "$PORT" attestor_pkg.tgz $USER@$HOST:$BASE/releases/$SHA/
+          scp -P "$PORT" jp_verify.tgz $USER@$HOST:$BASE/releases/$SHA/
           ssh -p "$PORT" $USER@$HOST bash -lc "
             set -e
             cd $BASE/releases/$SHA
-            tar -xzf attestor_pkg.tgz
-            test -d $BASE/venv || python3 -m venv $BASE/venv
-            if [ -f attestor/requirements.txt ]; then
-              $BASE/venv/bin/pip install -U pip
-              $BASE/venv/bin/pip install -r attestor/requirements.txt
-            fi
+            
+            # 部署验证服务
+            tar -xzf jp_verify.tgz
+            cd jp_verify_dist
+            npm ci --production
+            
+            # 创建符号链接
             ln -nfs $BASE/releases/$SHA $BASE/current
-            sudo systemctl restart attestor || true
-            curl -fsS http://127.0.0.1:8081/api/ping || true
+            
+            # 重启服务
+            if command -v systemctl >/dev/null 2>&1; then 
+              sudo systemctl restart jp-verify || true
+            fi
+            
+            # 健康检查
+            curl -fsS http://127.0.0.1:8787/api/ping || true
           "

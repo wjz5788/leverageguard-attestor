@@ -1,5 +1,6 @@
 import type { ExchangeId, TradingPairId } from '../config/verification';
 import { apiRequest, JP_API_BASE, US_API_BASE } from './apiClient';
+import { jpApiRequestWithKeys, ApiRequestWithKeysOptions } from './apiClientWithKeys';
 import { getAuthState } from './auth';
 
 export interface SkuOption {
@@ -140,7 +141,14 @@ interface RawVerificationResponse {
 }
 
 export async function submitVerification(
-  request: VerificationRequest
+  request: VerificationRequest,
+  apiKeys?: {
+    binanceApiKey?: string;
+    binanceSecretKey?: string;
+    okxApiKey?: string;
+    okxSecretKey?: string;
+    okxPassphrase?: string;
+  }
 ): Promise<VerificationResponse> {
   const auth = getAuthState();
   const payload: Record<string, unknown> = {
@@ -157,7 +165,29 @@ export async function submitVerification(
     headers.Authorization = `Bearer ${auth.token}`;
   }
 
-  const raw = await apiRequest<RawVerificationResponse>(`${JP_API_BASE}/verify/order`, {
+  // 如果提供了API密钥，则添加到请求头中
+  if (apiKeys) {
+    // 根据交易所添加相应的API密钥头
+    switch (mapExchangeId(request.exchange)) {
+      case 'binance':
+        if (apiKeys.binanceApiKey) {
+          headers['X-MBX-APIKEY'] = apiKeys.binanceApiKey;
+        }
+        break;
+      case 'okx':
+        if (apiKeys.okxApiKey) {
+          headers['OK-ACCESS-KEY'] = apiKeys.okxApiKey;
+          // 注意：在实际实现中，还需要生成签名并添加其他必要的头
+          // 这里为了简化，只添加API密钥
+          if (apiKeys.okxPassphrase) {
+            headers['OK-ACCESS-PASSPHRASE'] = apiKeys.okxPassphrase;
+          }
+        }
+        break;
+    }
+  }
+
+  const raw = await jpApiRequestWithKeys<RawVerificationResponse>('/verify/order', {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),

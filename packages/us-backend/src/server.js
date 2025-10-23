@@ -38,6 +38,15 @@ const queries = {
   getClaimById: db.prepare('SELECT * FROM claims WHERE id = ?'),
   getOrderById: db.prepare('SELECT * FROM orders WHERE id = ?'),
   updateClaimStatus: db.prepare('UPDATE claims SET status = ?, reason = ? WHERE id = ?'),
+  getClaimWithOrder: db.prepare(`
+    SELECT 
+      c.id as claimId, c.status, c.orderId, c.wallet, c.evidenceHash, c.reason, 
+      c.createdAt,
+      o.skuId, o.exchange, o.pair, o.orderRef, o.premium, o.payout as payoutAmount
+    FROM claims c
+    LEFT JOIN orders o ON c.orderId = o.id
+    WHERE c.id = ?
+  `),
 };
 
 function getIdempotencyRecord(key, route) {
@@ -398,6 +407,57 @@ app.post('/claim', (req, res, next) => {
     };
 
     res.status(201).json(responsePayload);
+  } catch (error) {
+    error.statusCode = 500;
+    return next(error);
+  }
+});
+
+// 理赔状态查询接口
+app.get('/claim/:claimId', (req, res, next) => {
+  const { claimId } = req.params;
+  res.locals.logContext.claimId = claimId;
+
+  if (!claimId) {
+    const error = new Error('Missing claimId parameter');
+    error.statusCode = 400;
+    return next(error);
+  }
+
+  try {
+    const claimWithOrder = queries.getClaimWithOrder.get(claimId);
+    
+    if (!claimWithOrder) {
+      const error = new Error('Claim not found');
+      error.statusCode = 404;
+      return next(error);
+    }
+
+    // 构建响应数据
+    const responsePayload = {
+      claimId: claimWithOrder.claimId,
+      status: claimWithOrder.status,
+      orderId: claimWithOrder.orderId,
+      wallet: claimWithOrder.wallet,
+      evidenceHash: claimWithOrder.evidenceHash,
+      reason: claimWithOrder.reason,
+      createdAt: claimWithOrder.createdAt,
+      payoutAmount: claimWithOrder.payoutAmount,
+      skuId: claimWithOrder.skuId,
+      exchange: claimWithOrder.exchange,
+      pair: claimWithOrder.pair,
+      orderRef: claimWithOrder.orderRef,
+      premium: claimWithOrder.premium
+    };
+
+    res.locals.logContext = {
+      ...res.locals.logContext,
+      wallet: claimWithOrder.wallet,
+      orderId: claimWithOrder.orderId,
+      msg: 'claim status retrieved',
+    };
+
+    res.status(200).json(responsePayload);
   } catch (error) {
     error.statusCode = 500;
     return next(error);

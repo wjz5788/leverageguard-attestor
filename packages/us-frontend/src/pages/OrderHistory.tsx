@@ -1,16 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { fetchOrderHistory, type OrderHistoryItem } from '../services/order';
+import { useWallet } from '../contexts/WalletContext';
 
 export function OrderHistoryPage() {
-  const [walletAddress, setWalletAddress] = useState('');
+  const { account, isConnected } = useWallet();
   const [orders, setOrders] = useState<OrderHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!walletAddress.trim()) {
-      setError('Please enter a wallet address');
+  useEffect(() => {
+    if (isConnected && account) {
+      handleSearch();
+    }
+  }, [isConnected, account]);
+
+  const handleSearch = async (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
+    
+    if (!account?.trim()) {
+      setError('Please connect a wallet first');
       return;
     }
     
@@ -18,11 +28,11 @@ export function OrderHistoryPage() {
     setError('');
     
     try {
-      const history = await fetchOrderHistory(walletAddress.trim());
-      setOrders(history);
-    } catch (err) {
-      setError('Failed to fetch order history. Please try again.');
-      console.error('Error fetching order history:', err);
+      const result = await fetchOrderHistory(account);
+      setOrders(result);
+    } catch (err: any) {
+      console.error('Failed to fetch orders:', err);
+      setError(err.message || 'Failed to fetch orders');
     } finally {
       setIsLoading(false);
     }
@@ -43,25 +53,30 @@ export function OrderHistoryPage() {
       <div className="bg-slate-800 rounded-lg p-6 mb-8">
         <h2 className="text-2xl font-semibold text-white mb-4">Search Orders</h2>
         
-        <form onSubmit={handleSearch} className="flex gap-4">
-          <div className="flex-1">
-            <input 
-              type="text" 
-              value={walletAddress}
-              onChange={(e) => setWalletAddress(e.target.value)}
-              placeholder="Enter wallet address"
-              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white"
-              required
-            />
+        {!isConnected ? (
+          <div className="p-4 bg-yellow-900 text-yellow-200 rounded-lg">
+            Please connect your wallet to view order history
           </div>
-          <button 
-            type="submit" 
-            disabled={isLoading}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-bold py-2 px-6 rounded transition-colors"
-          >
-            {isLoading ? 'Searching...' : 'Search'}
-          </button>
-        </form>
+        ) : (
+          <form onSubmit={handleSearch} className="flex gap-4">
+            <div className="flex-1">
+              <input 
+               type="text" 
+               value={account || ''}
+               readOnly
+               placeholder="Wallet address"
+               className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white opacity-70"
+             />
+            </div>
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-bold py-2 px-6 rounded transition-colors"
+            >
+              {isLoading ? 'Searching...' : 'Refresh'}
+            </button>
+          </form>
+        )}
         
         {error && (
           <div className="mt-4 p-4 bg-red-900 text-red-200 rounded-lg">
@@ -111,7 +126,7 @@ export function OrderHistoryPage() {
             </table>
           </div>
         </div>
-      ) : !isLoading && walletAddress ? (
+      ) : !isLoading && isConnected ? (
         <div className="bg-slate-800 rounded-lg p-6 text-center">
           <p className="text-slate-300">No orders found for this wallet address.</p>
         </div>

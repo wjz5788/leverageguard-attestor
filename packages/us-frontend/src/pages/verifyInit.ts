@@ -1,5 +1,5 @@
 import {
-  EXCHANGE_OPTIONS,
+  EXCHANGES as EXCHANGE_OPTIONS,
   findExchangeOption,
   findPairOption,
   getPairsForExchange,

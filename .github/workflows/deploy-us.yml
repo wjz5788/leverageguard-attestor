@@ -60,8 +60,25 @@ jobs:
           rsync -a --delete --exclude ".git" --exclude "node_modules" "$OUT"/ us_frontend_dist/
           echo "commit=$(git rev-parse --short HEAD)" > us_frontend_dist/__version
 
-      - name: Pack artifact
-        run: tar -czf us_frontend.tgz -C us_frontend_dist .
+      - name: Build US backend
+        run: |
+          set -eux
+          if [ -f packages/us-backend/package.json ]; then
+            cd packages/us-backend
+            npm ci || npm i
+            cd -
+          fi
+          
+          # 打包后端代码
+          rm -rf us_backend_dist
+          mkdir -p us_backend_dist
+          rsync -a --delete --exclude ".git" --exclude "node_modules" packages/us-backend/ us_backend_dist/
+          echo "commit=$(git rev-parse --short HEAD)" > us_backend_dist/__version
+
+      - name: Pack artifacts
+        run: |
+          tar -czf us_frontend.tgz -C us_frontend_dist .
+          tar -czf us_backend.tgz -C us_backend_dist .
 
       - name: Load SSH key
         uses: webfactory/ssh-agent@v0.9.0
@@ -85,12 +102,27 @@ jobs:
           set -eux
           : "${PORT:=22}"
           ssh -p "$PORT" "$USER@$HOST" "mkdir -p $BASE/releases/$RUNID"
-          scp -P "$PORT" us_frontend.tgz "$USER@$HOST:$BASE/releases/$RUNID/"
+          scp -P "$PORT" us_frontend.tgz us_backend.tgz "$USER@$HOST:$BASE/releases/$RUNID/"
           ssh -p "$PORT" "$USER@$HOST" bash -lc "
             set -eux
             cd $BASE/releases/$RUNID
+            
+            # 部署前端
             tar -xzf us_frontend.tgz
+            
+            # 部署后端
+            tar -xzf us_backend.tgz
+            cd us_backend_dist
+            npm ci --production
+            
+            # 创建符号链接
             ln -nfs $BASE/releases/$RUNID $BASE/current
-            if command -v systemctl >/dev/null 2>&1; then sudo systemctl reload nginx || true; fi
+            
+            # 重启服务
+            if command -v systemctl >/dev/null 2>&1; then 
+              sudo systemctl reload nginx || true
+              sudo systemctl restart us-backend || true
+            fi
+            
             test -f $BASE/current/__version || true
           "

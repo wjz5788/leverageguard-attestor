@@ -84,7 +84,7 @@ export const TRADING_PAIR_OPTIONS: TradingPairOption[] = [
 ];
 
 export function findExchangeOption(id: ExchangeId): ExchangeOption | undefined {
-  return EXCHANGE_OPTIONS.find((option) => option.id === id);
+  return EXCHANGES.find((option) => option.id === id);
 }
 
 export function getPairsForExchange(exchangeId: ExchangeId): TradingPairOption[] {

@@ -1,0 +1,83 @@
+#!/bin/bash
+
+# Git post-receive钩子
+# 在服务器仓库的hooks目录下使用
+
+set -e
+
+# 部署配置
+DEPLOY_PATH="/home/deploy/app"
+TEMP_PATH="/tmp/deploy-$(date +%s)"
+LOG_FILE="/var/log/git-deploy.log"
+
+# 记录日志
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# 创建临时目录
+mkdir -p "$TEMP_PATH"
+
+# 检出最新代码
+while read oldrev newrev refname; do
+    # 只处理main分支
+    if [ "$refname" = "refs/heads/main" ]; then
+        log "开始部署 main 分支..."
+        
+        # 检出代码到临时目录
+        git archive --format=tar "$newrev" | tar -x -C "$TEMP_PATH"
+        
+        # 同步到部署目录（保留配置文件）
+        rsync -av --delete \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            --exclude='data/' \
+            --exclude='logs/' \
+            "$TEMP_PATH/" "$DEPLOY_PATH/"
+        
+        # 切换到部署目录
+        cd "$DEPLOY_PATH"
+        
+        # 安装依赖
+        log "安装依赖..."
+        npm install
+        
+        # 构建前端
+        if [ -d "packages/us-frontend" ]; then
+            log "构建前端..."
+            cd packages/us-frontend
+            npm run build
+            cd "$DEPLOY_PATH"
+        fi
+        
+        # 重启服务
+        log "重启服务..."
+        
+        # 使用PM2重启服务
+        if command -v pm2 &> /dev/null; then
+            # 重启美国后端
+            if [ -d "packages/us-backend" ]; then
+                pm2 restart us-backend 2>/dev/null || \
+                pm2 start packages/us-backend/src/server.js --name us-backend
+            fi
+            
+            # 重启日本验证服务
+            if [ -d "packages/jp-verify" ]; then
+                pm2 restart jp-verify 2>/dev/null || \
+                pm2 start packages/jp-verify/src/server.js --name jp-verify
+            fi
+            
+            # 保存PM2配置
+            pm2 save
+        else
+            # 如果没有PM2，使用systemd
+            systemctl restart us-backend 2>/dev/null || true
+            systemctl restart jp-verify 2>/dev/null || true
+        fi
+        
+        log "✅ 部署完成"
+        
+        # 清理临时文件
+        rm -rf "$TEMP_PATH"
+    fi
+done
