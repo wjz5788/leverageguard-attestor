@@ -26,6 +26,7 @@ function useOnClickOutside(ref: React.RefObject<HTMLElement>, handler: () => voi
 function AccountMenu({ address, onDisconnect }: { address: string; onDisconnect: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useOnClickOutside(ref, () => setIsOpen(false));
 
@@ -39,9 +40,21 @@ function AccountMenu({ address, onDisconnect }: { address: string; onDisconnect:
 
   const displayText = address ? truncateAddress(address) : "个人";
 
+  const getMenuPosition = () => {
+    if (!buttonRef.current) return { right: 0, top: 0 };
+    const buttonRect = buttonRef.current.getBoundingClientRect();
+    return {
+      right: window.innerWidth - buttonRect.right,
+      top: buttonRect.bottom + 8
+    };
+  };
+
+  const position = getMenuPosition();
+
   return (
     <div ref={ref} className="relative">
       <button
+        ref={buttonRef}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         onClick={() => setIsOpen(!isOpen)}
@@ -57,30 +70,56 @@ function AccountMenu({ address, onDisconnect }: { address: string; onDisconnect:
       </button>
       
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 z-50">
+        <div 
+          className="fixed w-56 z-[9999] pointer-events-auto" 
+          style={{ 
+            position: 'fixed',
+            right: position.right,
+            top: position.top
+          }}
+        >
           {/* 上方小三角 */}
-          <div aria-hidden className="absolute right-6 -top-2 h-0 w-0 border-l-8 border-r-8 border-b-8 border-transparent border-b-stone-200"></div>
-          <div aria-hidden className="absolute right-6 -top-[7px] h-0 w-0 border-l-7 border-r-7 border-b-7 border-transparent border-b-white"></div>
+          <div aria-hidden className="absolute right-6 -top-2 h-0 w-0 border-l-8 border-r-8 border-b-8 border-transparent border-b-stone-200 z-[10000]"></div>
+          <div aria-hidden className="absolute right-6 -top-[7px] h-0 w-0 border-l-7 border-r-7 border-b-7 border-transparent border-b-white z-[10000]"></div>
           
           {/* 菜单面板 */}
-          <div className="relative rounded-xl border border-stone-200 bg-white p-1 shadow-lg">
-            {ACCOUNT_MENU_ITEMS.map(item => (
-              <Link
-                key={item.label}
-                to={item.to}
-                onClick={() => setIsOpen(false)}
-                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-stone-800 hover:bg-stone-50 transition-colors"
-              >
-                <span>•</span>
-                <span>{item.label}</span>
-              </Link>
-            ))}
-            <button
-              onClick={() => { onDisconnect(); setIsOpen(false); }}
-              className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50 transition-colors"
-            >
-              退出
-            </button>
+          <div className="relative rounded-xl border border-stone-200 bg-white p-1 shadow-lg pointer-events-auto">
+            {address ? (
+              <>
+                {ACCOUNT_MENU_ITEMS.map(item => (
+                  <Link
+                    key={item.label}
+                    to={item.to}
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-stone-800 hover:bg-stone-50 transition-colors"
+                  >
+                    <span>•</span>
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+                <button
+                  onClick={() => { onDisconnect(); setIsOpen(false); }}
+                  className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50 transition-colors"
+                >
+                  退出
+                </button>
+              </>
+            ) : (
+              <div className="px-3 py-4 text-center">
+                <div className="text-amber-600 mb-2">
+                  <svg className="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <p className="text-sm text-stone-600 mb-3">请先连接钱包以访问账户功能</p>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm"
+                >
+                  关闭
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
