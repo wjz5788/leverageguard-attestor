@@ -9,6 +9,8 @@ import { CreateLink } from './pages/CreateLink';
 import { Links } from './pages/Links';
 import { Payment } from './pages/Payment';
 import { Success } from './pages/Success';
+import { ProfilePage } from './pages/ProfilePage';
+import { ApiSettings } from './pages/ApiSettings';
 import { zh } from './i18n/zh';
 
 function App() {
@@ -33,6 +35,8 @@ function App() {
                 <Route path="/links/create" element={<CreateLink t={zh} />} />
                 <Route path="/pay/:id" element={<Payment t={zh} />} />
                 <Route path="/success" element={<Success t={zh} />} />
+                <Route path="/profile" element={<ProfilePage t={zh} />} />
+                <Route path="/settings/api" element={<ApiSettings t={zh} />} />
               </Routes>
             </main>
             
