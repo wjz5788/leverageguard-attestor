@@ -11,6 +11,9 @@ import { Payment } from './pages/Payment';
 import { Success } from './pages/Success';
 import { ProfilePage } from './pages/ProfilePage';
 import { ApiSettings } from './pages/ApiSettings';
+import { OrdersPage } from './pages/OrdersPage';
+import { ProductDemo } from './pages/ProductDemo';
+import { Products } from './pages/Products';
 import { zh } from './i18n/zh';
 
 function App() {
@@ -37,6 +40,9 @@ function App() {
                 <Route path="/success" element={<Success t={zh} />} />
                 <Route path="/profile" element={<ProfilePage t={zh} />} />
                 <Route path="/settings/api" element={<ApiSettings t={zh} />} />
+                <Route path="/account/orders" element={<OrdersPage t={zh} />} />
+        <Route path="/product/demo" element={<ProductDemo t={zh} />} />
+        <Route path="/products" element={<Products t={zh} />} />
               </Routes>
             </main>
             
