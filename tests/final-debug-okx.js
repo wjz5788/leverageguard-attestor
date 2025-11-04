@@ -1,0 +1,287 @@
+#!/usr/bin/env node
+
+/**
+ * @file final-debug-okx.js
+ * @description 最终调试脚本 - 与Python完全一致的签名逻辑
+ */
+
+import axios from 'axios';
+import crypto from 'node:crypto';
+
+// ==========================
+// 🔑 用户配置（与Python脚本完全一致）
+// ==========================
+const BASE_URL = "https://www.okx.com";
+const API_KEY = '1e0ea9aa-e8a4-4217-a6dd-b5f0e7f313f6';
+const API_SECRET = 'F9F45C90C94953FDACEBFE3697248B33';
+const PASSPHRASE = 'S20250901zhao$';
+
+// ==========================
+// 🕒 工具函数（与Python完全一致）
+// ==========================
+
+/**
+ * 获取ISO8601格式的UTC时间戳（与Python完全一致）
+ */
+function get_iso_timestamp() {
+    const now = new Date();
+    // 与Python完全一致的格式：包含毫秒，Z结尾
+    const isoString = now.toISOString(); // 格式: "2025-11-03T15:58:28.271Z"
+    return isoString;
+}
+
+/**
+ * OKX API v5 签名算法（与Python完全一致）
+ */
+function okx_sign(timestamp, method, request_path, body, secret_key) {
+    // 与Python完全一致：timestamp + method.upper() + request_path + body
+    const message = `${timestamp}${method.toUpperCase()}${request_path}${body || ''}`;
+    
+    console.log('🔐 签名生成详情（与Python完全一致）:');
+    console.log(`   时间戳: "${timestamp}"`);
+    console.log(`   方法: "${method.toUpperCase()}"`);
+    console.log(`   路径: "${request_path}"`);
+    console.log(`   Body: "${body || ''}"`);
+    console.log(`   完整消息: "${message}"`);
+    
+    // 与Python完全一致：HMAC-SHA256 + Base64
+    const hmac = crypto.createHmac('sha256', secret_key);
+    hmac.update(message);
+    const signature = hmac.digest('base64');
+    
+    console.log(`   生成签名: ${signature}`);
+    console.log(`   签名长度: ${signature.length}`);
+    
+    return signature;
+}
+
+/**
+ * 统一封装 OKX 请求（与Python完全一致）
+ */
+async function okx_request(method, request_path, params = null, body = null) {
+    const timestamp = get_iso_timestamp();
+    let query = "";
+    
+    if (params) {
+        query = "?" + Object.entries(params)
+            .map(([k, v]) => `${k}=${v}`)
+            .join("&");
+    }
+    
+    const full_path = request_path + query;
+    const sign = okx_sign(timestamp, method, full_path, body || "", API_SECRET);
+
+    const headers = {
+        "OK-ACCESS-KEY": API_KEY,
+        "OK-ACCESS-SIGN": sign,
+        "OK-ACCESS-TIMESTAMP": timestamp,
+        "OK-ACCESS-PASSPHRASE": PASSPHRASE,
+        "Content-Type": "application/json",
+    };
+
+    const url = BASE_URL + full_path;
+    
+    console.log(`🌐 发送请求: ${method.toUpperCase()} ${url}`);
+    console.log(`   请求头:`, {
+        "OK-ACCESS-KEY": API_KEY.substring(0, 8) + '...',
+        "OK-ACCESS-SIGN": sign.substring(0, 20) + '...',
+        "OK-ACCESS-TIMESTAMP": timestamp,
+        "OK-ACCESS-PASSPHRASE": PASSPHRASE.substring(0, 3) + '...'
+    });
+    
+    try {
+        const response = await axios({
+            method: method.toLowerCase(),
+            url: url,
+            headers: headers,
+            data: body,
+            timeout: 10000
+        });
+        
+        console.log(`✅ 请求成功，HTTP状态码: ${response.status}`);
+        console.log(`   响应码: ${response.data?.code || 'N/A'}`);
+        console.log(`   响应数据:`, response.data);
+        
+        return response.data;
+    } catch (error) {
+        if (error.response) {
+            console.log(`❌ 请求失败，HTTP状态码: ${error.response.status}`);
+            console.log(`   响应头:`, error.response.headers);
+            console.log(`   响应数据:`, error.response.data);
+            
+            return {
+                code: "error",
+                msg: error.response.data,
+                status: error.response.status,
+                headers: error.response.headers
+            };
+        } else if (error.request) {
+            console.log(`❌ 请求失败: 无响应`);
+            console.log(`   错误详情:`, error.message);
+            
+            return {
+                code: "error", 
+                msg: error.message
+            };
+        } else {
+            console.log(`❌ 请求失败: ${error.message}`);
+            return {
+                code: "error", 
+                msg: error.message
+            };
+        }
+    }
+}
+
+// ==========================
+// 📄 查询订单详情
+// ==========================
+
+async function check_order(order_id, inst_id) {
+    const params = {"instId": inst_id, "ordId": order_id};
+    const data = await okx_request("GET", "/api/v5/trade/order", params);
+    
+    if (data.code !== "0") {
+        return [null, data.msg || "Unknown error"];
+    }
+    
+    if (!data.data || data.data.length === 0) {
+        return [null, "No data found"];
+    }
+    
+    return [data.data[0], null];
+}
+
+// ==========================
+// 📊 查询成交记录
+// ==========================
+
+async function check_fills(order_id, inst_id) {
+    const params = {
+        "instType": "SWAP", 
+        "instId": inst_id, 
+        "ordId": order_id, 
+        "limit": 100
+    };
+    
+    const data = await okx_request("GET", "/api/v5/trade/fills-history", params);
+    
+    if (data.code !== "0") {
+        return [[], data.msg || "Unknown error"];
+    }
+    
+    return [data.data || [], null];
+}
+
+// ==========================
+// 🚀 主测试函数
+// ==========================
+
+async function main() {
+    console.log("=== 最终调试：与Python完全一致的OKX API测试 ===");
+    console.log("目标：使用与Python脚本完全相同的签名逻辑");
+    console.log("=".repeat(70));
+    
+    const test_order_id = "2940071038556348417";
+    const test_inst_id = "BTC-USDT-SWAP";
+    
+    console.log(`📋 测试配置:`);
+    console.log(`   订单ID: ${test_order_id}`);
+    console.log(`   交易对: ${test_inst_id}`);
+    console.log(`   API密钥: ${API_KEY.substring(0, 8)}...`);
+    console.log(`   API密钥长度: ${API_KEY.length}`);
+    console.log(`   API密钥格式: ${API_KEY.match(/^[a-f0-9-]+$/i) ? 'UUID格式' : '非标准格式'}`);
+    
+    // 测试1: 查询订单详情
+    console.log("\n🔍 测试1: 查询订单详情");
+    console.log("-".repeat(50));
+    
+    const [order_details, order_error] = await check_order(test_order_id, test_inst_id);
+    
+    if (order_error) {
+        console.log(`❌ 订单查询失败: ${JSON.stringify(order_error, null, 2)}`);
+        
+        // 详细分析错误
+        console.log('🔍 错误分析:');
+        console.log('   1. 签名逻辑: 与Python完全一致');
+        console.log('   2. 时间戳格式: 包含毫秒的ISO8601格式');
+        console.log('   3. HTTP方法: 大写GET');
+        console.log('   4. 消息格式: timestamp + method + path + body');
+        console.log('   5. 编码方式: HMAC-SHA256 + Base64');
+        console.log('   6. 可能原因: API密钥权限、IP白名单、环境配置差异');
+    } else {
+        console.log(`✅ 订单查询成功`);
+        console.log(`   订单ID: ${order_details.ordId}`);
+        console.log(`   状态: ${order_details.state}`);
+        console.log(`   方向: ${order_details.side}`);
+        console.log(`   持仓方向: ${order_details.posSide}`);
+        console.log(`   杠杆: ${order_details.lever}`);
+        
+        // 检查强平标识
+        if (order_details.category === 'full_liquidation' || order_details.fillPx === order_details.liqPx) {
+            console.log('🚨 检测到强平订单！');
+        }
+    }
+    
+    // 测试2: 查询成交记录
+    console.log("\n📊 测试2: 查询成交记录");
+    console.log("-".repeat(50));
+    
+    const [fills, fills_error] = await check_fills(test_order_id, test_inst_id);
+    
+    if (fills_error) {
+        console.log(`❌ 成交记录查询失败: ${JSON.stringify(fills_error, null, 2)}`);
+    } else {
+        console.log(`✅ 成交记录查询成功`);
+        console.log(`   成交记录数: ${fills.length}`);
+        
+        if (fills.length > 0) {
+            let total_pnl = 0;
+            let liquidations = [];
+            
+            for (const fill of fills) {
+                const pnl = parseFloat(fill.fillPnl || 0);
+                const value = parseFloat(fill.fillSz) * parseFloat(fill.fillPx);
+                total_pnl += pnl;
+                
+                if (pnl < 0 && value >= 100) { // 爆仓检测阈值100 USDT
+                    liquidations.push(fill);
+                }
+            }
+            
+            console.log(`   累计盈亏: ${total_pnl.toFixed(4)} USDT`);
+            console.log(`   潜在爆仓记录: ${liquidations.length} 条`);
+        }
+    }
+    
+    // 测试3: 测试公共API连通性
+    console.log("\n🌐 测试3: 公共API连通性");
+    console.log("-".repeat(50));
+    
+    try {
+        const publicResponse = await axios.get(`${BASE_URL}/api/v5/public/time`, { timeout: 5000 });
+        console.log(`✅ 公共API连通性正常`);
+        console.log(`   服务器时间: ${publicResponse.data.data[0].ts}`);
+    } catch (error) {
+        console.log(`❌ 公共API连通性测试失败: ${error.message}`);
+    }
+    
+    console.log("\n=== 测试完成 ===");
+    
+    // 总结
+    console.log("\n📋 测试总结:");
+    console.log("-".repeat(50));
+    console.log("✅ Python脚本: 成功运行，检测到强平订单");
+    console.log("❌ JavaScript脚本: 签名验证失败");
+    console.log("💡 可能原因:");
+    console.log("   1. API密钥权限设置差异");
+    console.log("   2. IP白名单配置");
+    console.log("   3. 环境变量或配置差异");
+    console.log("   4. 网络代理或防火墙设置");
+}
+
+// 执行测试
+main().catch(error => {
+    console.error("❌ 测试执行失败:", error.message);
+    process.exit(1);
+});

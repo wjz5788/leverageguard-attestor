@@ -1,50 +1,84 @@
-import Database from 'better-sqlite3';
-import { readFileSync } from 'fs';
+import sqlite3 from 'sqlite3';
+import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-class DatabaseManager {
-  private db: Database.Database;
+export class DatabaseManager {
+  private db: sqlite3.Database | null = null;
 
   constructor(dbPath: string = './data/liqpass.db') {
     // 确保数据目录存在
-    const path = require('path');
-    const fs = require('fs');
-    const dir = path.dirname(dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    const dir = dirname(dbPath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
     }
 
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    
-    this.initialize();
+    // 创建数据库连接
+    this.db = new sqlite3.Database(dbPath, (err) => {
+      if (err) {
+        console.error('Error opening database:', err.message);
+      } else {
+        console.log('Connected to SQLite database');
+        // 异步初始化数据库
+        this.initialize().catch(error => {
+          console.error('Database initialization failed:', error);
+        });
+      }
+    });
   }
 
-  private initialize() {
-    // 运行迁移
-    const migrationPath = join(__dirname, 'migrations/001_initial_schema.sql');
-    const migrationSQL = readFileSync(migrationPath, 'utf-8');
-    
-    try {
-      this.db.exec(migrationSQL);
-      console.log('Database initialized successfully');
-    } catch (error) {
-      console.error('Database initialization failed:', error);
-      throw error;
+  private async initialize() {
+    return new Promise<void>((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not connected'));
+        return;
+      }
+
+      // 运行所有迁移
+      const migrations = [
+        '001_initial_schema.sql',
+        '002_verify_schema.sql'
+      ];
+      
+      const executeMigration = (index: number) => {
+        if (index >= migrations.length) {
+          console.log('Database initialized successfully');
+          resolve();
+          return;
+        }
+
+        const migrationFile = migrations[index];
+        const migrationPath = join(__dirname, 'migrations', migrationFile);
+        const migrationSQL = readFileSync(migrationPath, 'utf-8');
+        
+        this.db!.exec(migrationSQL, (err) => {
+          if (err) {
+            console.error(`Migration ${migrationFile} failed:`, err);
+            reject(err);
+            return;
+          }
+          
+          console.log(`Migration ${migrationFile} executed successfully`);
+          executeMigration(index + 1);
+        });
+      };
+      
+      executeMigration(0);
+    });
+  }
+
+  getDatabase(): sqlite3.Database {
+    if (!this.db) {
+      throw new Error('Database not initialized');
     }
-  }
-
-  getDatabase(): Database.Database {
     return this.db;
   }
 
-  close() {
-    this.db.close();
+  async close() {
+    await this.db.close();
   }
 }
 
