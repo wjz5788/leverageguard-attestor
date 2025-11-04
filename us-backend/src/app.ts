@@ -8,6 +8,7 @@ import dbManager from './database/db.js';
 import AuthService from './services/authService.js';
 import OrderService from './services/orderService.js';
 import ClaimsService from './services/claimsService.js';
+import PaymentProofService from './services/paymentProofService.js';
 import registerRoutes from './routes/index.js';
 
 // 创建Express应用
@@ -33,15 +34,17 @@ app.use(replayProtection);
 const authService = new AuthService();
 const orderService = new OrderService();
 const claimsService = new ClaimsService(orderService);
+const paymentProofService = new PaymentProofService();
 
 // 路由配置
-registerRoutes(app, { dbManager, authService, orderService, claimsService });
+registerRoutes(app, { dbManager, authService, orderService, claimsService, paymentProofService });
 
 // 注入依赖到应用实例
 app.set('dbManager', dbManager);
 app.set('authService', authService);
 app.set('orderService', orderService);
 app.set('claimsService', claimsService);
+app.set('paymentProofService', paymentProofService);
 
 // 根路由
 app.get('/', (req, res) => {

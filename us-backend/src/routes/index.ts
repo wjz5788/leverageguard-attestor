@@ -10,8 +10,10 @@ import accountRoutes from './account.js';
 import linksRoutes from './links.js';
 import ordersRoutes from './orders.js';
 import claimsRoutes from './claims.js';
+import paymentProofsRoutes from './paymentProofs.js';
 import OrderService from '../services/orderService.js';
 import ClaimsService from '../services/claimsService.js';
+import PaymentProofService from '../services/paymentProofService.js';
 import minSchemaRoutes from './min.js';
 
 export interface RouteDependencies {
@@ -19,10 +21,11 @@ export interface RouteDependencies {
   authService: AuthService;
   orderService: OrderService;
   claimsService: ClaimsService;
+  paymentProofService: PaymentProofService;
 }
 
 export default function registerRoutes(app: express.Application, deps: RouteDependencies) {
-  const { dbManager, authService, orderService, claimsService } = deps;
+  const { dbManager, authService, orderService, claimsService, paymentProofService } = deps;
   const requireAuth = createAuthMiddleware(authService);
 
   app.use('/api/v1/health', healthRoutes());
@@ -34,5 +37,6 @@ export default function registerRoutes(app: express.Application, deps: RouteDepe
   app.use('/api/v1/links', linksRoutes(requireAuth));
   app.use('/api/v1', ordersRoutes(orderService, authService));
   app.use('/api/v1', claimsRoutes(claimsService, authService));
+  app.use('/api/v1/payment-proofs', paymentProofsRoutes(paymentProofService, requireAuth));
   app.use('/api/v1/min', minSchemaRoutes());
 }

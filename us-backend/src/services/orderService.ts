@@ -176,7 +176,10 @@ export default class OrderService {
 
     const nowIso = new Date().toISOString();
     const orderId = `ord_${uuid()}`;
-    const status: OrderStatus = input.paymentTx ? 'paid' : 'pending';
+    
+    // PaymentProof机制：不再信任paymentTx，实现状态机流转
+    const paymentStatus: PaymentStatus = input.paymentProofId ? 'paid' : 'pending';
+    const status: OrderStatus = input.paymentProofId ? 'paid' : 'pending';
 
     const order: OrderRecord = {
       id: orderId,
@@ -191,7 +194,9 @@ export default class OrderService {
       idempotencyKey: quote.idempotencyKey,
       quoteExpiresAt: quote.expiresAt,
       paymentMethod,
-      paymentTx: input.paymentTx,
+      paymentTx: undefined, // 不再存储paymentTx，使用paymentProof机制
+      paymentStatus,
+      paymentProofId: input.paymentProofId,
       orderRef: input.orderRef,
       exchange: input.exchange,
       pair: input.pair,

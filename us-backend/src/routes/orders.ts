@@ -19,7 +19,7 @@ const createSchema = z.object({
   premiumUSDC: z.coerce.number().positive(),
   idempotencyKey: z.string().min(1),
   paymentMethod: z.enum(['permit2', 'approve_transfer']),
-  paymentTx: z.string().min(1).optional(),
+  paymentProofId: z.string().min(1).optional(),
   orderRef: z.string().min(1).optional(),
   exchange: z.string().min(1).optional(),
   pair: z.string().min(1).optional()
@@ -123,6 +123,7 @@ export default function ordersRoutes(orderService: OrderService, authService: Au
         order: {
           id: order.id,
           status: order.status,
+          paymentStatus: order.paymentStatus,
           premiumUSDC: toFixedString(order.premiumUSDC, 2),
           feeRatio: toFixedString(order.feeRatio, 6),
           payoutUSDC: toFixedString(order.payoutUSDC, 2),
@@ -130,7 +131,7 @@ export default function ordersRoutes(orderService: OrderService, authService: Au
           skuId: order.skuId,
           wallet: order.wallet,
           paymentMethod: order.paymentMethod,
-          paymentTx: order.paymentTx,
+          paymentProofId: order.paymentProofId,
           createdAt: order.createdAt,
           payment
         }

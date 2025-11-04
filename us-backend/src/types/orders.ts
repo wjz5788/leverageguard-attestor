@@ -55,13 +55,30 @@ export interface CreateOrderInput {
   premiumUSDC: number;
   idempotencyKey: string;
   paymentMethod: PaymentMethod;
-  paymentTx?: string;
+  paymentProofId?: string;
   orderRef?: string;
   exchange?: string;
   pair?: string;
 }
 
 export type OrderStatus = 'pending' | 'paid' | 'expired' | 'cancelled';
+export type PaymentStatus = 'pending' | 'awaiting_payment' | 'paid' | 'failed';
+
+export interface PaymentProof {
+  id: string;
+  orderId: string;
+  chainId: string;
+  token: string;
+  fromAddr: string;
+  toAddr: string;
+  amountMinUnit: string;
+  amountUsdc: number;
+  txHash: string;
+  blockNumber?: string;
+  status: PaymentStatus;
+  createdAt: string;
+  confirmedAt?: string;
+}
 
 export interface OrderRecord {
   id: string;
@@ -77,6 +94,8 @@ export interface OrderRecord {
   quoteExpiresAt: string;
   paymentMethod: PaymentMethod;
   paymentTx?: string;
+  paymentStatus: PaymentStatus;
+  paymentProofId?: string;
   orderRef?: string;
   exchange?: string;
   pair?: string;
