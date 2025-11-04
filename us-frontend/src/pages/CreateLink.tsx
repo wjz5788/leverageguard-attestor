@@ -33,7 +33,7 @@ export const CreateLink: React.FC<CreateLinkProps> = ({ t }) => {
     }));
   };
 
-  const handleCreateLink = () => {
+  const handleCreateLink = async () => {
     if (!address) {
       push({ title: t.walletRequired, type: 'error' });
       return;
@@ -44,20 +44,40 @@ export const CreateLink: React.FC<CreateLinkProps> = ({ t }) => {
       return;
     }
 
-    const url = buildLink(
-      formData.product,
-      formData.symbol,
-      parseFloat(formData.amount),
-      parseInt(formData.duration)
-    );
+    try {
+      const response = await fetch('/api/v1/links', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Assuming you have a way to get the auth token
+          // 'Authorization': `Bearer ${your_auth_token}`
+        },
+        body: JSON.stringify({
+          product: formData.product,
+          symbol: formData.symbol,
+          amount: parseFloat(formData.amount),
+          duration: parseInt(formData.duration)
+        })
+      });
 
-    // 复制到剪贴板
-    navigator.clipboard.writeText(url).then(() => {
-      push({ title: t.linkCreated });
-      navigate('/links');
-    }).catch(() => {
-      push({ title: t.copyFailed, type: 'error' });
-    });
+      if (!response.ok) {
+        throw new Error('Failed to create link');
+      }
+
+      const { link } = await response.json();
+
+      // 复制到剪贴板
+      navigator.clipboard.writeText(link.url).then(() => {
+        push({ title: t.linkCreated });
+        navigate('/links');
+      }).catch(() => {
+        push({ title: t.copyFailed, type: 'error' });
+      });
+
+    } catch (error) {
+      console.error('Error creating link:', error);
+      push({ title: t.creationFailed, type: 'error' });
+    }
   };
 
   const breadcrumbItems = [

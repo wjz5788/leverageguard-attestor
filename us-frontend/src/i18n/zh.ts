@@ -25,6 +25,7 @@ export const zh = {
   },
   
   linkCreated: '支付链接已创建',
+  creationFailed: '创建链接失败',
   
   // 导航
   nav: {

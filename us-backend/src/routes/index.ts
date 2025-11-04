@@ -7,6 +7,7 @@ import healthRoutes from './health';
 import okxVerifyRoutes from './okx-verify';
 import authRoutes from './auth';
 import accountRoutes from './account';
+import linksRoutes from './links';
 
 export interface RouteDependencies {
   dbManager: typeof memoryDbManager;
@@ -22,4 +23,5 @@ export default function registerRoutes(app: express.Application, deps: RouteDepe
   app.use('/api/v1/verify', okxVerifyRoutes);
   app.use('/api/v1/auth', authRoutes(authService, requireAuth));
   app.use('/api/v1/account', accountRoutes(authService, requireAuth));
+  app.use('/api/v1/links', linksRoutes(requireAuth));
 }

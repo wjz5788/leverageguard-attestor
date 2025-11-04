@@ -94,17 +94,21 @@ class MemoryDatabaseManager {
     const tableMatch = sql.match(/INSERT INTO (\w+)/i);
     if (tableMatch) {
       const tableName = tableMatch[1];
-      const table = this.tables.get(tableName) || [];
+      const table = this.tables.get(tableName);
+      if (table === undefined) {
+        console.error(`Memory table not found: ${tableName}`);
+        return { changes: 0, lastInsertRowid: 0 };
+      }
       
-      // 创建简单的记录对象
-      const record: any = {};
-      // 这里简化处理，实际应该根据参数位置映射到列
-      record.id = params[0] || `id_${Date.now()}_${Math.random()}`;
+      const record = params[0];
+      if (typeof record !== 'object' || record === null) {
+        console.error('Insert expects a single object parameter.');
+        return { changes: 0, lastInsertRowid: 0 };
+      }
       
       table.push(record);
-      this.tables.set(tableName, table);
       
-      return { changes: 1, lastInsertRowid: 1 };
+      return { changes: 1, lastInsertRowid: table.length };
     }
     return { changes: 0, lastInsertRowid: 0 };
   }

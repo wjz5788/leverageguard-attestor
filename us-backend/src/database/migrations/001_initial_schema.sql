@@ -65,7 +65,22 @@ CREATE TABLE IF NOT EXISTS exchange_account_logs (
   FOREIGN KEY (exchange_account_id) REFERENCES exchange_accounts(id)
 );
 
+-- 5) 支付链接表
+CREATE TABLE IF NOT EXISTS payment_links (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  product TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  amount REAL NOT NULL,
+  duration INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 创建索引
+CREATE INDEX IF NOT EXISTS idx_pl_user ON payment_links(user_id);
 CREATE INDEX IF NOT EXISTS idx_ea_user ON exchange_accounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_ea_status ON exchange_accounts(status);
 CREATE INDEX IF NOT EXISTS idx_eav_eacc ON exchange_account_verifications(exchange_account_id, created_at DESC);
