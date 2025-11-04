@@ -4,9 +4,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dbManager from './database/db.js';
-import verificationRoutes from './routes/verification.js';
-import healthRoutes from './routes/health.js';
-import okxVerifyRoutes from './routes/okx-verify.js';
+import AuthService from './services/authService.js';
+import registerRoutes from './routes/index.js';
 
 // 创建Express应用
 const app = express();
@@ -22,16 +21,15 @@ if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('combined'));
 }
 
-// 使用 SQLite 数据库
-// dbManager 已经在导入时初始化
+// 初始化依赖
+const authService = new AuthService();
 
 // 路由配置
-app.use('/api/v1/verification', verificationRoutes(dbManager));
-app.use('/api/v1/health', healthRoutes());
-app.use('/api/v1/verify', okxVerifyRoutes);
+registerRoutes(app, { dbManager, authService });
 
-// 注入数据库管理器到应用实例
+// 注入依赖到应用实例
 app.set('dbManager', dbManager);
+app.set('authService', authService);
 
 // 根路由
 app.get('/', (req, res) => {
@@ -41,7 +39,9 @@ app.get('/', (req, res) => {
     endpoints: {
       verification: '/api/v1/verification',
       health: '/api/v1/health',
-      verify: '/api/v1/verify'
+      verify: '/api/v1/verify',
+      auth: '/api/v1/auth',
+      account: '/api/v1/account'
     }
   });
 });

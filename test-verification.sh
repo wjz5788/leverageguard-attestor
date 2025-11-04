@@ -130,11 +130,11 @@ echo ""
 
 # 检查数据库文件
 echo "8. 检查数据库文件..."
-if [ -f "liqpass-backend/db.sqlite" ]; then
+if [ -f "us-backend/db.sqlite" ]; then
     echo "✅ SQLite 数据库文件存在"
     # 检查表结构
     if command -v sqlite3 > /dev/null 2>&1; then
-        TABLES=$(sqlite3 liqpass-backend/db.sqlite ".tables" 2>/dev/null | wc -l)
+        TABLES=$(sqlite3 us-backend/db.sqlite ".tables" 2>/dev/null | wc -l)
         echo "   数据库表数量: $TABLES"
     else
         echo "⚠️  sqlite3 命令未安装，无法检查表结构"
@@ -148,7 +148,7 @@ echo ""
 echo "=== 自测完成 ==="
 echo ""
 echo "下一步操作建议:"
-echo "1. 启动所有服务: cd jp-verify && ./start.sh (后台) 和 cd liqpass-backend && npm run dev"
+echo "1. 启动所有服务: cd jp-verify && ./start.sh (后台) 和 cd us-backend && npm run dev"
 echo "2. 访问前端验证页面: http://127.0.0.1:5173/verify/order"
 echo "3. 使用真实的 OKX API 密钥进行测试"
 echo "4. 检查证据文件: ls -la reports/evidence/$(date +%Y-%m-%d)/"
@@ -160,7 +160,7 @@ echo "# 终端1 - 启动 jp-verify"
 echo "cd /Users/zhaomosheng/Desktop/LiqPass-clean/jp-verify && ./start.sh"
 echo ""
 echo "# 终端2 - 启动 us-backend"
-echo "cd /Users/zhaomosheng/Desktop/LiqPass-clean/liqpass-backend && npm run dev"
+echo "cd /Users/zhaomosheng/Desktop/LiqPass-clean/us-backend && npm run dev"
 echo ""
 echo "# 终端3 - 启动 us-frontend (如果未运行)"
-echo "cd /Users/zhaomosheng/Desktop/LiqPass-clean/liqpass-frontend && npm run dev"
+echo "cd /Users/zhaomosheng/Desktop/LiqPass-clean/us-frontend && npm run dev"

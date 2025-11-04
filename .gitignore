@@ -3,17 +3,27 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .python-version
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Node / Frontend
 node_modules/
 dist/
 build/
+.npm/
+.npm-debug.log*
+.yarn-integrity
 
 # OS / Editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
 
 # Environment / Secrets
 .env
@@ -24,6 +34,7 @@ env/*.local
 env/*.secret
 *.key
 *.pem
+secrets/
 
 # Archives / Outputs
 *.log
@@ -31,3 +42,22 @@ env/*.secret
 *.swp
 data/*.sqlite
 logs/*
+reports/evidence/*
+reports/*.json
+!reports/INIT_REPORT.md
+
+# Build outputs
+*.tar.gz
+*.zip
+*.tgz
+
+# IDE specific
+*.code-workspace
+
+# Database
+*.db
+*.db-journal
+
+# Temporary files
+.tmp/
+temp/
