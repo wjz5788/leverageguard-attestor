@@ -208,7 +208,7 @@ interface OrdersPageProps {
 }
 
 export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
-  const ORDERS_URL = apiBase ? `${apiBase.replace(/\/$/, "")}/orders` : "/orders";
+  const ORDERS_URL = apiBase ? `${apiBase.replace(/\/$/, "")}/orders` : "/api/v1/orders";
 
   // 数据与加载态
   const [loading, setLoading] = useState(false);
@@ -231,24 +231,29 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const data = await res.json();
       const list: any[] = Array.isArray(data?.orders) ? data.orders : Array.isArray(data) ? data : [];
-      const normalized: OrderCardData[] = list.map((r: any, i: number) => ({
+      const normalized: OrderCardData[] = list.map((r: any, i: number) => {
+        const created = r.createdAt ?? r.created_at ?? new Date().toISOString();
+        const startTs = r.coverageStartTs ?? r.coverage_start_ts ?? created;
+        const endTs = r.coverageEndTs ?? r.coverage_end_ts ?? (r.skuId === 'sku_24h_liq' ? new Date(new Date(created).getTime() + 24 * 3600_000).toISOString() : created);
+        return ({
         id: r.id ?? r.orderId ?? `${Date.now()}-${i}`,
         title: r.title ?? "24h 爆仓保",
         principal: Number(r.principal ?? 0),
         leverage: Number(r.leverage ?? 0),
-        premiumPaid: Number(r.premiumPaid ?? r.premium ?? 0),
-        payoutMax: Number(r.payoutMax ?? 0),
+        premiumPaid: Number(r.premiumPaid ?? r.premiumUSDC ?? r.premium ?? 0),
+        payoutMax: Number(r.payoutMax ?? r.payoutUSDC ?? 0),
         status: String(r.status ?? "active"),
-        coverageStartTs: r.coverageStartTs ?? r.coverage_start_ts ?? r.startTs ?? r.start_at,
-        coverageEndTs: r.coverageEndTs ?? r.coverage_end_ts ?? r.endTs ?? r.end_at,
-        createdAt: r.createdAt ?? r.created_at ?? new Date().toISOString(),
+        coverageStartTs: startTs,
+        coverageEndTs: endTs,
+        createdAt: created,
         orderRef: r.orderRef ?? r.order_ref ?? "",
         exchangeAccountId: r.exchangeAccountId ?? r.exchange_account_id,
         chain: r.chain ?? "Base",
-        txHash: r.txHash ?? r.tx_hash ?? "",
+        txHash: r.paymentTx ?? r.txHash ?? r.tx_hash ?? "",
         orderDigest: r.orderDigest ?? r.order_digest ?? "",
         skuId: r.skuId ?? r.sku_id ?? "SKU_24H_FIXED",
-      }));
+      });
+      });
       // 按 createdAt desc
       normalized.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setRows(normalized);

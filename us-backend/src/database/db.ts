@@ -40,7 +40,9 @@ export class DatabaseManager {
       // 运行所有迁移
       const migrations = [
         '001_initial_schema.sql',
-        '002_verify_schema.sql'
+        '002_verify_schema.sql',
+        '003_policy_claim_payout.sql',
+        '004_min_loop.sql'
       ];
       
       const executeMigration = (index: number) => {
@@ -77,8 +79,14 @@ export class DatabaseManager {
     return this.db;
   }
 
-  async close() {
-    await this.db.close();
+  async close(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return resolve();
+      this.db.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
   }
 }
 

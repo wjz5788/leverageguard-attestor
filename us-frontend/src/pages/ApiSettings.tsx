@@ -88,6 +88,49 @@ interface LiquidationInfo {
   pnlAbs?: string;
 }
 
+interface AccountVerifyForm {
+  apiKey: string;
+  secretKey: string;
+  passphrase: string;
+  uid: string;
+  ordId: string;
+  instId: string;
+}
+
+interface VerifyPayload {
+  exchange: string;
+  ordId: string;
+  instId: string;
+  live: boolean;
+  fresh: boolean;
+  noCache: boolean;
+  keyMode: 'inline' | 'alias';
+  apiKey: string;
+  secretKey: string;
+  passphrase?: string;
+  uid?: string;
+}
+
+const createInitialVerifyForm = (): AccountVerifyForm => ({
+  apiKey: '',
+  secretKey: '',
+  passphrase: '',
+  uid: '',
+  ordId: '',
+  instId: '',
+});
+
+type VerifyResponse = {
+  meta?: any;
+  normalized?: any;
+  raw?: any;
+  evidence?: any;
+  perf?: any;
+  detail?: string;
+  message?: string;
+  error?: string;
+};
+
 // 交易所字段定义
 const EXCHANGES_META = {
   OKX: {
@@ -288,6 +331,10 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
   const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
+  const [accountForms, setAccountForms] = useState<Record<string, AccountVerifyForm>>({});
+  const [resultOpen, setResultOpen] = useState(false);
+  const [resultData, setResultData] = useState<VerifyResponse | null>(null);
+  const [resultError, setResultError] = useState<string | null>(null);
   
   // 抽屉状态
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -306,13 +353,6 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
     extra: {} as Record<string, string>,
   });
   
-  // 验证状态
-  const [verifying, setVerifying] = useState<string | null>(null);
-  const [verifyParams, setVerifyParams] = useState({
-    orderRef: '',
-    pair: '',
-  });
-
   // 初始加载
   useEffect(() => {
     loadAccounts();
@@ -349,6 +389,13 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
         },
       ];
       setAccounts(mockAccounts);
+      setAccountForms(prev => {
+        const next: Record<string, AccountVerifyForm> = {};
+        mockAccounts.forEach(acc => {
+          next[acc.id] = prev[acc.id] ?? createInitialVerifyForm();
+        });
+        return next;
+      });
     } catch (error) {
       setToast('加载失败');
     } finally {
@@ -411,6 +458,10 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
         
         setAccounts(prev => [newAccount, ...prev]);
         setToast('已创建，待验证');
+        setAccountForms(prev => ({
+          ...prev,
+          [newAccount.id]: createInitialVerifyForm(),
+        }));
       } else {
         // 更新现有账户
         setAccounts(prev => prev.map(acc => 
@@ -436,48 +487,62 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
         ? { ...acc, status: 'deleted' as const }
         : acc
     ));
+    setAccountForms(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     setToast('已删除');
   };
 
   // 执行验证
-  const doVerify = async (id: string) => {
-    if (!verifyParams.orderRef || !verifyParams.pair) {
-      setToast('请填写订单号和交易对');
-      return;
-    }
-    
-    setVerifying(id);
+  const doVerify = async (accountId: string, payload: VerifyPayload) => {
+    setAccounts(prev => prev.map(acc => 
+      acc.id === accountId
+        ? { ...acc, status: 'verifying', lastVerifyResult: undefined }
+        : acc
+    ));
+    setResultData(null);
+    setResultError(null);
+    setResultOpen(true);
+
     try {
-      const result = await api('/api/v1/verification/verify', {
+      const res = await fetch('/api/verify', {
         method: 'POST',
-        body: {
-          exchange: accounts.find(acc => acc.id === id)?.exchange,
-          apiKey: form.apiKey,
-          apiSecret: form.apiSecret,
-          passphrase: form.passphrase,
-          orderRef: verifyParams.orderRef,
-          pair: verifyParams.pair,
-        },
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-      
-      // 更新账户状态
+      const maybeJson = await res.json().catch(() => ({}));
+      const data: VerifyResponse = maybeJson && typeof maybeJson === 'object' ? maybeJson : {};
+
+      if (!res.ok) {
+        const reason = (data?.detail || data?.message || data?.error || '') as string;
+        throw new Error(reason || `HTTP ${res.status}`);
+      }
+
       setAccounts(prev => prev.map(acc => 
-        acc.id === id 
+        acc.id === accountId
           ? { 
               ...acc, 
               status: 'verified' as const, 
-              lastVerifiedAt: result.verifiedAt,
-              lastVerifyResult: result,
+              lastVerifiedAt: typeof data?.meta?.verifiedAt === 'string' ? data.meta.verifiedAt : new Date().toISOString(),
+              lastVerifyResult: data as unknown as VerifyResult,
               userConfirmedEcho: false,
             }
           : acc
       ));
-      
+
+      setResultData(data);
       setToast('已生成回显，待确认');
-      setVerifying(null);
-    } catch (error) {
-      setToast('验证失败');
-      setVerifying(null);
+    } catch (error: any) {
+      const message = error?.message || '验证失败';
+      setAccounts(prev => prev.map(acc => 
+        acc.id === accountId
+          ? { ...acc, status: 'failed' }
+          : acc
+      ));
+      setResultError(message);
+      setToast(message);
     }
   };
 
@@ -519,16 +584,33 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
           <div className="text-zinc-600">加载中…</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {accounts.map((acc) => (
-              <AccountCard 
-                key={acc.id} 
-                acc={acc} 
-                onEdit={() => openEdit(acc.id)}
-                onDelete={() => deleteAccount(acc.id)}
-                onVerify={(params) => doVerify(acc.id, params)}
-                onConfirmEcho={() => confirmEcho(acc.id)}
-              />
-            ))}
+            {accounts.map((acc) => {
+              const form = accountForms[acc.id] ?? createInitialVerifyForm();
+              return (
+                <AccountCard 
+                  key={acc.id} 
+                  acc={acc} 
+                  form={form}
+                  onFormChange={(patch) => {
+                    setAccountForms(prev => {
+                      const prevForm = prev[acc.id] ?? createInitialVerifyForm();
+                      return {
+                        ...prev,
+                        [acc.id]: {
+                          ...prevForm,
+                          ...patch,
+                        },
+                      };
+                    });
+                  }}
+                  onEdit={() => openEdit(acc.id)}
+                  onDelete={() => deleteAccount(acc.id)}
+                  onVerify={(payload) => doVerify(acc.id, payload)}
+                  onConfirmEcho={() => confirmEcho(acc.id)}
+                  onToast={(msg) => setToast(msg)}
+                />
+              );
+            })}
           </div>
         )}
       </main>
@@ -608,6 +690,75 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
           </div>
         </div>
       )}
+      
+      {resultOpen && (
+        <div className="fixed inset-0 z-40 flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl">
+            <div className="p-6 space-y-3 max-h-[80vh] overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-lg text-zinc-900">验证结果</div>
+                <button
+                  onClick={() => setResultOpen(false)}
+                  className="text-zinc-400 hover:text-zinc-600"
+                  aria-label="关闭"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {!resultData && !resultError && (
+                <div className="text-sm text-zinc-600">正在验证…请稍候</div>
+              )}
+
+              {resultError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  失败：{resultError}
+                </div>
+              )}
+
+              {resultData && (
+                <div className="space-y-3">
+                  <Section title="meta" data={resultData.meta} />
+                  <Section title="normalized" data={resultData.normalized} />
+                  <Section title="raw" data={resultData.raw} />
+                  <Section title="evidence" data={resultData.evidence} />
+                  <Section title="perf" data={resultData.perf} />
+                  {!resultData.meta && !resultData.normalized && !resultData.raw && !resultData.evidence && (
+                    <details className="rounded-md border p-3" open>
+                      <summary className="cursor-pointer font-medium">response</summary>
+                      <pre className="mt-2 text-sm overflow-auto max-h-72">
+                        {JSON.stringify(resultData, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                {resultData && (
+                  <Button
+                    kind="ghost"
+                    onClick={() => {
+                      const blob = new Blob([JSON.stringify(resultData, null, 2)], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      const anchor = document.createElement('a');
+                      anchor.href = url;
+                      anchor.download = 'verify-result.json';
+                      anchor.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    下载 JSON
+                  </Button>
+                )}
+                <Button kind="primary" onClick={() => setResultOpen(false)}>
+                  关闭
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -615,29 +766,73 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
 // AccountCard 组件
 const AccountCard = ({ 
   acc, 
+  form,
+  onFormChange,
   onEdit, 
   onDelete, 
   onVerify, 
-  onConfirmEcho 
+  onConfirmEcho,
+  onToast,
 }: {
   acc: ExchangeAccount;
+  form: AccountVerifyForm;
+  onFormChange: (patch: Partial<AccountVerifyForm>) => void;
   onEdit: () => void;
   onDelete: () => void;
-  onVerify: (params: { orderRef: string; pair: string }) => void;
+  onVerify: (payload: VerifyPayload) => void;
   onConfirmEcho: () => void;
+  onToast: (msg: string) => void;
 }) => {
   const icon = acc.exchange.slice(0, 2).toUpperCase();
   const isVerified = acc.status === "verified";
   const isFailed = acc.status === "failed";
   const last = acc.lastVerifyResult;
-  const [orderRef, setOrderRef] = useState("");
-  const [pair, setPair] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const trimmedForm = {
+    apiKey: form.apiKey.trim(),
+    secretKey: form.secretKey.trim(),
+    passphrase: form.passphrase.trim(),
+    uid: form.uid.trim(),
+    ordId: form.ordId.trim(),
+    instId: form.instId.trim(),
+  };
   
   const tryVerify = () => {
     setSubmitted(true);
-    if (!orderRef || !pair) return;
-    onVerify({ orderRef, pair });
+    const required = [
+      { key: 'apiKey', label: 'API Key', value: trimmedForm.apiKey },
+      { key: 'secretKey', label: 'Secret Key', value: trimmedForm.secretKey },
+      { key: 'ordId', label: '订单号', value: trimmedForm.ordId },
+      { key: 'instId', label: '交易对/合约', value: trimmedForm.instId },
+    ];
+    if (acc.exchange === 'OKX') {
+      required.push(
+        { key: 'passphrase', label: 'Passphrase', value: trimmedForm.passphrase },
+        { key: 'uid', label: 'UID', value: trimmedForm.uid },
+      );
+    }
+    const missing = required.filter(item => !item.value);
+    if (missing.length > 0) {
+      const missingLabels = missing.map(item => item.label).join('、');
+      onToast(`请填写 ${missingLabels}`);
+      return;
+    }
+
+    onFormChange(trimmedForm);
+
+    onVerify({
+      exchange: acc.exchange.toLowerCase(),
+      ordId: trimmedForm.ordId,
+      instId: trimmedForm.instId,
+      live: acc.environment === 'live',
+      fresh: true,
+      noCache: true,
+      keyMode: 'inline',
+      apiKey: trimmedForm.apiKey,
+      secretKey: trimmedForm.secretKey,
+      passphrase: trimmedForm.passphrase || undefined,
+      uid: trimmedForm.uid || undefined,
+    });
   };
   
   const pendingConfirm = isVerified && !acc.userConfirmedEcho;
@@ -666,21 +861,56 @@ const AccountCard = ({
       <div className="text-xs text-zinc-600">
         能力：订单 {bool(acc.caps.orders)} · 成交 {bool(acc.caps.fills)} · 持仓 {bool(acc.caps.positions)} · 强平 {bool(acc.caps.liquidations)}
       </div>
+
+      <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2">
+        <div className="text-xs text-zinc-700">API 凭证</div>
+        <Input 
+          type="password"
+          placeholder="API Key" 
+          value={form.apiKey} 
+          onChange={(e) => onFormChange({ apiKey: e.target.value })}
+          className={submitted && !trimmedForm.apiKey ? 'border-red-400' : ''} 
+        />
+        <Input 
+          type="password"
+          placeholder="Secret Key" 
+          value={form.secretKey} 
+          onChange={(e) => onFormChange({ secretKey: e.target.value })}
+          className={submitted && !trimmedForm.secretKey ? 'border-red-400' : ''} 
+        />
+        {acc.exchange === 'OKX' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <Input 
+              type="password"
+              placeholder="Passphrase" 
+              value={form.passphrase} 
+              onChange={(e) => onFormChange({ passphrase: e.target.value })}
+              className={submitted && !trimmedForm.passphrase ? 'border-red-400' : ''} 
+            />
+            <Input 
+              placeholder="UID" 
+              value={form.uid} 
+              onChange={(e) => onFormChange({ uid: e.target.value })}
+              className={submitted && !trimmedForm.uid ? 'border-red-400' : ''} 
+            />
+          </div>
+        )}
+      </div>
       
       <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3">
         <div className="text-xs text-zinc-700 mb-2">验证参数</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           <Input 
-            placeholder="合约订单号 OrderRef" 
-            value={orderRef} 
-            onChange={(e) => setOrderRef(e.target.value)} 
-            className={submitted && !orderRef ? 'border-red-400' : ''} 
+            placeholder="合约订单号 OrdId" 
+            value={form.ordId} 
+            onChange={(e) => onFormChange({ ordId: e.target.value })}
+            className={submitted && !trimmedForm.ordId ? 'border-red-400' : ''} 
           />
           <Input 
-            placeholder="交易币对/合约 Trading Pair（如 BTC-USDT-PERP）" 
-            value={pair} 
-            onChange={(e) => setPair(e.target.value)} 
-            className={submitted && !pair ? 'border-red-400' : ''} 
+            placeholder="交易币对/合约 InstId（如 BTC-USDT-SWAP）" 
+            value={form.instId} 
+            onChange={(e) => onFormChange({ instId: e.target.value })}
+            className={submitted && !trimmedForm.instId ? 'border-red-400' : ''} 
           />
         </div>
         <div className="text-[11px] text-zinc-500 mt-1">
@@ -762,6 +992,18 @@ const AccountCard = ({
     </div>
   );
 };
+
+function Section({ title, data }: { title: string; data: any }) {
+  if (data === undefined || data === null) return null;
+  return (
+    <details className="rounded-md border p-3" open>
+      <summary className="cursor-pointer font-medium">{title}</summary>
+      <pre className="mt-2 text-sm overflow-auto max-h-72">
+        {JSON.stringify(data, null, 2)}
+      </pre>
+    </details>
+  );
+}
 
 // 辅助函数
 const bool = (value: boolean) => value ? '✓' : '✗';

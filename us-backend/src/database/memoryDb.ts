@@ -27,13 +27,15 @@ class MemoryDatabaseManager {
   }
 
   private initialize() {
-    // 运行迁移
-    const migrationPath = join(__dirname, 'migrations/001_initial_schema.sql');
-    const migrationSQL = readFileSync(migrationPath, 'utf-8');
-    
+    // 扫描 migrations 目录，串联所有 SQL，仅解析 CREATE TABLE
+    const dir = join(__dirname, 'migrations');
+    const files = ['001_initial_schema.sql', '002_verify_schema.sql', '003_policy_claim_payout.sql', '004_min_loop.sql'];
     try {
-      // 解析SQL并创建内存表结构
-      this.parseAndCreateTables(migrationSQL);
+      for (const f of files) {
+        const p = join(dir, f);
+        const sql = readFileSync(p, 'utf-8');
+        this.parseAndCreateTables(sql);
+      }
       console.log('Memory database initialized successfully');
     } catch (error) {
       console.error('Memory database initialization failed:', error);

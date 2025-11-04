@@ -51,9 +51,9 @@ export class VerificationService {
       // 5. 构建响应
       const response: VerifyResponse = {
         status: verifyResult.status === 'verified' ? 'success' : 'failed',
-        sessionId: verifyResult.sessionId,
+        sessionId: verifyResult.sessionId || sessionId,
         result: verifyResult,
-        verifiedAt: verifyResult.verifiedAt
+        verifiedAt: verifyResult.verifiedAt || new Date().toISOString()
       };
 
       return response;

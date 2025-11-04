@@ -2,9 +2,11 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import morgan from 'morgan';
-import dbManager from './database/db.js';
+import memoryDbManager from './database/memoryDb.js';
 import AuthService from './services/authService.js';
+import OrderService from './services/orderService.js';
 import registerRoutes from './routes/index.js';
 
 // 创建Express应用
@@ -12,6 +14,7 @@ const app = express();
 
 // 中间件配置
 app.use(helmet()); // 安全头
+app.use(compression()); // 压缩响应
 app.use(cors()); // CORS支持
 app.use(express.json({ limit: '10mb' })); // JSON解析
 app.use(express.urlencoded({ extended: true })); // URL编码解析
@@ -23,13 +26,16 @@ if (process.env.NODE_ENV !== 'test') {
 
 // 初始化依赖
 const authService = new AuthService();
+const dbManager = memoryDbManager; // 统一使用内存数据库管理器以匹配当前服务实现
+const orderService = new OrderService();
 
 // 路由配置
-registerRoutes(app, { dbManager, authService });
+registerRoutes(app, { dbManager, authService, orderService });
 
 // 注入依赖到应用实例
 app.set('dbManager', dbManager);
 app.set('authService', authService);
+app.set('orderService', orderService);
 
 // 根路由
 app.get('/', (req, res) => {

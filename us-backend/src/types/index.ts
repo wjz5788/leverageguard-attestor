@@ -176,8 +176,26 @@ export interface UpdateExchangeAccountRequest {
 }
 
 export interface VerifyRequest {
+  // 必填：交易所、密钥与校验参数
+  exchange: string; // 'okx' | 'binance' | 'hyperliquid'（大小写在服务中统一）
+  apiKey: string;
+  apiSecret: string;
+  passphrase?: string;
   orderRef: string;
   pair: string;
+  // 可选：环境/扩展/绑定账户
+  environment?: Environment;
+  extra?: Record<string, any>;
+  exchangeAccountId?: string;
+}
+
+// 后端统一响应：校验是否成功 + 会话 + 结果
+export interface VerifyResponse {
+  status: 'success' | 'failed';
+  sessionId: string;
+  verifiedAt: string;
+  result?: VerifyResult;
+  error?: string;
 }
 
 export interface ConfirmEchoRequest {

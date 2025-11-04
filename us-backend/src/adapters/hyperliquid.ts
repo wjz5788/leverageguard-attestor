@@ -143,16 +143,16 @@ export class HyperliquidAdapter implements ExchangeAdapter {
   private performChecks(params: VerifyParams, order: any, fills: any[]): any {
     const timeSkewMs = Math.abs(Date.now() - Date.parse(order.orderTimeIso));
     
-    const checks = {
-      authOk: true,
-      capsOk: true,
-      orderFound: !!order.orderId,
-      echoLast4Ok: params.orderRef.slice(-4) === order.orderId.slice(-4),
-      arithmeticOk: arithmeticOk(order.executedQty, order.avgPrice, order.quoteAmount),
-      pairOk: params.pair.toUpperCase() === order.pair.toUpperCase(),
-      timeSkewMs,
-      verdict: 'pass' as const
-    };
+      const checks = {
+        authOk: true,
+        capsOk: true,
+        orderFound: !!order.orderId,
+        echoLast4Ok: params.orderRef.slice(-4) === order.orderId.slice(-4),
+        arithmeticOk: arithmeticOk(order.executedQty, order.avgPrice, order.quoteAmount),
+        pairOk: params.pair.toUpperCase() === order.pair.toUpperCase(),
+        timeSkewMs,
+        verdict: 'pass'
+      };
 
     // 如果任何检查失败，设置verdict为fail
     if (!checks.authOk || !checks.orderFound || !checks.echoLast4Ok || 

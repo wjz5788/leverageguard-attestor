@@ -1,5 +1,7 @@
 // 交易所适配器基础接口和工具函数
 import { OrderEcho, VerifyResult, Caps, arithmeticOk } from '../types/index.js';
+// 便于其他适配器从此入口获取类型
+export type { VerifyResult } from '../types/index.js';
 
 // 交易所适配器接口
 export interface ExchangeAdapter {
@@ -21,7 +23,7 @@ export interface VerifyParams {
 
 // 原始交易所API响应类型（示例）
 export interface RawOrder {
-  orderId: string;
+  orderId?: string;
   symbol?: string;
   instId?: string;
   side?: string;
@@ -37,6 +39,15 @@ export interface RawOrder {
   state?: string;
   fillSz?: string | number;
   fillPx?: string | number;
+  // 各交易所特定的可选字段（为兼容当前适配器实现）
+  coin?: string;           // hyperliquid
+  sz?: string | number;    // hyperliquid
+  px?: string | number;    // hyperliquid
+  time?: number;           // hyperliquid/binance
+  updateTime?: number;     // binance
+  price?: string | number; // binance
+  ordId?: string | number; // okx
+  ordType?: string;        // okx
 }
 
 // 工具函数

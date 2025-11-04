@@ -1,5 +1,5 @@
 // OKX 验证薄代理路由
-import express from 'express';
+import express, { type RequestHandler } from 'express';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { evidenceStorage } from '../utils/evidenceStorage.js';
@@ -15,12 +15,13 @@ interface VerifyOkxRequest {
   live?: boolean;
   fresh?: boolean;
   noCache?: boolean;
-  keyMode: 'inline' | 'alias';
+  keyMode?: 'inline' | 'alias';
   apiKey?: string;
   secretKey?: string;
   passphrase?: string;
   uid?: string;
   keyAlias?: string;
+  exchange?: string;
   clientMeta?: {
     source: string;
     requestId: string;
@@ -28,21 +29,33 @@ interface VerifyOkxRequest {
 }
 
 /**
- * POST /api/v1/verify/okx
  * OKX 订单验证薄代理 - 转发到 jp-verify 服务
  */
-router.post('/okx', async (req, res) => {
+const handleVerify: RequestHandler = async (req, res) => {
   try {
     const request: VerifyOkxRequest = req.body;
+    const exchange = (request.exchange || 'okx').toLowerCase();
+    const keyMode = request.keyMode ?? 'inline';
     const requestId = uuidv4();
     
     console.log(`[${requestId}] 收到 OKX 验证请求:`, {
       ordId: request.ordId,
       instId: request.instId,
-      keyMode: request.keyMode
+      exchange,
+      keyMode
     });
 
     // 验证必填字段
+    if (exchange !== 'okx') {
+      return res.status(400).json({
+        error: {
+          code: 'UNSUPPORTED_EXCHANGE',
+          msg: `暂不支持 ${exchange} 交易所的订单验证`,
+          hint: '请确认 exchange 字段是否正确'
+        }
+      });
+    }
+
     if (!request.ordId || !request.instId) {
       return res.status(400).json({
         error: {
@@ -53,7 +66,7 @@ router.post('/okx', async (req, res) => {
       });
     }
 
-    if (request.keyMode === 'inline' && !(request.apiKey && request.secretKey && request.passphrase)) {
+    if (keyMode === 'inline' && !(request.apiKey && request.secretKey && request.passphrase)) {
       return res.status(400).json({
         error: {
           code: 'VALIDATION_ERROR',
@@ -71,7 +84,7 @@ router.post('/okx', async (req, res) => {
       live: request.live ?? true,
       fresh: request.fresh ?? true,
       noCache: request.noCache ?? true,
-      keyMode: request.keyMode,
+      keyMode,
       apiKey: request.apiKey,
       secretKey: request.secretKey,
       passphrase: request.passphrase,
@@ -164,7 +177,14 @@ router.post('/okx', async (req, res) => {
       }
     });
   }
-});
+};
+
+/**
+ * POST /api/v1/verify/okx
+ * POST /api/verify
+ */
+router.post('/', handleVerify);
+router.post('/okx', handleVerify);
 
 /**
  * GET /api/v1/verify/health

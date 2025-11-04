@@ -1,7 +1,7 @@
 // 服务器启动文件
 import app from './app.js';
 
-const PORT = process.env.PORT || 3002;
+const PORT: number = Number(process.env.PORT) || 3002;
 const HOST = process.env.HOST || '0.0.0.0';
 
 // 启动服务器

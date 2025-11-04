@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Dictionary } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { useWallet } from '../contexts/WalletContext';
+import { useToast } from '../contexts/ToastContext';
 
 // 公共函数
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
@@ -30,52 +32,6 @@ function computeQuote(principal: number, lev: number, k: number) {
   return { p, baseFee, fee, payout, feeAmt: p * fee, payoutAmt: p * payout };
 }
 
-// 模拟 alert，避免在 iframe 中卡住
-function showModal(title: string, content: string) {
-  let modalBackdrop = document.getElementById('product-modal-backdrop');
-  if (modalBackdrop) {
-    modalBackdrop.remove();
-  }
-
-  modalBackdrop = document.createElement('div');
-  modalBackdrop.id = 'product-modal-backdrop';
-  modalBackdrop.className = "fixed inset-0 bg-black/30 z-40 flex items-center justify-center";
-  
-  const modalContent = document.createElement('div');
-  modalContent.className = "bg-white rounded-lg shadow-xl w-full max-w-md m-4 p-5";
-  
-  const modalTitle = document.createElement('h3');
-  modalTitle.className = "text-lg font-medium mb-3";
-  modalTitle.textContent = title;
-  
-  const modalPre = document.createElement('pre');
-  modalPre.className = "bg-stone-100 p-3 rounded text-sm overflow-auto";
-  modalPre.textContent = content;
-  
-  const closeButton = document.createElement('button');
-  closeButton.className = "mt-4 w-full py-2 rounded-lg bg-stone-900 text-white font-medium hover:bg-stone-800";
-  closeButton.textContent = "关闭";
-  
-  modalContent.appendChild(modalTitle);
-  modalContent.appendChild(modalPre);
-  modalContent.appendChild(closeButton);
-  modalBackdrop.appendChild(modalContent);
-  document.body.appendChild(modalBackdrop);
-
-  const closeModal = () => {
-    if (modalBackdrop) {
-      modalBackdrop.remove();
-    }
-  };
-
-  modalBackdrop.addEventListener('click', (e) => {
-    if (e.target === modalBackdrop) {
-      closeModal();
-    }
-  });
-  closeButton.addEventListener('click', closeModal);
-}
-
 interface ProductsProps {
   t: Dictionary;
 }
@@ -96,21 +52,110 @@ export const Products: React.FC<ProductsProps> = ({ t }) => {
   useEffect(() => { try { localStorage.setItem("lp_principal", String(principal)); } catch {} }, [principal]);
   useEffect(() => { try { localStorage.setItem("lp_lev", String(lev)); } catch {} }, [lev]);
 
+  const navigate = useNavigate();
+  const { address, connectWallet, chainId, switchToBase } = useWallet();
+  const { push } = useToast();
   const { baseFee, fee, payout, feeAmt, payoutAmt, p } = useMemo(() => computeQuote(principal, lev, k), [principal, lev, k]);
+  const [buying, setBuying] = useState(false);
 
-  const handleBuy = () => {
-    const payload = {
-      product: "24h-LiqPass",
-      principal: p,
-      leverage: lev,
-      k,
-      feeRatio: Number(fee.toFixed(6)),
-      feeUSDC: Number(feeAmt.toFixed(2)),
-      payoutRatio: Number(payout.toFixed(6)),
-      payoutUSDC: Number(payoutAmt.toFixed(2)),
-      windowHours: 24,
-    };
-    showModal("下单参数", JSON.stringify(payload, null, 2));
+  const handleBuy = async () => {
+    if (!address) {
+      push({ title: '请先连接钱包' });
+      try { await connectWallet(); } catch {}
+      return;
+    }
+    setBuying(true);
+    try {
+      // 1) 预览报价，获取幂等键
+      const previewRes = await fetch('/api/v1/orders/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          skuId: 'sku_24h_liq',
+          principal: p,
+          leverage: lev,
+          wallet: address
+        })
+      });
+      if (!previewRes.ok) {
+        const err = await previewRes.json().catch(() => ({}));
+        throw new Error(err?.message || `报价失败 ${previewRes.status}`);
+      }
+      const preview = await previewRes.json();
+      const quote = preview?.quote;
+      if (!quote?.idempotencyKey || !quote?.premiumUSDC) {
+        throw new Error('报价无效');
+      }
+
+      // 2) 确保网络为后端要求的链（Base 主网）
+      const payCfg = quote.payment || preview?.payment; // 兼容写法
+      const targetChainId: string = payCfg?.chainId || '0x2105';
+      if ((chainId || '').toLowerCase() !== String(targetChainId).toLowerCase()) {
+        await switchToBase(false);
+      }
+
+      // 3) 使用 USDC 合约进行转账到金库（上链）
+      const usdc = payCfg?.usdcContract || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+      const vault = payCfg?.spenderOrVault;
+      if (!vault) throw new Error('支付金库地址缺失');
+
+      const toUnits = (val: string | number, decimals = 6) => {
+        const s = String(val);
+        const [i, f = ''] = s.split('.');
+        const frac = (f + '0'.repeat(decimals)).slice(0, decimals);
+        return (BigInt(i || '0') * (10n ** BigInt(decimals))) + BigInt(frac || '0');
+      };
+      const amount = toUnits(quote.premiumUSDC, 6);
+
+      const methodSelector = '0xa9059cbb'; // transfer(address,uint256)
+      const pad32 = (hex: string) => hex.replace(/^0x/, '').padStart(64, '0');
+      const encAddr = (addr: string) => pad32(addr.toLowerCase().replace(/^0x/, ''));
+      const encUint = (n: bigint) => pad32(n.toString(16));
+      const data = methodSelector + encAddr(vault) + encUint(amount);
+
+      const eth = (window as any).ethereum;
+      if (!eth) throw new Error('未检测到以太坊钱包');
+
+      const txHash: string = await eth.request({
+        method: 'eth_sendTransaction',
+        params: [{ from: address, to: usdc, data, value: '0x0' }]
+      });
+
+      // 可选：简易轮询确认上链
+      try {
+        for (let i = 0; i < 10; i++) {
+          const receipt = await eth.request({ method: 'eth_getTransactionReceipt', params: [txHash] });
+          if (receipt && receipt.status) break;
+          await new Promise(r => setTimeout(r, 1200));
+        }
+      } catch {}
+
+      // 4) 创建订单（带上链交易哈希，标记已支付）
+      const createRes = await fetch('/api/v1/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          skuId: 'sku_24h_liq',
+          principal: p,
+          leverage: lev,
+          wallet: address,
+          premiumUSDC: Number(quote.premiumUSDC),
+          idempotencyKey: quote.idempotencyKey,
+          paymentMethod: 'approve_transfer',
+          paymentTx: txHash
+        })
+      });
+      if (!createRes.ok) {
+        const err = await createRes.json().catch(() => ({}));
+        throw new Error(err?.message || `下单失败 ${createRes.status}`);
+      }
+      push({ title: '下单成功' });
+      navigate('/account/orders');
+    } catch (e: any) {
+      push({ title: e?.message || '下单失败' });
+    } finally {
+      setBuying(false);
+    }
   };
 
   const handleCreateLink = () => {
@@ -288,9 +333,10 @@ export const Products: React.FC<ProductsProps> = ({ t }) => {
               <div className="mt-6 space-y-3">
                 <Button 
                   onClick={handleBuy} 
-                  className="w-full py-3 bg-stone-900 text-white hover:bg-stone-800"
+                  disabled={buying}
+                  className="w-full py-3 bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-60"
                 >
-                  立即投保
+                  {buying ? '下单中…' : '立即投保'}
                 </Button>
                 
                 <Button 

@@ -6,15 +6,16 @@ LiqPass 是一个为加密货币交易者提供爆仓保护的平台。
 
 ```
 .
-├── packages/
-│   ├── us-frontend/     # 美国站点前端
-│   └── us-backend/      # 美国站点后端
-├── jp-verify/           # 日本站点验证服务
+├── us-frontend/         # 美国站点前端
+├── us-backend/          # 美国站点后端（统一后端）
+├── jp-verify/           # 验证服务（OKX 订单验证等）
 ├── contracts/           # 智能合约
 ├── docs/                # 文档
 ├── scripts/             # 脚本
 └── reports/             # 报告
 ```
+
+提示：原 `liqpass-backend` 已合并进 `us-backend`，请只使用 `us-backend` 进行后端开发与部署。
 
 ## 快速开始
 
@@ -32,12 +33,9 @@ pnpm install
 ### 开发
 
 ```bash
-# 同时启动前端和后端开发服务器
-pnpm dev
-
-# 或者分别启动
-pnpm --filter us-frontend dev
-pnpm --filter us-backend dev
+# 分别启动（推荐）
+cd us-backend && pnpm install && pnpm dev   # 后端默认端口 3002
+cd us-frontend && pnpm install && pnpm dev  # 前端默认端口 3000
 ```
 
 ### 构建

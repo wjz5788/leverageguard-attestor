@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import { useToast } from '../contexts/ToastContext';
 import { Card } from '../components/ui/Card';
@@ -58,23 +58,73 @@ const mockPaymentData = {
   }
 };
 
+type MockPayment = typeof mockPaymentData['1'];
+
+interface QuotePayload {
+  product: string;
+  principal: number;
+  leverage: number;
+  k: number;
+  feeRatio: number;
+  feeUSDC: number;
+  payoutRatio: number;
+  payoutUSDC: number;
+  windowHours: number;
+}
+
+type PaymentView =
+  | { kind: 'link'; data: MockPayment }
+  | { kind: 'quote'; data: QuotePayload };
+
+const fmtCurrency = (n: number) =>
+  Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPercent = (n: number) => `${(Number(n) * 100).toFixed(2)}%`;
+
 export const Payment: React.FC<PaymentProps> = ({ t }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { address, connectWallet, onBase, switchToBase } = useWallet();
   const { push } = useToast();
   
-  const [paymentData, setPaymentData] = useState<any>(null);
+  const [paymentData, setPaymentData] = useState<PaymentView | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const locationState = location.state as { quote?: QuotePayload } | undefined;
+  const quoteFromState = locationState?.quote;
+
   useEffect(() => {
-    if (id && mockPaymentData[id as keyof typeof mockPaymentData]) {
-      setPaymentData(mockPaymentData[id as keyof typeof mockPaymentData]);
-    } else {
-      push({ title: '支付链接无效', type: 'error' });
-      navigate('/');
+    if (quoteFromState) {
+      setPaymentData({ kind: 'quote', data: quoteFromState });
+      try {
+        sessionStorage.setItem('lp_quote_preview', JSON.stringify(quoteFromState));
+      } catch {
+        // 非关键路径，忽略存储失败
+      }
+      return;
     }
-  }, [id, navigate, push]);
+
+    if (id === 'preview') {
+      try {
+        const raw = sessionStorage.getItem('lp_quote_preview');
+        if (raw) {
+          const parsed = JSON.parse(raw) as QuotePayload;
+          setPaymentData({ kind: 'quote', data: parsed });
+          return;
+        }
+      } catch {
+        // 忽略解析错误
+      }
+    }
+
+    if (id && mockPaymentData[id as keyof typeof mockPaymentData]) {
+      setPaymentData({ kind: 'link', data: mockPaymentData[id as keyof typeof mockPaymentData] });
+      return;
+    }
+
+    push({ title: '支付链接无效', type: 'error' });
+    navigate('/');
+  }, [id, navigate, push, quoteFromState]);
 
   const handlePayment = async () => {
     if (!address) {
@@ -92,6 +142,13 @@ export const Payment: React.FC<PaymentProps> = ({ t }) => {
     // 模拟支付处理
     setTimeout(() => {
       setIsProcessing(false);
+      if (paymentData?.kind === 'quote') {
+        try {
+          sessionStorage.removeItem('lp_quote_preview');
+        } catch {
+          // 忽略清理异常
+        }
+      }
       push({ title: '支付成功', type: 'success' });
       navigate('/success');
     }, 2000);
@@ -110,6 +167,25 @@ export const Payment: React.FC<PaymentProps> = ({ t }) => {
     );
   }
 
+  const quoteData = paymentData.kind === 'quote' ? paymentData.data : null;
+  const linkData = paymentData.kind === 'link' ? paymentData.data : null;
+
+  let paymentAmountLabel = '';
+  let featureList: string[] = [];
+  if (paymentData.kind === 'link' && linkData) {
+    paymentAmountLabel = `${linkData.amount} USDC`;
+    featureList = linkData.features;
+  } else if (quoteData) {
+    paymentAmountLabel = `${fmtCurrency(quoteData.feeUSDC)} USDC`;
+    featureList = [
+      `保障窗口 ${quoteData.windowHours} 小时`,
+      `预计赔付 ${fmtCurrency(quoteData.payoutUSDC)} USDC（${fmtPercent(quoteData.payoutRatio)}）`,
+      `杠杆设定 ${quoteData.leverage}x`,
+      'USDC 链上支付'
+    ];
+  }
+  const buttonText = isProcessing ? '处理中...' : paymentAmountLabel ? `确认支付 ${paymentAmountLabel}` : '确认支付';
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
       <Breadcrumb items={breadcrumbItems} />
@@ -121,38 +197,77 @@ export const Payment: React.FC<PaymentProps> = ({ t }) => {
           <p className="mt-2 text-stone-600">请确认支付信息并完成支付</p>
           
           <Card className="mt-6 p-6">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-stone-600">产品</div>
-                <div className="font-semibold">{paymentData.product}</div>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-stone-600">交易对</div>
-                <Badge>{paymentData.symbol}</Badge>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-stone-600">保险时长</div>
-                <div>{paymentData.duration} 小时</div>
-              </div>
-              
-              <div className="border-t pt-4">
+            {linkData ? (
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-stone-600">支付金额</div>
-                  <div className="text-2xl font-bold text-amber-600">
-                    {paymentData.amount} USDC
+                  <div className="text-sm text-stone-600">产品</div>
+                  <div className="font-semibold">{linkData.product}</div>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-stone-600">交易对</div>
+                  <Badge>{linkData.symbol}</Badge>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-stone-600">保险时长</div>
+                  <div>{linkData.duration} 小时</div>
+                </div>
+                
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-stone-600">支付金额</div>
+                    <div className="text-2xl font-bold text-amber-600">
+                      {linkData.amount} USDC
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : quoteData ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-stone-600">产品</div>
+                  <div className="font-semibold">{quoteData.product}</div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-stone-600">保障窗口</div>
+                  <div>{quoteData.windowHours} 小时</div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-stone-600">本金</div>
+                  <div>{fmtCurrency(quoteData.principal)} USDT</div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-stone-600">杠杆</div>
+                  <div>{quoteData.leverage}x</div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-stone-600">赔付金额</div>
+                  <div>
+                    {fmtCurrency(quoteData.payoutUSDC)} USDC（{fmtPercent(quoteData.payoutRatio)}）
+                  </div>
+                </div>
+                
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-stone-600">保费金额</div>
+                    <div className="text-2xl font-bold text-amber-600">
+                      {fmtCurrency(quoteData.feeUSDC)} USDC
+                    </div>
+                  </div>
+                  <div className="mt-1 text-xs text-stone-500 text-right">
+                    保费比例 {fmtPercent(quoteData.feeRatio)}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </Card>
           
           {/* 产品特性 */}
           <Card className="mt-6 p-6">
             <h3 className="font-semibold mb-4">产品特性</h3>
             <ul className="space-y-2">
-              {paymentData.features.map((feature: string, index: number) => (
+              {featureList.map((feature: string, index: number) => (
                 <li key={index} className="flex items-center gap-2 text-sm">
                   <div className="h-2 w-2 rounded-full bg-amber-600" />
                   {feature}
@@ -198,7 +313,7 @@ export const Payment: React.FC<PaymentProps> = ({ t }) => {
                   disabled={isProcessing}
                   className="w-full"
                 >
-                  {isProcessing ? '处理中...' : `支付 ${paymentData.amount} USDC`}
+                  {buttonText}
                 </Button>
                 
                 <div className="text-xs text-stone-500 text-center">
