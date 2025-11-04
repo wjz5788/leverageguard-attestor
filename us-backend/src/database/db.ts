@@ -42,7 +42,8 @@ export class DatabaseManager {
         '001_initial_schema.sql',
         '002_verify_schema.sql',
         '003_policy_claim_payout.sql',
-        '004_min_loop.sql'
+        '004_min_loop.sql',
+        '005_auth_sessions.sql'
       ];
       
       const executeMigration = (index: number) => {

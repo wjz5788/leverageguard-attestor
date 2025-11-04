@@ -1,6 +1,8 @@
 import express from 'express';
 import { z } from 'zod';
 import OrderService, { OrderError } from '../services/orderService.js';
+import { createEnhancedAuthMiddleware } from '../middleware/enhancedAuth.js';
+import AuthService from '../services/authService.js';
 
 const previewSchema = z.object({
   skuId: z.string().min(1),
@@ -26,14 +28,22 @@ const createSchema = z.object({
 const toFixedString = (value: number, fractionDigits: number) =>
   value.toFixed(fractionDigits);
 
-export default function ordersRoutes(orderService: OrderService) {
+export default function ordersRoutes(orderService: OrderService, authService: AuthService) {
   const router = express.Router();
+  
+  // 创建增强认证中间件
+  const enhancedAuth = createEnhancedAuthMiddleware(authService);
+  
+  // 订单相关认证中间件
+  const orderAuth = enhancedAuth.orderAuth();
 
-  router.get('/orders', (_req, res) => {
+  // 订单列表 - 需要认证
+  router.get('/orders', orderAuth, (_req, res) => {
     const orders = orderService.listOrders();
     return res.json({ ok: true, orders });
   });
 
+  // 产品目录 - 公开访问
   router.get('/catalog/skus', (_req, res) => {
     const skus = orderService.listSkus();
     res.json({
@@ -42,7 +52,8 @@ export default function ordersRoutes(orderService: OrderService) {
     });
   });
 
-  router.post('/orders/preview', (req, res) => {
+  // 订单预览 - 需要认证
+  router.post('/orders/preview', orderAuth, (req, res) => {
     const parsed = previewSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
@@ -92,7 +103,8 @@ export default function ordersRoutes(orderService: OrderService) {
     }
   });
 
-  router.post('/orders', (req, res) => {
+  // 创建订单 - 需要认证
+  router.post('/orders', orderAuth, (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({

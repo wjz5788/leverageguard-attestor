@@ -4,9 +4,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
-import memoryDbManager from './database/memoryDb.js';
+import dbManager from './database/db.js';
 import AuthService from './services/authService.js';
 import OrderService from './services/orderService.js';
+import ClaimsService from './services/claimsService.js';
 import registerRoutes from './routes/index.js';
 
 // 创建Express应用
@@ -24,18 +25,23 @@ if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('combined'));
 }
 
+// 防重放中间件（保护所有非GET请求）
+import { replayProtection } from './middleware/replayProtection.js';
+app.use(replayProtection);
+
 // 初始化依赖
 const authService = new AuthService();
-const dbManager = memoryDbManager; // 统一使用内存数据库管理器以匹配当前服务实现
 const orderService = new OrderService();
+const claimsService = new ClaimsService(orderService);
 
 // 路由配置
-registerRoutes(app, { dbManager, authService, orderService });
+registerRoutes(app, { dbManager, authService, orderService, claimsService });
 
 // 注入依赖到应用实例
 app.set('dbManager', dbManager);
 app.set('authService', authService);
 app.set('orderService', orderService);
+app.set('claimsService', claimsService);
 
 // 根路由
 app.get('/', (req, res) => {

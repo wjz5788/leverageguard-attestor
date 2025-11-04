@@ -63,15 +63,17 @@ export class AuthError extends Error {
 
 const DEFAULT_SESSION_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
+import dbManager from '../database/db.js';
+
 export default class AuthService {
   private readonly jwtSecret: string;
   private readonly sessionDurationMs: number;
-  private sessions = new Map<string, AuthSession>();
-  private profiles = new Map<string, UserProfile>();
+  private db: any;
 
   constructor(options: AuthServiceOptions = {}) {
     this.jwtSecret = options.jwtSecret ?? process.env.JWT_SECRET ?? 'dev-secret';
     this.sessionDurationMs = options.sessionDurationMs ?? DEFAULT_SESSION_DURATION_MS;
+    this.db = dbManager.getDatabase();
   }
 
   async verifyLogin(payload: LoginPayload): Promise<LoginResult> {
@@ -82,7 +84,7 @@ export default class AuthService {
     }
 
     const userId = this.resolveUserId(payload);
-    const profile = this.ensureProfile(userId, payload);
+    const profile = await this.ensureProfile(userId, payload);
     const session = this.createSession(userId, payload.type);
 
     const nowIso = new Date().toISOString();
@@ -92,8 +94,10 @@ export default class AuthService {
       lastLoginAt: nowIso
     };
 
-    this.sessions.set(session.token, session);
-    this.profiles.set(userId, persistedProfile);
+    // 保存会话到数据库
+    await this.saveSession(session);
+    // 更新用户最后登录时间
+    await this.updateProfile(userId, { lastLoginAt: nowIso });
 
     return {
       token: session.token,
@@ -239,5 +243,101 @@ export default class AuthService {
       expiresAt: expiresAt.toISOString(),
       loginType
     };
+  }
+
+  private async saveSession(session: AuthSession): Promise<void> {
+    const query = `
+      INSERT INTO sessions (token, session_id, user_id, issued_at, expires_at, login_type)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    
+    await this.db.run(query, [
+      session.token,
+      session.sessionId,
+      session.userId,
+      session.issuedAt,
+      session.expiresAt,
+      session.loginType
+    ]);
+  }
+
+  private async ensureProfile(userId: string, payload: LoginPayload): Promise<UserProfile> {
+    // 检查用户是否已存在
+    const existingUser = await this.db.get('SELECT * FROM users WHERE id = ?', [userId]);
+    
+    if (existingUser) {
+      return {
+        id: existingUser.id,
+        email: existingUser.email,
+        walletAddress: existingUser.wallet_address,
+        displayName: existingUser.display_name,
+        avatarUrl: existingUser.avatar_url,
+        language: existingUser.language,
+        timezone: existingUser.timezone,
+        metadata: existingUser.metadata ? JSON.parse(existingUser.metadata) : {},
+        lastLoginAt: existingUser.last_login_at
+      };
+    }
+
+    // 创建新用户
+    const nowIso = new Date().toISOString();
+    const email = payload.type === 'email' ? payload.email : null;
+    const walletAddress = payload.type === 'wallet' ? payload.walletAddress : null;
+
+    await this.db.run(
+      'INSERT INTO users (id, email, wallet_address, created_at, last_login_at) VALUES (?, ?, ?, ?, ?)',
+      [userId, email, walletAddress, nowIso, nowIso]
+    );
+
+    return {
+      id: userId,
+      email,
+      walletAddress,
+      createdAt: nowIso,
+      lastLoginAt: nowIso
+    };
+  }
+
+  private async updateProfile(userId: string, updates: Partial<UserProfile>): Promise<void> {
+    const setClauses: string[] = [];
+    const values: any[] = [];
+
+    if (updates.lastLoginAt) {
+      setClauses.push('last_login_at = ?');
+      values.push(updates.lastLoginAt);
+    }
+
+    if (setClauses.length > 0) {
+      values.push(userId);
+      const query = `UPDATE users SET ${setClauses.join(', ')} WHERE id = ?`;
+      await this.db.run(query, values);
+    }
+  }
+
+  async getSession(token: string): Promise<AuthSession | null> {
+    const session = await this.db.get(
+      'SELECT * FROM sessions WHERE token = ?',
+      [token]
+    );
+
+    if (!session) return null;
+
+    return {
+      token: session.token,
+      sessionId: session.session_id,
+      userId: session.user_id,
+      issuedAt: session.issued_at,
+      expiresAt: session.expires_at,
+      loginType: session.login_type
+    };
+  }
+
+  async logout(token: string): Promise<void> {
+    await this.db.run('DELETE FROM sessions WHERE token = ?', [token]);
+  }
+
+  async cleanupExpiredSessions(): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.run('DELETE FROM sessions WHERE expires_at < ?', [now]);
   }
 }

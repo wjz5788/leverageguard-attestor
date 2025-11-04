@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { OrderRecord, OrderStatus, PaymentConfig, PaymentMethod, QuotePreview, QuotePreviewInput, SkuDefinition, CreateOrderInput } from '../types/orders.js';
+import { EnvValidator } from '../utils/envValidator.js';
 
 export class OrderError extends Error {
   constructor(public code: string, message: string, public httpStatus = 400) {
@@ -15,12 +16,22 @@ export interface OrderServiceOptions {
 
 type QuoteStorageRecord = QuotePreview & { consumed: boolean };
 
-const DEFAULT_PAYMENT: PaymentConfig = {
-  usdcContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-  spenderOrVault: process.env.PAYMENT_VAULT_ADDRESS ?? '0x000000000000000000000000000000000000dEaD',
-  chainId: '0x2105',
-  methods: ['permit2', 'approve_transfer']
+// 获取经过校验的支付配置
+const getValidatedPaymentConfig = (): PaymentConfig => {
+  try {
+    const config = EnvValidator.getPaymentConfig();
+    return {
+      usdcContract: config.usdcAddress,
+      spenderOrVault: config.vaultAddress,
+      chainId: config.chainId,
+      methods: ['permit2', 'approve_transfer']
+    };
+  } catch (error) {
+    throw new OrderError('PAYMENT_CONFIG_INVALID', '支付配置校验失败，请检查环境变量');
+  }
 };
+
+const DEFAULT_PAYMENT: PaymentConfig = getValidatedPaymentConfig();
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 

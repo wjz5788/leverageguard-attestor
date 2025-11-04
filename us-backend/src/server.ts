@@ -1,5 +1,19 @@
 // 服务器启动文件
+import dotenv from 'dotenv';
 import app from './app.js';
+import { EnvValidator } from './utils/envValidator.js';
+
+// 加载环境变量
+dotenv.config();
+
+// 启动前校验环境变量
+try {
+  console.log('🔍 校验支付环境变量配置...');
+  EnvValidator.validatePaymentConfig();
+} catch (error) {
+  console.error('❌ 启动失败:', error.message);
+  process.exit(1);
+}
 
 const PORT: number = Number(process.env.PORT) || 3002;
 const HOST = process.env.HOST || '0.0.0.0';
