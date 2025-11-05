@@ -40,10 +40,14 @@ export class DatabaseManager {
       // 运行所有迁移
       const migrations = [
         '001_initial_schema.sql',
+        '002_org_structure.sql',
         '002_verify_schema.sql',
         '003_policy_claim_payout.sql',
         '004_min_loop.sql',
-        '005_auth_sessions.sql'
+        '005_auth_sessions.sql',
+        '006_payment_proofs.sql',
+        '007_products_quotes.sql',
+        '008_api_keys.sql'
       ];
       
       const executeMigration = (index: number) => {

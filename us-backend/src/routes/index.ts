@@ -1,5 +1,5 @@
 import type express from 'express';
-import memoryDbManager from '../database/memoryDb.js';
+import memoryDbManager from '../database/db.js';
 import AuthService from '../services/authService.js';
 import { createAuthMiddleware } from '../middleware/authMiddleware.js';
 import verificationRoutes from './verification.js';
@@ -15,6 +15,8 @@ import OrderService from '../services/orderService.js';
 import ClaimsService from '../services/claimsService.js';
 import PaymentProofService from '../services/paymentProofService.js';
 import minSchemaRoutes from './min.js';
+import quotesRoutes from './quotes.js';
+import apiKeysRoutes from './apiKeys.js';
 
 export interface RouteDependencies {
   dbManager: typeof memoryDbManager;
@@ -39,4 +41,6 @@ export default function registerRoutes(app: express.Application, deps: RouteDepe
   app.use('/api/v1', claimsRoutes(claimsService, authService));
   app.use('/api/v1/payment-proofs', paymentProofsRoutes(paymentProofService, requireAuth));
   app.use('/api/v1/min', minSchemaRoutes());
+  app.use('/api/v1/quotes', quotesRoutes);
+  app.use('/api/v1/api-keys', requireAuth, apiKeysRoutes);
 }

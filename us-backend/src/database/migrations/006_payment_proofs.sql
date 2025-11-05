@@ -20,9 +20,10 @@ CREATE TABLE IF NOT EXISTS payment_proofs (
 );
 
 -- 2) 修改orders表，添加状态机字段
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'pending'; -- pending/awaiting_payment/paid/failed
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_id TEXT NULL;
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_tx_hash TEXT NULL; -- 仅用于历史兼容，新逻辑使用payment_proofs表
+-- 检查列是否存在，避免重复添加
+ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'pending'; -- pending/awaiting_payment/paid/failed
+ALTER TABLE orders ADD COLUMN payment_proof_id TEXT NULL;
+ALTER TABLE orders ADD COLUMN payment_tx_hash TEXT NULL; -- 仅用于历史兼容，新逻辑使用payment_proofs表
 
 -- 3) 创建索引
 CREATE INDEX IF NOT EXISTS idx_payment_proofs_order ON payment_proofs(order_id);
@@ -38,10 +39,4 @@ SET payment_status = 'paid',
     payment_tx_hash = payment_tx 
 WHERE status = 'paid' AND payment_tx IS NOT NULL;
 
--- 5) 创建订单状态枚举（如果不存在）
-DO $$
-BEGIN
-  CREATE TYPE order_payment_status AS ENUM ('pending', 'awaiting_payment', 'paid', 'failed');
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END $$;
+-- 5) SQLite不支持ENUM类型，使用CHECK约束替代

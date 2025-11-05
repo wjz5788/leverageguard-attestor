@@ -69,11 +69,15 @@ export default class AuthService {
   private readonly jwtSecret: string;
   private readonly sessionDurationMs: number;
   private db: any;
+  private sessions: Map<string, AuthSession>;
+  private profiles: Map<string, UserProfile>;
 
   constructor(options: AuthServiceOptions = {}) {
     this.jwtSecret = options.jwtSecret ?? process.env.JWT_SECRET ?? 'dev-secret';
     this.sessionDurationMs = options.sessionDurationMs ?? DEFAULT_SESSION_DURATION_MS;
     this.db = dbManager.getDatabase();
+    this.sessions = new Map();
+    this.profiles = new Map();
   }
 
   async verifyLogin(payload: LoginPayload): Promise<LoginResult> {
@@ -235,7 +239,7 @@ export default class AuthService {
       expiresIn: Math.floor(this.sessionDurationMs / 1000)
     });
 
-    return {
+    const session = {
       token,
       sessionId: uuid(),
       userId,
@@ -243,6 +247,11 @@ export default class AuthService {
       expiresAt: expiresAt.toISOString(),
       loginType
     };
+
+    // 保存session到内存中
+    this.sessions.set(token, session);
+
+    return session;
   }
 
   private async saveSession(session: AuthSession): Promise<void> {

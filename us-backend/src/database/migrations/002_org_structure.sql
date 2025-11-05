@@ -1,18 +1,11 @@
 -- Organization and user core tables
 
--- reusable status enum for user/org lifecycle
-DO $$
-BEGIN
-  CREATE TYPE status_state AS ENUM ('pending', 'active', 'suspended');
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END $$;
-
+-- SQLite doesn't support ENUM types, so we use TEXT with CHECK constraints
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
-  status status_state NOT NULL DEFAULT 'pending',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'suspended')),
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -21,7 +14,7 @@ CREATE TABLE IF NOT EXISTS organizations (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
-  status status_state NOT NULL DEFAULT 'pending',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'suspended')),
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -31,7 +24,7 @@ CREATE TABLE IF NOT EXISTS user_org_memberships (
   user_id TEXT NOT NULL,
   organization_id TEXT NOT NULL,
   role TEXT NOT NULL,
-  status status_state NOT NULL DEFAULT 'pending',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'suspended')),
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (user_id, organization_id),
