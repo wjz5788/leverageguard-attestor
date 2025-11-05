@@ -154,14 +154,40 @@ router.post('/validate', async (req, res) => {
 
 /**
  * GET /api/v1/verification/supported-exchanges
- * 获取支持的交易所列表
+ * 获取支持的交易所列表和字段配置
  */
 router.get('/supported-exchanges', (req, res) => {
   try {
-    const validator = new ValidatorService();
+    // 交易所字段定义（与前端保持一致）
+    const EXCHANGES_META = {
+      OKX: {
+        label: 'OKX',
+        fields: [
+          { key: 'apiKey', label: 'API Key', sensitive: true },
+          { key: 'apiSecret', label: 'API Secret', sensitive: true },
+          { key: 'passphrase', label: 'Passphrase', sensitive: true },
+        ],
+      },
+      Hyperliquid: {
+        label: 'Hyperliquid',
+        fields: [
+          { key: 'apiKey', label: 'API Key', sensitive: true },
+          { key: 'apiSecret', label: 'API Secret / Signing Key', sensitive: true },
+          { key: 'accountId', label: 'Account ID / SubAccount', sensitive: false },
+        ],
+      },
+      Binance: {
+        label: 'Binance',
+        fields: [
+          { key: 'apiKey', label: 'API Key', sensitive: true },
+          { key: 'apiSecret', label: 'API Secret', sensitive: true },
+        ],
+      },
+    } as const;
     
     res.json({
-      exchanges: ['okx', 'binance', 'hyperliquid'],
+      exchanges: Object.keys(EXCHANGES_META),
+      fields: EXCHANGES_META,
       environments: ['live', 'testnet']
     });
     

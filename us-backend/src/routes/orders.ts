@@ -153,5 +153,67 @@ export default function ordersRoutes(orderService: OrderService, authService: Au
     }
   });
 
+  // 获取订单详情 - 需要认证
+  router.get('/orders/:orderId', orderAuth, (req, res) => {
+    const { orderId } = req.params;
+
+    try {
+      const order = orderService.getOrder(orderId);
+      if (!order) {
+        return res.status(404).json({
+          ok: false,
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found.'
+        });
+      }
+
+      const payment = orderService.getPaymentConfig();
+      const sku = orderService.getSku(order.skuId);
+
+      return res.json({
+        ok: true,
+        order: {
+          id: order.id,
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          premiumUSDC: toFixedString(order.premiumUSDC, 2),
+          feeRatio: toFixedString(order.feeRatio, 6),
+          payoutUSDC: toFixedString(order.payoutUSDC, 2),
+          payoutRatio: toFixedString(order.payoutRatio, 6),
+          skuId: order.skuId,
+          sku: sku ? {
+            id: sku.id,
+            code: sku.code,
+            title: sku.title,
+            description: sku.description,
+            windowHours: sku.windowHours
+          } : undefined,
+          wallet: order.wallet,
+          paymentMethod: order.paymentMethod,
+          paymentProofId: order.paymentProofId,
+          exchange: order.exchange,
+          pair: order.pair,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt,
+          payment
+        }
+      });
+    } catch (error) {
+      if (error instanceof OrderError) {
+        return res.status(error.httpStatus).json({
+          ok: false,
+          code: error.code,
+          message: error.message
+        });
+      }
+
+      return res.status(500).json({
+        ok: false,
+        code: 'INTERNAL_ERROR',
+        message: 'Unexpected error while retrieving order.'
+      });
+    }
+  });
+
   return router;
 }

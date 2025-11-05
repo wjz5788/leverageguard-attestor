@@ -2,9 +2,11 @@ import { v4 as uuid } from 'uuid';
 import { OrderRecord, OrderStatus, PaymentConfig, PaymentMethod, QuotePreview, QuotePreviewInput, SkuDefinition, CreateOrderInput } from '../types/orders.js';
 import { EnvValidator } from '../utils/envValidator.js';
 
-export class OrderError extends Error {
-  constructor(public code: string, message: string, public httpStatus = 400) {
-    super(message);
+import { AppError, ERROR_CODES } from '../types/errors.js';
+
+export class OrderError extends AppError {
+  constructor(code: string, message: string, httpStatus: number = 400) {
+    super(code as any, message, httpStatus, 'medium');
     this.name = 'OrderError';
   }
 }
@@ -178,7 +180,7 @@ export default class OrderService {
     const orderId = `ord_${uuid()}`;
     
     // PaymentProof机制：不再信任paymentTx，实现状态机流转
-    const paymentStatus: PaymentStatus = input.paymentProofId ? 'paid' : 'pending';
+    const paymentStatus: 'pending' | 'paid' = input.paymentProofId ? 'paid' : 'pending';
     const status: OrderStatus = input.paymentProofId ? 'paid' : 'pending';
 
     const order: OrderRecord = {

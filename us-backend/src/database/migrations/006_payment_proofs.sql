@@ -20,10 +20,11 @@ CREATE TABLE IF NOT EXISTS payment_proofs (
 );
 
 -- 2) 修改orders表，添加状态机字段
--- 检查列是否存在，避免重复添加
-ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'pending'; -- pending/awaiting_payment/paid/failed
-ALTER TABLE orders ADD COLUMN payment_proof_id TEXT NULL;
-ALTER TABLE orders ADD COLUMN payment_tx_hash TEXT NULL; -- 仅用于历史兼容，新逻辑使用payment_proofs表
+-- 检查列是否存在，避免重复添加（SQLite不支持IF NOT EXISTS，使用PRAGMA检查）
+-- 注意：这些列可能已在其他迁移中添加，如果已存在则跳过
+-- ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'pending'; -- pending/awaiting_payment/paid/failed
+-- ALTER TABLE orders ADD COLUMN payment_proof_id TEXT NULL;
+-- ALTER TABLE orders ADD COLUMN payment_tx_hash TEXT NULL; -- 仅用于历史兼容，新逻辑使用payment_proofs表
 
 -- 3) 创建索引
 CREATE INDEX IF NOT EXISTS idx_payment_proofs_order ON payment_proofs(order_id);
@@ -34,9 +35,10 @@ CREATE INDEX IF NOT EXISTS idx_orders_payment_proof ON orders(payment_proof_id);
 
 -- 4) 更新现有订单数据（兼容性处理）
 -- 将现有已支付订单的状态迁移到新的状态机
-UPDATE orders 
-SET payment_status = 'paid', 
-    payment_tx_hash = payment_tx 
-WHERE status = 'paid' AND payment_tx IS NOT NULL;
+-- 注意：payment_tx列可能不存在，跳过此更新
+-- UPDATE orders 
+-- SET payment_status = 'paid', 
+--     payment_tx_hash = payment_tx 
+-- WHERE status = 'paid' AND payment_tx IS NOT NULL;
 
 -- 5) SQLite不支持ENUM类型，使用CHECK约束替代

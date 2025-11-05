@@ -21,6 +21,12 @@ export type AccountSummary = {
   subAccount?: string;
   accountType?: string;
   sampleInstruments?: string[];
+  // 扩展字段
+  accountLevel?: string;
+  marginMode?: string;
+  leverage?: number;
+  totalBalance?: string;
+  availableBalance?: string;
 };
 
 export type OrderEcho = {
@@ -45,6 +51,11 @@ export type VerifyChecks = {
   pairOk: boolean;
   timeSkewMs: number;
   verdict: 'pass' | 'fail';
+  // 扩展检查项
+  timestampConsistency?: boolean;
+  signatureValid?: boolean;
+  dataIntegrity?: boolean;
+  riskLevel?: 'low' | 'medium' | 'high';
 };
 
 export type ProofEcho = {
@@ -52,6 +63,10 @@ export type ProofEcho = {
     firstOrderIdLast4?: string;
     firstFillQty?: string;
     firstFillTime?: string;
+    // 扩展字段
+    orderType?: string;
+    side?: string;
+    instrument?: string;
   };
   hash?: string;
 };
@@ -63,11 +78,23 @@ export type LiquidationInfo = {
   positionSizeBefore?: string;
   positionSizeAfter?: string;
   pnlAbs?: string;
+  details?: {
+    liquidationTime?: string;
+    liquidationPrice?: string;
+    liquidatedAmount?: string;
+    remainingBalance?: string;
+    liquidationType?: 'auto' | 'manual';
+    marginCallLevel?: number;
+  };
 };
 
 export type Evidence = {
   merkleRoot?: string;
   files?: string[];
+  // 扩展证据
+  apiCallLogs?: any[];
+  signatureProofs?: any[];
+  timestampProofs?: any[];
 };
 
 // ============================
@@ -75,17 +102,53 @@ export type Evidence = {
 // ============================
 
 export type VerifyResult = {
-  status: 'verified' | 'failed' | 'partial' | 'error';
-  caps: Caps;
+  // 基础状态信息
+  status: 'verified' | 'failed' | 'pending';
+  verifiedAt: string;
+  sessionId: string;
+  
+  // 账户信息
   account: AccountSummary;
-  proof?: ProofEcho;
-  reasons?: string[];
-  verifiedAt?: string;
+  caps: Caps;
+  
+  // 订单信息
   order?: OrderEcho;
+  
+  // 验证检查结果
   checks?: VerifyChecks;
-  liquidation?: LiquidationInfo;
-  evidence?: Evidence;
-  sessionId?: string;
+  
+  // 验证证据
+  proof?: {
+    echo: OrderEcho;
+    hash: string;
+    evidence?: {
+      orderSnapshot: any;
+      fillSnapshots: any[];
+      accountSnapshot: any;
+    };
+  };
+  
+  // 失败原因
+  reasons?: string[];
+  
+  // 强平信息
+  liquidation?: {
+    status: 'none' | 'partial' | 'full';
+    details?: {
+      liquidationTime?: string;
+      liquidationPrice?: string;
+      liquidatedAmount?: string;
+      remainingBalance?: string;
+    };
+  };
+  
+  // 扩展字段（用于前端展示）
+  metadata?: {
+    exchangeName: string;
+    environment: 'live' | 'testnet';
+    verificationMethod: string;
+    confidenceScore?: number;
+  };
 };
 
 // ============================
@@ -187,6 +250,10 @@ export interface VerifyRequest {
   environment?: Environment;
   extra?: Record<string, any>;
   exchangeAccountId?: string;
+  // 扩展参数
+  verificationMethod?: 'standard' | 'advanced';
+  timeoutMs?: number;
+  retryCount?: number;
 }
 
 // 后端统一响应：校验是否成功 + 会话 + 结果
@@ -196,6 +263,9 @@ export interface VerifyResponse {
   verifiedAt: string;
   result?: VerifyResult;
   error?: string;
+  // 扩展字段
+  requestId?: string;
+  timestamp: string;
 }
 
 export interface ConfirmEchoRequest {

@@ -212,6 +212,141 @@ export default class ClaimsService {
   }
 
   /**
+   * 准备理赔申请（前端需要的接口）
+   */
+  prepareClaim(orderId: string, userId: string): { claimToken: string } {
+    // 检查订单是否存在
+    const order = this.orderService.getOrder(orderId);
+    if (!order) {
+      throw new ClaimsError('ORDER_NOT_FOUND', '订单不存在');
+    }
+
+    // 检查订单是否属于当前用户
+    if (order.wallet.toLowerCase() !== userId.toLowerCase()) {
+      throw new ClaimsError('ORDER_NOT_OWNED', '无权操作此订单');
+    }
+
+    // 检查是否已有赔付申请
+    const existingClaims = this.orderClaims.get(orderId) || [];
+    const activeClaims = existingClaims
+      .map(id => this.claims.get(id))
+      .filter(claim => claim && ['pending', 'submitted', 'under_review'].includes(claim.status));
+    
+    if (activeClaims.length > 0) {
+      throw new ClaimsError('ACTIVE_CLAIM_EXISTS', '该订单已有活跃的赔付申请');
+    }
+
+    // 生成理赔令牌（30分钟有效）
+    const claimToken = `ct_${uuid()}`;
+    
+    // 这里可以存储令牌到临时存储，实际项目中应该使用Redis等
+    // 暂时返回令牌
+    
+    return { claimToken };
+  }
+
+  /**
+   * 验证理赔申请（前端需要的接口）
+   */
+  verifyClaim(orderId: string, orderRef: string, claimToken: string, userId: string): {
+    eligible: boolean;
+    payout: number;
+    currency: string;
+    evidence: {
+      type: string;
+      time: string;
+      pair: string;
+    };
+    claimId: string;
+    expiresAt: string;
+  } {
+    // 验证令牌有效性（简化实现）
+    if (!claimToken.startsWith('ct_')) {
+      throw new ClaimsError('INVALID_TOKEN', '无效的理赔令牌');
+    }
+
+    // 检查订单是否存在
+    const order = this.orderService.getOrder(orderId);
+    if (!order) {
+      throw new ClaimsError('ORDER_NOT_FOUND', '订单不存在');
+    }
+
+    // 检查订单是否属于当前用户
+    if (order.wallet.toLowerCase() !== userId.toLowerCase()) {
+      throw new ClaimsError('ORDER_NOT_OWNED', '无权操作此订单');
+    }
+
+    // 检查订单引用是否匹配
+    if (order.orderRef !== orderRef) {
+      throw new ClaimsError('ORDER_REF_MISMATCH', '订单引用不匹配');
+    }
+
+    // 模拟理赔资格检查
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 30 * 60 * 1000).toISOString(); // 30分钟有效
+    
+    // 这里应该有实际的理赔资格检查逻辑
+    // 暂时返回模拟数据
+    return {
+      eligible: true,
+      payout: 48.5, // 模拟赔付金额
+      currency: 'USDC',
+      evidence: {
+        type: 'LIQUIDATION',
+        time: new Date(now.getTime() - 3 * 60 * 1000).toISOString(), // 3分钟前
+        pair: 'BTC-USDT-PERP'
+      },
+      claimId: `clm_${uuid()}`,
+      expiresAt
+    };
+  }
+
+  /**
+   * 获取理赔统计数据
+   */
+  getClaimsStats(userId: string): ClaimsStats {
+    const userClaimIds = this.userClaims.get(userId) || [];
+    const userClaims = userClaimIds
+      .map(id => this.claims.get(id))
+      .filter(claim => claim !== undefined) as ClaimRecord[];
+    
+    const totalClaims = userClaims.length;
+    const pendingClaims = userClaims.filter(claim => 
+      ['pending', 'submitted', 'under_review'].includes(claim.status)
+    ).length;
+    const approvedClaims = userClaims.filter(claim => claim.status === 'approved').length;
+    const rejectedClaims = userClaims.filter(claim => claim.status === 'rejected').length;
+    
+    const totalPayoutAmount = userClaims
+      .filter(claim => claim.status === 'paid')
+      .reduce((sum, claim) => sum + (claim.payoutAmountUSDC || 0), 0);
+    
+    // 计算平均处理时间（简化实现）
+    const processedClaims = userClaims.filter(claim => 
+      ['approved', 'rejected', 'paid'].includes(claim.status)
+    );
+    
+    let averageProcessingTime = 0;
+    if (processedClaims.length > 0) {
+      const totalTime = processedClaims.reduce((sum, claim) => {
+        const submitted = new Date(claim.submittedAt).getTime();
+        const processed = new Date(claim.reviewedAt || claim.updatedAt).getTime();
+        return sum + (processed - submitted);
+      }, 0);
+      averageProcessingTime = totalTime / processedClaims.length;
+    }
+
+    return {
+      totalClaims,
+      pendingClaims,
+      approvedClaims,
+      rejectedClaims,
+      totalPayoutAmount,
+      averageProcessingTime
+    };
+  }
+
+  /**
    * 获取赔付统计
    */
   getClaimsStats(): ClaimsStats {

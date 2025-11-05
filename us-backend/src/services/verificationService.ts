@@ -1,6 +1,6 @@
 // 验证服务 - 处理API密钥验证和结果验证
 import { ExchangeAdapterFactory, ExchangeType } from '../adapters/factory.js';
-import { VerifyResult, VerifyRequest, VerifyResponse, VerificationStatus } from '../types/index.js';
+import { VerifyResult, VerifyRequest, VerifyResponse, AccountSummary, Caps } from '../types/index.js';
 import memoryDbManager from '../database/memoryDb.js';
 
 // 验证服务类
@@ -16,16 +16,17 @@ export class VerificationService {
    */
   async verifyApiKey(request: VerifyRequest): Promise<VerifyResponse> {
     const sessionId = `sess_${Date.now()}`;
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     try {
       // 1. 验证输入参数
       const validationResult = this.validateRequest(request);
       if (!validationResult.valid) {
         return {
-          status: 'failed',
-          sessionId,
+          success: false,
           error: validationResult.error,
-          verifiedAt: new Date().toISOString()
+          requestId,
+          timestamp: new Date().toISOString()
         };
       }
 
@@ -50,10 +51,10 @@ export class VerificationService {
 
       // 5. 构建响应
       const response: VerifyResponse = {
-        status: verifyResult.status === 'verified' ? 'success' : 'failed',
-        sessionId: verifyResult.sessionId || sessionId,
-        result: verifyResult,
-        verifiedAt: verifyResult.verifiedAt || new Date().toISOString()
+        success: verifyResult.status === 'verified',
+        data: verifyResult,
+        requestId,
+        timestamp: new Date().toISOString()
       };
 
       return response;
@@ -61,10 +62,10 @@ export class VerificationService {
     } catch (error) {
       console.error('Verification service error:', error);
       return {
-        status: 'failed',
-        sessionId,
+        success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        verifiedAt: new Date().toISOString()
+        requestId,
+        timestamp: new Date().toISOString()
       };
     }
   }
@@ -158,8 +159,12 @@ export class VerificationService {
         status: result.status as VerifyResult['status'],
         sessionId: result.session_id,
         verifiedAt: result.created_at || new Date().toISOString(),
-        account: {},
-        caps: { orders: false, fills: false, positions: false, liquidations: false },
+        account: {
+          exchangeUid: result.exchange_account_id || 'unknown',
+          accountType: 'futures',
+          sampleInstruments: [result.pair || 'BTC-USDT']
+        } as AccountSummary,
+        caps: { orders: false, fills: false, positions: false, liquidations: false } as Caps,
         proof: {
           echo: {
             firstOrderIdLast4: result.session_id ? result.session_id.slice(-4) : '0000',
@@ -179,7 +184,12 @@ export class VerificationService {
           verdict: result.status === 'verified' ? 'pass' : 'fail'
         },
         reasons: result.status === 'failed' ? ['MOCK_REASON'] : undefined,
-        liquidation: { status: 'none' }
+        liquidation: { status: 'none' },
+        metadata: {
+          exchangeName: result.exchange || 'unknown',
+          environment: 'live' as const,
+          verificationMethod: 'standard'
+        }
       };
 
       return verifyResult;
@@ -214,10 +224,19 @@ export class VerificationService {
           status: result.status as VerifyResult['status'],
           sessionId: result.session_id,
           verifiedAt: result.created_at,
-          account: {},
-          caps,
+          account: {
+            exchangeUid: result.exchange_account_id || 'unknown',
+            accountType: 'futures',
+            sampleInstruments: [result.pair || 'BTC-USDT']
+          } as AccountSummary,
+          caps: caps as Caps,
           order,
-          liquidation
+          liquidation,
+          metadata: {
+            exchangeName: result.exchange || 'unknown',
+            environment: 'live' as const,
+            verificationMethod: 'standard'
+          }
         };
       });
 

@@ -20,14 +20,15 @@ export type LoginPayload = EmailLoginPayload | WalletLoginPayload;
 
 export interface UserProfile {
   id: string;
-  email?: string;
-  walletAddress?: string;
+  email?: string | null;
+  walletAddress?: string | null;
   displayName?: string;
   avatarUrl?: string | null;
   language?: string | null;
   timezone?: string | null;
   metadata?: Record<string, unknown>;
   lastLoginAt?: string | null;
+  createdAt?: string | null;
 }
 
 export interface AuthSession {
@@ -54,30 +55,28 @@ export interface AuthServiceOptions {
   sessionDurationMs?: number;
 }
 
-export class AuthError extends Error {
-  constructor(public code: string, message: string) {
-    super(message);
+import { AppError, ERROR_CODES } from '../types/errors.js';
+
+export class AuthError extends AppError {
+  constructor(code: string, message: string, httpStatus: number = 400) {
+    super(code as any, message, httpStatus, 'medium');
     this.name = 'AuthError';
   }
 }
 
 const DEFAULT_SESSION_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
-import dbManager from '../database/db.js';
+import dbManager from '../database/memoryDb.js';
 
 export default class AuthService {
   private readonly jwtSecret: string;
   private readonly sessionDurationMs: number;
   private db: any;
-  private sessions: Map<string, AuthSession>;
-  private profiles: Map<string, UserProfile>;
 
   constructor(options: AuthServiceOptions = {}) {
     this.jwtSecret = options.jwtSecret ?? process.env.JWT_SECRET ?? 'dev-secret';
     this.sessionDurationMs = options.sessionDurationMs ?? DEFAULT_SESSION_DURATION_MS;
     this.db = dbManager.getDatabase();
-    this.sessions = new Map();
-    this.profiles = new Map();
   }
 
   async verifyLogin(payload: LoginPayload): Promise<LoginResult> {
@@ -110,28 +109,25 @@ export default class AuthService {
     };
   }
 
-  async logout(token: string): Promise<boolean> {
-    return this.sessions.delete(token);
-  }
-
   async validateSession(token: string): Promise<AuthenticatedUser | null> {
     try {
       const decoded = jwt.verify(token, this.jwtSecret) as JwtPayload & { type?: LoginType };
-      const session = this.sessions.get(token);
+      const session = await this.getSession(token);
+      
       if (!session || !decoded?.sub || session.userId !== decoded.sub) {
         return null;
       }
 
       if (new Date(session.expiresAt).getTime() <= Date.now()) {
-        this.sessions.delete(token);
+        await this.logout(token);
         return null;
       }
 
-      const profile = this.profiles.get(session.userId) ?? this.createDefaultProfile(session.userId, decoded.type);
+      const profile = await this.getProfile(session.userId);
 
       return {
         ...session,
-        profile
+        profile: profile || this.createDefaultProfile(session.userId, decoded.type)
       };
     } catch (error) {
       return null;
@@ -139,18 +135,84 @@ export default class AuthService {
   }
 
   async getProfile(userId: string): Promise<UserProfile | null> {
-    return this.profiles.get(userId) ?? null;
+    const user = await this.db.get('SELECT * FROM users WHERE id = ?', [userId]) as any;
+    
+    if (!user) return null;
+
+    return {
+      id: user.id,
+      email: user.email,
+      walletAddress: user.wallet_address,
+      displayName: user.display_name,
+      avatarUrl: user.avatar_url,
+      language: user.language,
+      timezone: user.timezone,
+      metadata: user.metadata ? JSON.parse(user.metadata) : {},
+      lastLoginAt: user.last_login_at,
+      createdAt: user.created_at
+    };
   }
 
   async updateProfile(userId: string, updates: Partial<UserProfile>): Promise<UserProfile> {
-    const existing = this.profiles.get(userId) ?? this.createDefaultProfile(userId);
+    const existing = await this.getProfile(userId);
+    if (!existing) {
+      throw new AuthError('USER_NOT_FOUND', 'User not found');
+    }
+    
     const merged: UserProfile = {
       ...existing,
-      ...updates,
-      id: userId
+      ...updates
     };
 
-    this.profiles.set(userId, merged);
+    const setClauses: string[] = [];
+    const values: any[] = [];
+
+    if (updates.email !== undefined) {
+      setClauses.push('email = ?');
+      values.push(updates.email);
+    }
+
+    if (updates.walletAddress !== undefined) {
+      setClauses.push('wallet_address = ?');
+      values.push(updates.walletAddress);
+    }
+
+    if (updates.displayName !== undefined) {
+      setClauses.push('display_name = ?');
+      values.push(updates.displayName);
+    }
+
+    if (updates.avatarUrl !== undefined) {
+      setClauses.push('avatar_url = ?');
+      values.push(updates.avatarUrl);
+    }
+
+    if (updates.language !== undefined) {
+      setClauses.push('language = ?');
+      values.push(updates.language);
+    }
+
+    if (updates.timezone !== undefined) {
+      setClauses.push('timezone = ?');
+      values.push(updates.timezone);
+    }
+
+    if (updates.metadata !== undefined) {
+      setClauses.push('metadata = ?');
+      values.push(JSON.stringify(updates.metadata));
+    }
+
+    if (updates.lastLoginAt !== undefined) {
+      setClauses.push('last_login_at = ?');
+      values.push(updates.lastLoginAt);
+    }
+
+    if (setClauses.length > 0) {
+      values.push(userId);
+      const query = `UPDATE users SET ${setClauses.join(', ')} WHERE id = ?`;
+      await this.db.run(query, values);
+    }
+
     return merged;
   }
 
@@ -182,24 +244,42 @@ export default class AuthService {
     return `wallet:${payload.walletAddress.toLowerCase()}`;
   }
 
-  private ensureProfile(userId: string, payload: LoginPayload): UserProfile {
-    const existing = this.profiles.get(userId);
-    if (existing) {
-      return existing;
+  private async ensureProfile(userId: string, payload: LoginPayload): Promise<UserProfile> {
+    // 检查用户是否已存在
+    const existingUser = await this.db.get('SELECT * FROM users WHERE id = ?', [userId]) as any;
+    
+    if (existingUser) {
+      return {
+        id: existingUser.id,
+        email: existingUser.email,
+        walletAddress: existingUser.wallet_address,
+        displayName: existingUser.display_name,
+        avatarUrl: existingUser.avatar_url,
+        language: existingUser.language,
+        timezone: existingUser.timezone,
+        metadata: existingUser.metadata ? JSON.parse(existingUser.metadata) : {},
+        lastLoginAt: existingUser.last_login_at,
+        createdAt: existingUser.created_at
+      };
     }
 
-    const profile = this.createDefaultProfile(userId, payload.type);
+    // 创建新用户
+    const nowIso = new Date().toISOString();
+    const email = payload.type === 'email' ? payload.email : null;
+    const walletAddress = payload.type === 'wallet' ? payload.walletAddress : null;
 
-    if (payload.type === 'email') {
-      profile.email = payload.email.toLowerCase();
-      profile.displayName = profile.displayName ?? payload.email.split('@')[0];
-    } else {
-      profile.walletAddress = payload.walletAddress;
-      profile.displayName = profile.displayName ?? this.maskWallet(payload.walletAddress);
-    }
+    await this.db.run(
+      'INSERT INTO users (id, email, wallet_address, created_at, last_login_at) VALUES (?, ?, ?, ?, ?)',
+      [userId, email, walletAddress, nowIso, nowIso]
+    );
 
-    this.profiles.set(userId, profile);
-    return profile;
+    return {
+      id: userId,
+      email,
+      walletAddress,
+      createdAt: nowIso,
+      lastLoginAt: nowIso
+    };
   }
 
   private createDefaultProfile(userId: string, loginType?: LoginType): UserProfile {
@@ -239,7 +319,7 @@ export default class AuthService {
       expiresIn: Math.floor(this.sessionDurationMs / 1000)
     });
 
-    const session = {
+    return {
       token,
       sessionId: uuid(),
       userId,
@@ -247,11 +327,6 @@ export default class AuthService {
       expiresAt: expiresAt.toISOString(),
       loginType
     };
-
-    // 保存session到内存中
-    this.sessions.set(token, session);
-
-    return session;
   }
 
   private async saveSession(session: AuthSession): Promise<void> {
@@ -270,64 +345,11 @@ export default class AuthService {
     ]);
   }
 
-  private async ensureProfile(userId: string, payload: LoginPayload): Promise<UserProfile> {
-    // 检查用户是否已存在
-    const existingUser = await this.db.get('SELECT * FROM users WHERE id = ?', [userId]);
-    
-    if (existingUser) {
-      return {
-        id: existingUser.id,
-        email: existingUser.email,
-        walletAddress: existingUser.wallet_address,
-        displayName: existingUser.display_name,
-        avatarUrl: existingUser.avatar_url,
-        language: existingUser.language,
-        timezone: existingUser.timezone,
-        metadata: existingUser.metadata ? JSON.parse(existingUser.metadata) : {},
-        lastLoginAt: existingUser.last_login_at
-      };
-    }
-
-    // 创建新用户
-    const nowIso = new Date().toISOString();
-    const email = payload.type === 'email' ? payload.email : null;
-    const walletAddress = payload.type === 'wallet' ? payload.walletAddress : null;
-
-    await this.db.run(
-      'INSERT INTO users (id, email, wallet_address, created_at, last_login_at) VALUES (?, ?, ?, ?, ?)',
-      [userId, email, walletAddress, nowIso, nowIso]
-    );
-
-    return {
-      id: userId,
-      email,
-      walletAddress,
-      createdAt: nowIso,
-      lastLoginAt: nowIso
-    };
-  }
-
-  private async updateProfile(userId: string, updates: Partial<UserProfile>): Promise<void> {
-    const setClauses: string[] = [];
-    const values: any[] = [];
-
-    if (updates.lastLoginAt) {
-      setClauses.push('last_login_at = ?');
-      values.push(updates.lastLoginAt);
-    }
-
-    if (setClauses.length > 0) {
-      values.push(userId);
-      const query = `UPDATE users SET ${setClauses.join(', ')} WHERE id = ?`;
-      await this.db.run(query, values);
-    }
-  }
-
   async getSession(token: string): Promise<AuthSession | null> {
     const session = await this.db.get(
       'SELECT * FROM sessions WHERE token = ?',
       [token]
-    );
+    ) as any;
 
     if (!session) return null;
 

@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import dbManager from '../database/db.js';
+import sqlite3 from 'sqlite3';
+import dbManager, { type DatabaseManager } from '../database/db.js';
 import type { 
   ApiKey, 
   SanitizedApiKey, 
@@ -25,7 +26,7 @@ export class ApiKeyServiceError extends Error {
  * API密钥服务
  */
 export default class ApiKeyService {
-  private db: any;
+  private db: sqlite3.Database;
 
   constructor() {
     this.db = dbManager.getDatabase();
@@ -69,7 +70,7 @@ export default class ApiKeyService {
           now,
           userId,
           request.exchange
-        ], (err) => {
+        ], (err: any) => {
           if (err) {
             reject(new ApiKeyServiceError('DB_ERROR', `更新API密钥失败: ${err.message}`));
             return;
@@ -77,7 +78,13 @@ export default class ApiKeyService {
           
           // 返回更新后的记录
           this.getApiKeyByUserAndExchange(userId, request.exchange)
-            .then(resolve)
+            .then((apiKey) => {
+              if (apiKey) {
+                resolve(apiKey);
+              } else {
+                reject(new ApiKeyServiceError('NOT_FOUND', 'API密钥未找到'));
+              }
+            })
             .catch(reject);
         });
       });
@@ -104,7 +111,7 @@ export default class ApiKeyService {
           'new',
           now,
           now
-        ], (err) => {
+        ], (err: any) => {
           if (err) {
             reject(new ApiKeyServiceError('DB_ERROR', `保存API密钥失败: ${err.message}`));
             return;
@@ -112,7 +119,7 @@ export default class ApiKeyService {
           
           // 返回新创建的记录
           this.getApiKeyById(id)
-            .then(resolve)
+            .then((apiKey) => resolve(apiKey!))
             .catch(reject);
         });
       });
@@ -130,7 +137,7 @@ export default class ApiKeyService {
     `;
     
     return new Promise((resolve, reject) => {
-      this.db.all(sql, [userId], (err, rows: ApiKey[]) => {
+      this.db.all(sql, [userId], (err: any, rows: ApiKey[]) => {
         if (err) {
           reject(new ApiKeyServiceError('DB_ERROR', `查询API密钥失败: ${err.message}`));
           return;
@@ -178,7 +185,7 @@ export default class ApiKeyService {
         throw error;
       }
       
-      throw new ApiKeyServiceError('VERIFY_FAILED', `验证失败: ${error.message}`);
+      throw new ApiKeyServiceError('VERIFY_FAILED', `验证失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -189,13 +196,18 @@ export default class ApiKeyService {
     const sql = `DELETE FROM api_keys WHERE user_id = ? AND exchange = ?`;
     
     return new Promise((resolve, reject) => {
-      this.db.run(sql, [userId, exchange], function(err) {
+      this.db.run(sql, [userId, exchange], function(this: any, err: any) {
         if (err) {
           reject(new ApiKeyServiceError('DB_ERROR', `删除API密钥失败: ${err.message}`));
           return;
         }
         
-        resolve(this.changes > 0);
+        // 检查是否有行被删除
+        if (this.changes === 0) {
+          resolve(false);
+        } else {
+          resolve(true);
+        }
       });
     });
   }
@@ -207,7 +219,7 @@ export default class ApiKeyService {
     const sql = `SELECT * FROM api_keys WHERE id = ?`;
     
     return new Promise((resolve, reject) => {
-      this.db.get(sql, [id], (err, row: ApiKey) => {
+      this.db.get(sql, [id], (err: any, row: ApiKey) => {
         if (err) {
           reject(new ApiKeyServiceError('DB_ERROR', `查询API密钥失败: ${err.message}`));
           return;
@@ -230,7 +242,7 @@ export default class ApiKeyService {
     const sql = `SELECT * FROM api_keys WHERE user_id = ? AND exchange = ?`;
     
     return new Promise((resolve, reject) => {
-      this.db.get(sql, [userId, exchange], (err, row: ApiKey) => {
+      this.db.get(sql, [userId, exchange], (err: any, row: ApiKey) => {
         if (err) {
           reject(new ApiKeyServiceError('DB_ERROR', `查询API密钥失败: ${err.message}`));
           return;
@@ -296,7 +308,7 @@ export default class ApiKeyService {
     const now = new Date().toISOString();
     
     return new Promise((resolve, reject) => {
-      this.db.run(sql, [status, verifiedAt, now, id], function(err) {
+      this.db.run(sql, [status, verifiedAt, now, id], function(this: any, err: any) {
         if (err) {
           reject(new ApiKeyServiceError('DB_ERROR', `更新API密钥状态失败: ${err.message}`));
           return;

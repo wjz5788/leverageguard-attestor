@@ -1,6 +1,6 @@
 import express, { type RequestHandler } from 'express';
 import ApiKeyService, { ApiKeyServiceError } from '../services/apiKeyService.js';
-import type { CreateApiKeyRequest, VerifyApiKeyRequest } from '../models/apiKey.js';
+import type { CreateApiKeyRequest, VerifyApiKeyRequest, ExchangeType } from '../models/apiKey.js';
 
 const router = express.Router();
 
@@ -11,8 +11,8 @@ const router = express.Router();
 function getCurrentUserId(req: express.Request): string {
   // 从认证中间件中获取用户ID
   const authUser = (req as any).auth;
-  if (authUser && authUser.userId) {
-    return authUser.userId;
+  if (authUser && authUser.authInfo && authUser.authInfo.type === 'user') {
+    return authUser.authInfo.id;
   }
   
   // 如果认证中间件没有设置用户信息，返回默认值
@@ -177,7 +177,7 @@ const deleteApiKey: RequestHandler = async (req, res) => {
     }
 
     const apiKeyService = new ApiKeyService();
-    const deleted = await apiKeyService.deleteApiKey(userId, exchange as any);
+    const deleted = await apiKeyService.deleteApiKey(userId, exchange as ExchangeType);
 
     if (deleted) {
       res.status(200).json({

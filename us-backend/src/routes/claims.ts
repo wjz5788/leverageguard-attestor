@@ -51,7 +51,9 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
     }
 
     try {
-      const userId = req.auth?.userId;
+      const authInfo = (req.auth as any)?.authInfo;
+      const userId = authInfo?.type === 'user' ? authInfo.id : null;
+      
       if (!userId) {
         return res.status(401).json({
           ok: false,
@@ -60,7 +62,7 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
         });
       }
 
-      const claim = claimsService.createClaim(userId, parsed.data);
+      const claim = await claimsService.createClaim(userId, parsed.data);
       
       return res.status(201).json({
         ok: true,
@@ -88,7 +90,8 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
   router.get('/claims/:claimId', claimAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const { claimId } = req.params;
-      const userId = req.auth?.userId;
+      const authInfo = (req.auth as any)?.authInfo;
+      const userId = authInfo?.type === 'user' ? authInfo.id : null;
       
       if (!userId) {
         return res.status(401).json({
@@ -98,7 +101,7 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
         });
       }
 
-      const claim = claimsService.getClaim(claimId);
+      const claim = await claimsService.getClaim(claimId);
       if (!claim) {
         return res.status(404).json({
           ok: false,
@@ -108,7 +111,7 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
       }
 
       // 检查权限：用户只能查看自己的赔付申请，管理员可以查看所有
-      const isAdmin = req.auth?.isAdmin || false;
+      const isAdmin = (req.auth as any)?.method === 'jwt' && authInfo?.profile?.role === 'admin';
       if (!isAdmin && claim.userId !== userId) {
         return res.status(403).json({
           ok: false,
@@ -143,7 +146,9 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
     }
 
     try {
-      const userId = req.auth?.userId;
+      const authInfo = (req.auth as any)?.authInfo;
+      const userId = authInfo?.type === 'user' ? authInfo.id : null;
+      
       if (!userId) {
         return res.status(401).json({
           ok: false,
@@ -152,7 +157,7 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
         });
       }
 
-      const { claims, total } = claimsService.getUserClaims(userId, parsed.data.page, parsed.data.pageSize);
+      const { claims, total } = await claimsService.getUserClaims(userId, parsed.data.page, parsed.data.pageSize);
       
       return res.json({
         ok: true,
@@ -183,7 +188,7 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
     }
 
     try {
-      const { claims, total } = claimsService.getAllClaims(
+      const { claims, total } = await claimsService.getAllClaims(
         parsed.data.page, 
         parsed.data.pageSize, 
         parsed.data.status
@@ -210,7 +215,8 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
   router.post('/claims/:claimId/submit', claimAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const { claimId } = req.params;
-      const userId = req.auth?.userId;
+      const authInfo = (req.auth as any)?.authInfo;
+      const userId = authInfo?.type === 'user' ? authInfo.id : null;
       
       if (!userId) {
         return res.status(401).json({
@@ -220,7 +226,7 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
         });
       }
 
-      const claim = claimsService.submitClaim(claimId, userId);
+      const claim = await claimsService.submitClaim(claimId, userId);
       
       return res.json({
         ok: true,
@@ -257,7 +263,8 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
 
     try {
       const { claimId } = req.params;
-      const reviewerId = req.auth?.userId;
+      const authInfo = (req.auth as any)?.authInfo;
+      const reviewerId = authInfo?.type === 'user' ? authInfo.id : null;
       
       if (!reviewerId) {
         return res.status(401).json({
@@ -267,7 +274,7 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
         });
       }
 
-      const claim = claimsService.updateClaim(claimId, parsed.data, reviewerId);
+      const claim = await claimsService.updateClaim(claimId, parsed.data, reviewerId);
       
       return res.json({
         ok: true,
@@ -294,7 +301,7 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
   // 获取赔付统计 - 需要管理员权限
   router.get('/admin/claims/stats', adminAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const stats = claimsService.getClaimsStats();
+      const stats = await claimsService.getClaimsStats();
       
       return res.json({
         ok: true,
@@ -306,6 +313,132 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
         ok: false,
         code: 'INTERNAL_ERROR',
         message: '获取赔付统计时发生意外错误'
+      });
+    }
+  });
+
+  // 准备理赔申请 - 前端需要的接口
+  router.post('/claims/prepare', claimAuth, async (req: AuthenticatedRequest, res) => {
+    const { orderId } = req.body;
+    
+    if (!orderId) {
+      return res.status(400).json({
+        ok: false,
+        code: 'MISSING_ORDER_ID',
+        message: '订单ID不能为空'
+      });
+    }
+
+    try {
+      const authInfo = (req.auth as any)?.authInfo;
+      const userId = authInfo?.type === 'user' ? authInfo.id : null;
+      
+      if (!userId) {
+        return res.status(401).json({
+          ok: false,
+          error: 'UNAUTHORIZED',
+          message: '用户认证信息缺失'
+        });
+      }
+
+      const result = await claimsService.prepareClaim(orderId, userId);
+      
+      return res.json({
+        ok: true,
+        ...result
+      });
+    } catch (error) {
+      if (error instanceof ClaimsError) {
+        return res.status(error.httpStatus).json({
+          ok: false,
+          code: error.code,
+          message: error.message
+        });
+      }
+
+      console.error('准备理赔申请错误:', error);
+      return res.status(500).json({
+        ok: false,
+        code: 'INTERNAL_ERROR',
+        message: '准备理赔申请时发生意外错误'
+      });
+    }
+  });
+
+  // 验证理赔申请 - 前端需要的接口
+  router.post('/claims/verify', claimAuth, async (req: AuthenticatedRequest, res) => {
+    const { orderId, orderRef, claimToken } = req.body;
+    
+    if (!orderId || !orderRef || !claimToken) {
+      return res.status(400).json({
+        ok: false,
+        code: 'MISSING_PARAMETERS',
+        message: '订单ID、订单引用和理赔令牌不能为空'
+      });
+    }
+
+    try {
+      const authInfo = (req.auth as any)?.authInfo;
+      const userId = authInfo?.type === 'user' ? authInfo.id : null;
+      
+      if (!userId) {
+        return res.status(401).json({
+          ok: false,
+          error: 'UNAUTHORIZED',
+          message: '用户认证信息缺失'
+        });
+      }
+
+      const result = await claimsService.verifyClaim(orderId, orderRef, claimToken, userId);
+      
+      return res.json({
+        ok: true,
+        ...result
+      });
+    } catch (error) {
+      if (error instanceof ClaimsError) {
+        return res.status(error.httpStatus).json({
+          ok: false,
+          code: error.code,
+          message: error.message
+        });
+      }
+
+      console.error('验证理赔申请错误:', error);
+      return res.status(500).json({
+        ok: false,
+        code: 'INTERNAL_ERROR',
+        message: '验证理赔申请时发生意外错误'
+      });
+    }
+  });
+
+  // 获取理赔统计数据 - 前端需要的接口
+  router.get('/claims/stats', claimAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const authInfo = (req.auth as any)?.authInfo;
+      const userId = authInfo?.type === 'user' ? authInfo.id : null;
+      
+      if (!userId) {
+        return res.status(401).json({
+          ok: false,
+          error: 'UNAUTHORIZED',
+          message: '用户认证信息缺失'
+        });
+      }
+
+      const stats = await claimsService.getClaimsStats(userId);
+      
+      return res.json({
+        ok: true,
+        stats
+      });
+    } catch (error) {
+      console.error('获取理赔统计数据错误:', error);
+      return res.status(500).json({
+        ok: false,
+        code: 'INTERNAL_ERROR',
+        message: '获取理赔统计数据时发生意外错误'
       });
     }
   });

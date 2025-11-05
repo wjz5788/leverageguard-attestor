@@ -92,7 +92,7 @@ export default class PaymentProofService {
         return { isValid: false, error: 'Transaction validation failed' };
       }
     } catch (error) {
-      return { isValid: false, error: 'Validation error: ' + error.message };
+      return { isValid: false, error: 'Validation error: ' + (error instanceof Error ? error.message : String(error)) };
     }
   }
 
@@ -122,7 +122,7 @@ export default class PaymentProofService {
     }
 
     proof.status = status;
-    if (status === 'confirmed' && blockNumber) {
+    if (status === 'paid' && blockNumber) {
       proof.blockNumber = blockNumber;
       proof.confirmedAt = new Date().toISOString();
     }

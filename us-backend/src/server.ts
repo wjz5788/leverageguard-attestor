@@ -11,7 +11,7 @@ try {
   console.log('🔍 校验支付环境变量配置...');
   EnvValidator.validatePaymentConfig();
 } catch (error) {
-  console.error('❌ 启动失败:', error.message);
+  console.error('❌ 启动失败:', error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
 

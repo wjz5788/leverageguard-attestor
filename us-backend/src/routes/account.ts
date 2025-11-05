@@ -19,6 +19,14 @@ export default function accountRoutes(authService: AuthService, requireAuth: Req
   const router = express.Router();
 
   router.get('/profile', requireAuth, async (req: AuthenticatedRequest, res) => {
+    // 检查是否是AuthenticatedUser类型
+    if (!('userId' in req.auth!)) {
+      return res.status(401).json({
+        error: 'UNAUTHORIZED',
+        message: 'Active session is required.'
+      });
+    }
+    
     const userId = req.auth?.userId;
 
     if (!userId) {
@@ -41,6 +49,14 @@ export default function accountRoutes(authService: AuthService, requireAuth: Req
   });
 
   router.patch('/profile', requireAuth, async (req: AuthenticatedRequest, res) => {
+    // 检查是否是AuthenticatedUser类型
+    if (!('userId' in req.auth!)) {
+      return res.status(401).json({
+        error: 'UNAUTHORIZED',
+        message: 'Active session is required.'
+      });
+    }
+    
     const userId = req.auth?.userId;
 
     if (!userId) {

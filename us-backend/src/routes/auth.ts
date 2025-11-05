@@ -67,6 +67,14 @@ export default function authRoutes(authService: AuthService, requireAuth: Requir
   });
 
   router.post('/logout', requireAuth, async (req: AuthenticatedRequest, res) => {
+    // 检查是否是AuthenticatedUser类型
+    if (!('token' in req.auth!)) {
+      return res.status(400).json({
+        error: 'INVALID_SESSION',
+        message: 'No active session token found.'
+      });
+    }
+    
     const token = req.auth?.token;
 
     if (!token) {

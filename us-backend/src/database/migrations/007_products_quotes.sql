@@ -45,8 +45,8 @@ CREATE INDEX IF NOT EXISTS idx_quotes_user ON quotes(user_id);
 CREATE INDEX IF NOT EXISTS idx_quotes_product ON quotes(product_id);
 CREATE INDEX IF NOT EXISTS idx_quotes_expires ON quotes(expires_at);
 
--- 插入默认产品数据
-INSERT INTO products (
+-- 插入默认产品数据（如果不存在）
+INSERT OR IGNORE INTO products (
   id, code, title, payout_type, payout_value, window_hours, 
   leverage_min, leverage_max, principal_min, principal_max, base_load, op_fee, probability
 ) VALUES 

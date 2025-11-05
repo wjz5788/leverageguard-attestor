@@ -9,6 +9,7 @@ import AuthService from './services/authService.js';
 import OrderService from './services/orderService.js';
 import ClaimsService from './services/claimsService.js';
 import PaymentProofService from './services/paymentProofService.js';
+import { LinkService } from './services/linkService.js';
 import registerRoutes from './routes/index.js';
 
 // 创建Express应用
@@ -35,9 +36,10 @@ const authService = new AuthService();
 const orderService = new OrderService();
 const claimsService = new ClaimsService(orderService);
 const paymentProofService = new PaymentProofService();
+const linkService = new LinkService();
 
 // 路由配置
-registerRoutes(app, { dbManager, authService, orderService, claimsService, paymentProofService });
+registerRoutes(app, { dbManager, authService, orderService, claimsService, paymentProofService, linkService });
 
 // 注入依赖到应用实例
 app.set('dbManager', dbManager);
@@ -45,6 +47,7 @@ app.set('authService', authService);
 app.set('orderService', orderService);
 app.set('claimsService', claimsService);
 app.set('paymentProofService', paymentProofService);
+app.set('linkService', linkService);
 
 // 根路由
 app.get('/', (req, res) => {
@@ -69,14 +72,17 @@ app.use('*', (req, res) => {
   });
 });
 
-// 全局错误处理
-app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Global error handler:', error);
-  
-  res.status(error.status || 500).json({
-    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
-    ...(process.env.NODE_ENV !== 'production' && { stack: error.stack })
-  });
-});
+// 错误处理中间件
+import { createErrorHandlers, notFoundHandler } from './middleware/errorHandler.js';
+
+// 404处理
+app.use(notFoundHandler);
+
+// 统一错误处理链
+app.use(createErrorHandlers({
+  includeStackTrace: process.env.NODE_ENV === 'development',
+  logErrors: true,
+  exposeErrors: process.env.NODE_ENV === 'development',
+}));
 
 export default app;

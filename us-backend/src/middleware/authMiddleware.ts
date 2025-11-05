@@ -1,8 +1,14 @@
 import { NextFunction, Request, Response } from 'express';
 import AuthService, { AuthenticatedUser } from '../services/authService';
 
+export interface AuthInfo {
+  method?: string;
+  authInfo?: any;
+  authenticatedAt?: string;
+}
+
 export interface AuthenticatedRequest extends Request {
-  auth?: AuthenticatedUser;
+  auth?: AuthenticatedUser | AuthInfo;
 }
 
 export type RequireAuthMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => void;
