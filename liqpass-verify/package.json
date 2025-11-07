@@ -1,0 +1,20 @@
+{
+  "name": "liqpass-verify",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@nomicfoundation/hardhat-verify": "^3.0.6",
+    "@openzeppelin/contracts": "^5.4.0",
+    "ethers": "^6.15.0",
+    "hardhat": "^3.0.12"
+  },
+  "type": "module"
+}

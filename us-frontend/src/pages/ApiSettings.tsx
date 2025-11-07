@@ -222,16 +222,20 @@ async function api(path: string, options: { method?: string; body?: any } = {}) 
 }
 
 // 状态徽章组件
-function StatusBadge({ status, lastVerifiedAt, pendingConfirm }: {
+function StatusBadge({ status, lastVerifiedAt, pendingConfirm, verifying }: {
   status: ExchangeAccount['status'];
   lastVerifiedAt: string | null;
   pendingConfirm?: boolean;
+  verifying?: boolean;
 }) {
   const formatTime = (time: string) => {
     return new Date(time).toLocaleString('zh-CN');
   };
 
   const getBadgeConfig = () => {
+    if (verifying) {
+      return { text: '🔄 验证中…', cls: 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse' };
+    }
     if (status === 'verified' && pendingConfirm) {
       return { text: '🟡 待确认 · 核对回显后点击"确认无误"', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
     }
@@ -335,6 +339,7 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
   const [resultOpen, setResultOpen] = useState(false);
   const [resultData, setResultData] = useState<VerifyResponse | null>(null);
   const [resultError, setResultError] = useState<string | null>(null);
+  const [verifyingMap, setVerifyingMap] = useState<Record<string, boolean>>({});
   
   // 抽屉状态
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -482,34 +487,51 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
   const deleteAccount = async (id: string) => {
     if (!confirm('确认删除？将清空密钥并标记为已删除')) return;
     
-    setAccounts(prev => prev.map(acc => 
-      acc.id === id 
-        ? { ...acc, status: 'deleted' as const }
-        : acc
-    ));
-    setAccountForms(prev => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-    setToast('已删除');
+    try {
+      // 调用后端删除API
+      const response = await fetch(`/api/api-keys/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || '删除失败');
+      }
+
+      // 后端删除成功后，更新前端状态
+      setAccounts(prev => prev.map(acc => 
+        acc.id === id 
+          ? { ...acc, status: 'deleted' as const }
+          : acc
+      ));
+      setAccountForms(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setToast('已删除');
+    } catch (error: any) {
+      console.error('删除账户失败:', error);
+      setToast(error.message || '删除失败');
+    }
   };
 
   // 执行验证
   const doVerify = async (accountId: string, payload: VerifyPayload) => {
-    setAccounts(prev => prev.map(acc => 
-      acc.id === accountId
-        ? { ...acc, status: 'verifying', lastVerifyResult: undefined }
-        : acc
-    ));
     setResultData(null);
     setResultError(null);
     setResultOpen(true);
+    setVerifyingMap(prev => ({ ...prev, [accountId]: true }));
 
     try {
       const res = await fetch('/api/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
       const maybeJson = await res.json().catch(() => ({}));
@@ -520,29 +542,42 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
         throw new Error(reason || `HTTP ${res.status}`);
       }
 
-      setAccounts(prev => prev.map(acc => 
+      // 统一状态处理逻辑
+      const statusHint = String((data as any)?.status || (data as any)?.meta?.status || '').toLowerCase();
+      const normalizedStatus: ExchangeAccount['status'] = statusHint.includes('fail')
+        ? 'failed'
+        : 'verified';
+      const verifiedAt = (data as any)?.meta?.verifiedAt || (data as any)?.verifiedAt || new Date().toISOString();
+
+      setAccounts(prev => prev.map(acc =>
         acc.id === accountId
-          ? { 
-              ...acc, 
-              status: 'verified' as const, 
-              lastVerifiedAt: typeof data?.meta?.verifiedAt === 'string' ? data.meta.verifiedAt : new Date().toISOString(),
+          ? {
+              ...acc,
+              status: normalizedStatus,
+              lastVerifiedAt: typeof verifiedAt === 'string' ? verifiedAt : new Date().toISOString(),
               lastVerifyResult: data as unknown as VerifyResult,
-              userConfirmedEcho: false,
+              userConfirmedEcho: normalizedStatus === 'verified' ? false : acc.userConfirmedEcho,
             }
           : acc
       ));
 
       setResultData(data);
-      setToast('已生成回显，待确认');
+      setToast(normalizedStatus === 'verified' ? '已生成回显，待确认' : '验证结果已返回');
     } catch (error: any) {
       const message = error?.message || '验证失败';
-      setAccounts(prev => prev.map(acc => 
+      setAccounts(prev => prev.map(acc =>
         acc.id === accountId
-          ? { ...acc, status: 'failed' }
+          ? { ...acc, status: 'failed', lastVerifyResult: undefined }
           : acc
       ));
       setResultError(message);
       setToast(message);
+    } finally {
+      setVerifyingMap(prev => {
+        const next = { ...prev };
+        delete next[accountId];
+        return next;
+      });
     }
   };
 
@@ -608,6 +643,7 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
                   onVerify={(payload) => doVerify(acc.id, payload)}
                   onConfirmEcho={() => confirmEcho(acc.id)}
                   onToast={(msg) => setToast(msg)}
+                  verifying={verifyingMap[acc.id]}
                 />
               );
             })}
@@ -773,6 +809,7 @@ const AccountCard = ({
   onVerify, 
   onConfirmEcho,
   onToast,
+  verifying = false,
 }: {
   acc: ExchangeAccount;
   form: AccountVerifyForm;
@@ -782,6 +819,7 @@ const AccountCard = ({
   onVerify: (payload: VerifyPayload) => void;
   onConfirmEcho: () => void;
   onToast: (msg: string) => void;
+  verifying?: boolean;
 }) => {
   const icon = acc.exchange.slice(0, 2).toUpperCase();
   const isVerified = acc.status === "verified";
@@ -983,8 +1021,8 @@ const AccountCard = ({
       )}
 
       <div className="flex items-center gap-2">
-        <Button onClick={tryVerify} kind="primary" disabled={acc.status === "verifying"}>
-          {acc.status === "verifying" ? "验证中…" : "验证"}
+        <Button onClick={tryVerify} kind="primary" disabled={verifying}>
+          {verifying ? "验证中…" : "验证"}
         </Button>
         <Button onClick={onEdit} kind="ghost">编辑</Button>
         <Button onClick={onDelete} kind="danger">删除</Button>

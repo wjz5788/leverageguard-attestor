@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { OrderCardData, PolicyStatus, ChainName } from "../types/order";
 
 // =============================
@@ -82,6 +83,7 @@ function makeMockOrders(): OrderCardData[] {
 // =============================
 
 const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
+  const navigate = useNavigate();
   const { principal, leverage, premiumPaid, payoutMax, status, coverageStartTs, coverageEndTs, createdAt, orderRef, exchangeAccountId, chain, txHash, orderDigest, title } = data;
 
   const endMs = toMs(coverageEndTs);
@@ -113,13 +115,13 @@ const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
   const claimEnabled = status === "active" && !isExpiredUi;
 
   const onClaimClick = (o: OrderCardData) => {
-    // 待你确认：POST /claims/verify 还是 /claims/start ？入参 {orderId}? {orderRef}? {exchangeAccountId}?
-    // 这里暂以 alert 占位，避免误调用。
-    alert(`发起理赔（占位）：orderId=${o.id}, orderRef=${o.orderRef}`);
+    // 跳转到理赔页面，携带orderId参数
+    navigate(`/claims/new?orderId=${o.id}`);
   };
 
   const onDetailClick = (o: OrderCardData) => {
-    alert(`详情（占位）: ${o.id}`);
+    // 跳转到订单详情页面
+    navigate(`/orders/${o.id}`);
   };
 
   const btn = (disabled = false): React.CSSProperties => {

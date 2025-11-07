@@ -103,7 +103,7 @@ export const ClaimsPage: React.FC<ClaimsPageProps> = ({ t }) => {
           <h1 className="text-2xl font-bold text-gray-900">赔付管理</h1>
           <div className="flex gap-2">
             <button
-              onClick={() => navigate('/account/claims')}
+              onClick={() => navigate('/claims')}
               className={`px-4 py-2 rounded-lg transition-colors ${
                 !isNewClaim 
                   ? 'bg-red-600 text-white' 
@@ -113,7 +113,7 @@ export const ClaimsPage: React.FC<ClaimsPageProps> = ({ t }) => {
               赔付列表
             </button>
             <button
-              onClick={() => navigate('/account/claims/new')}
+              onClick={() => navigate('/claims/new')}
               className={`px-4 py-2 rounded-lg transition-colors ${
                 isNewClaim 
                   ? 'bg-red-600 text-white' 
@@ -313,7 +313,7 @@ function NewClaimView({ orderId }: { orderId: string }) {
       saveClaims(claims);
       
       // 跳转回列表
-      navigate('/account/claims');
+      navigate('/claims');
     } catch (error) {
       alert('链上赔付失败：' + (error as Error).message);
     } finally {

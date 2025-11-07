@@ -29,6 +29,7 @@ export const API_READ_KEY = 'liqpass.readKey';
 // 主导航配置
 export const MAIN_NAV = [
   { label: "Products", to: "/products" },
+  { label: "Verify", to: "/verify" },
   { label: "Transparency", to: "/transparency" },
   { label: "Help", to: "/help" },
 ] as const;

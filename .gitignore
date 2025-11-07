@@ -61,3 +61,6 @@ reports/*.json
 # Temporary files
 .tmp/
 temp/
+
+# Custom directories
+/辅助知识页面/
