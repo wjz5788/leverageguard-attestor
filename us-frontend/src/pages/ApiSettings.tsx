@@ -19,6 +19,8 @@ interface ExchangeAccount {
   };
   masked: {
     apiKeyLast4?: string;
+    secretKeyLast4?: string;
+    passphraseLast4?: string;
   };
   environment: 'live' | 'testnet';
   userConfirmedEcho?: boolean;
@@ -377,7 +379,7 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
           lastVerifiedAt: new Date().toISOString(),
           caps: { orders: true, fills: true, positions: true, liquidations: true },
           account: { exchangeUid: '12345678', subAccount: 'main' },
-          masked: { apiKeyLast4: 'a9f2' },
+          masked: { apiKeyLast4: 'a9f2...a9f2', secretKeyLast4: 'sk12...sk12', passphraseLast4: 'pass...word' },
           environment: 'live',
           userConfirmedEcho: false,
         },
@@ -457,7 +459,11 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
           lastVerifiedAt: null,
           caps: { orders: false, fills: false, positions: false, liquidations: false },
           account: {},
-          masked: { apiKeyLast4: form.apiKey.slice(-4) },
+          masked: { 
+            apiKeyLast4: `${form.apiKey.slice(0, 4)}...${form.apiKey.slice(-4)}`,
+            secretKeyLast4: `${form.secretKey.slice(0, 4)}...${form.secretKey.slice(-4)}`,
+            passphraseLast4: form.passphrase ? `${form.passphrase.slice(0, 4)}...${form.passphrase.slice(-4)}` : undefined
+          },
           environment: form.environment,
         };
         
@@ -898,6 +904,18 @@ const AccountCard = ({
 
       <div className="text-xs text-zinc-600">
         能力：订单 {bool(acc.caps.orders)} · 成交 {bool(acc.caps.fills)} · 持仓 {bool(acc.caps.positions)} · 强平 {bool(acc.caps.liquidations)}
+      </div>
+
+      <div className="text-xs text-zinc-500 space-y-1">
+        {acc.masked?.apiKeyLast4 && (
+          <div>API Key: {acc.masked.apiKeyLast4}</div>
+        )}
+        {acc.masked?.secretKeyLast4 && (
+          <div>Secret Key: {acc.masked.secretKeyLast4}</div>
+        )}
+        {acc.masked?.passphraseLast4 && (
+          <div>Passphrase: {acc.masked.passphraseLast4}</div>
+        )}
       </div>
 
       <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2">

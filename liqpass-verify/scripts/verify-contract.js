@@ -2,22 +2,20 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
+const { ethers } = require('ethers');
 
 // 合约地址
 const contractAddress = "0xc4d1bedc8850771af2d9db2c6d24ec21a8829709";
 
 // 从原始args.js文件获取构造参数
 const constructorArgs = [
-  "0x833589fCd6EDB6E08F4c7C32D4F71B54bDa02913", // USDC 地址
+  "0x833589fCd6EDb6E08F4c7C32D4F71B54bDa02913", // USDC 地址
   "0x9aEA8865A46A37a9dB738fD0F1eE2bED49D143F1"  // Treasury 地址
 ];
 
-// 编码构造参数，使用原始地址格式
-const ethers = require('ethers');
-const encodedArgs = ethers.AbiCoder.defaultAbiCoder().encode(
-  ['address', 'address'], 
-  constructorArgs
-).slice(2);
+// 手动编码构造参数，避免ethers的校验和检查
+const encodedArgs = "000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913" +
+                    "0000000000000000000000009aea8865a46a37a9db738fd0f1ee2bed49d143f1";
 
 // 读取合约源码
 const sourceCode = fs.readFileSync('./contracts/CheckoutUSDC.sol', 'utf8');
@@ -45,9 +43,9 @@ Object.entries(requestData).forEach(([key, value]) => {
 
 console.log("正在提交合约验证请求...");
 
-// 发送请求
+// 发送请求 - 使用V2 API端点
 try {
-  const response = execSync(`curl -X POST "https://api.basescan.org/api" -d "${formData.toString()}"`, { encoding: 'utf8' });
+  const response = execSync(`curl -X POST "https://api.basescan.org/v2/api" -H "Content-Type: application/x-www-form-urlencoded" -d "${formData.toString()}"`, { encoding: 'utf8' });
   console.log("验证请求响应:", response);
   
   // 解析响应获取GUID
@@ -63,7 +61,7 @@ try {
   // 等待几秒后检查验证状态
   console.log("等待5秒后检查验证状态...");
   setTimeout(() => {
-    const statusResponse = execSync(`curl "https://api.basescan.org/api?apikey=VHYN2NTDMRM2NWV9FUHR2NJ2M92KQ6FQQC&module=contract&action=checkverifystatus&guid=${guid}"`, { encoding: 'utf8' });
+    const statusResponse = execSync(`curl "https://api.basescan.org/v2/api?apikey=VHYN2NTDMRM2NWV9FUHR2NJ2M92KQ6FQQC&module=contract&action=checkverifystatus&guid=${guid}"`, { encoding: 'utf8' });
     console.log("验证状态:", statusResponse);
   }, 5000);
   

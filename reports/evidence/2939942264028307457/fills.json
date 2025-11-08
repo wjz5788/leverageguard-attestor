@@ -1,0 +1,29 @@
+[
+  {
+    "fillSz": "0.64",
+    "fillPxVol": "",
+    "fillFwdPx": "",
+    "fee": "-0.37636064",
+    "tradeQuoteCcy": "",
+    "ordId": "2939942264028307457",
+    "clOrdId": "",
+    "posSide": "long",
+    "fillMarkVol": "",
+    "tag": "",
+    "execType": "T",
+    "fillIdxPx": "117669.3",
+    "side": "buy",
+    "fillPx": "117612.7",
+    "fillPnl": "0",
+    "instType": "SWAP",
+    "fillPxUsd": "",
+    "instId": "BTC-USDT-SWAP",
+    "billId": "2939942264095416321",
+    "subType": "3",
+    "fillTime": "1760119507154",
+    "tradeId": "1802108588",
+    "fillMarkPx": "117627",
+    "feeCcy": "USDT",
+    "ts": "1760119507155"
+  }
+]
