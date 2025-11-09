@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
-import { ApiProvider } from '../../src/contexts/ApiContext';
+// import { ApiProvider } from '../../src/contexts/ApiContext';
 import { LoadingProvider } from '../../src/contexts/LoadingContext';
 import { ToastProvider } from '../../src/contexts/ToastContext';
 
@@ -11,13 +11,13 @@ import { ToastProvider } from '../../src/contexts/ToastContext';
 export const renderWithProviders = (ui: React.ReactElement, options = {}) => {
   return render(
     <BrowserRouter>
-      <ApiProvider>
+      {/* <ApiProvider> */}
         <LoadingProvider>
           <ToastProvider>
             {ui}
           </ToastProvider>
         </LoadingProvider>
-      </ApiProvider>
+      {/* </ApiProvider> */}
     </BrowserRouter>,
     options
   );

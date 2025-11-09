@@ -1,6 +1,12 @@
 import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, vi, beforeAll } from 'vitest';
+
+// 添加React JSX支持
+beforeAll(() => {
+  // 确保React环境正确设置
+  global.React = require('react');
+});
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {

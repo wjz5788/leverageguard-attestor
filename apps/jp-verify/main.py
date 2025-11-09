@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -11,13 +11,18 @@ import base64
 import uuid
 from datetime import datetime, timezone
 import os
+import asyncio
+from starlette.responses import JSONResponse
 
 app = FastAPI(title="jp-verify", version="1.0.0")
 
 # CORS 配置
+# CORS：从环境变量收敛来源，默认严格为空（需在部署时配置）
+origins_env = os.getenv("ALLOWED_ORIGINS", "*")
+allow_origins = [o.strip() for o in origins_env.split(",") if o.strip()] if origins_env and origins_env != "*" else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,7 +45,7 @@ class VerifyRequest(BaseModel):
     clientMeta: Optional[Dict[str, Any]] = None
 
 # OKX API 配置
-OKX_BASE_URL = "https://www.okx.com"
+OKX_BASE_URL = os.getenv("OKX_BASE_URL", "https://www.okx.com")
 RECV_WINDOW = 5000  # 5秒接收窗口
 
 class OKXAuthError(Exception):
@@ -74,72 +79,86 @@ def validate_timestamp(timestamp: str) -> bool:
     except Exception:
         return False
 
-async def call_okx_api(endpoint: str, method: str = "GET", params: dict = None, 
-                       api_key: str = None, secret_key: str = None, passphrase: str = None) -> dict:
-    """调用 OKX API"""
+async def call_okx_api(endpoint: str, method: str = "GET", params: dict = None,
+                       api_key: Optional[str] = None, secret_key: Optional[str] = None, passphrase: Optional[str] = None,
+                       retries: int = 3) -> dict:
+    """调用 OKX API（带轻量重试与错误细分）。对于无需鉴权的接口，传入空密钥。"""
     url = f"{OKX_BASE_URL}{endpoint}"
-    
-    # 验证必要的认证信息
-    if not all([api_key, secret_key, passphrase]):
-        raise OKXAuthError("缺少必要的认证信息", 400)
-    
-    # 构建签名
-    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-    
-    # 构建请求体
-    body = ""
-    if method.upper() == "POST" and params:
-        body = json.dumps(params, separators=(',', ':'), sort_keys=True)
-    
-    # 生成签名
-    signature = generate_okx_signature(timestamp, method, endpoint, body, secret_key)
-    
-    headers = {
-        "OK-ACCESS-KEY": api_key,
-        "OK-ACCESS-SIGN": signature,
-        "OK-ACCESS-TIMESTAMP": timestamp,
-        "OK-ACCESS-PASSPHRASE": passphrase,
-        "Content-Type": "application/json"
-    }
-    
+
+    needs_auth = api_key and secret_key and passphrase
+
+    # 构建签名（仅鉴权接口）
+    headers = {"Content-Type": "application/json"}
+    if needs_auth:
+      timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+      body = ""
+      if method.upper() == "POST" and params:
+          body = json.dumps(params, separators=(',', ':'), sort_keys=True)
+      signature = generate_okx_signature(timestamp, method, endpoint, body, secret_key)  # type: ignore[arg-type]
+      headers.update({
+          "OK-ACCESS-KEY": api_key,  # type: ignore[arg-type]
+          "OK-ACCESS-SIGN": signature,
+          "OK-ACCESS-TIMESTAMP": timestamp,
+          "OK-ACCESS-PASSPHRASE": passphrase,  # type: ignore[arg-type]
+      })
+
+    backoff = 0.5
+    last_error: Exception | None = None
     async with httpx.AsyncClient() as client:
-        try:
-            if method.upper() == "GET":
-                response = await client.get(url, params=params, headers=headers, timeout=30.0)
-            else:
-                response = await client.post(url, json=params, headers=headers, timeout=30.0)
-            
-            # 处理不同的响应状态码
-            if response.status_code == 429:
-                raise OKXAuthError("API 调用频率限制", 429)
-            elif response.status_code >= 500:
-                raise OKXAuthError("OKX 服务器错误", 503)
-            elif response.status_code == 401:
-                raise OKXAuthError("API 密钥无效或签名错误", 401)
-            elif response.status_code >= 400:
-                raise OKXAuthError(f"OKX API 错误: {response.text}", 400)
-            
-            return {
-                "status_code": response.status_code,
-                "data": response.json(),
-                "headers": dict(response.headers),
-                "fetched_at": datetime.now(timezone.utc).isoformat()
-            }
-        except httpx.TimeoutException:
-            raise OKXAuthError("OKX API 请求超时", 504)
-        except httpx.ConnectError:
-            raise OKXAuthError("无法连接到 OKX 服务器", 503)
-        except OKXAuthError:
-            raise
-        except Exception as e:
-            raise OKXAuthError(f"未知错误: {str(e)}", 500)
+        for attempt in range(1, retries + 1):
+            try:
+                if method.upper() == "GET":
+                    response = await client.get(url, params=params, headers=headers, timeout=30.0)
+                else:
+                    response = await client.post(url, json=params, headers=headers, timeout=30.0)
+
+                # 429/5xx 触发重试
+                if response.status_code == 429 or response.status_code >= 500:
+                    last_error = OKXAuthError("OKX 服务器繁忙或限流", 429 if response.status_code == 429 else 503)
+                    if attempt < retries:
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
+                    raise last_error
+
+                if response.status_code == 401:
+                    raise OKXAuthError("API 密钥无效或签名错误", 401)
+                if response.status_code >= 400:
+                    raise OKXAuthError(f"OKX API 错误: {response.text}", 400)
+
+                data = response.json()
+                # OKX 业务态码检查（V5 返回 code=='0' 为成功）
+                if isinstance(data, dict) and str(data.get("code", "0")) != "0":
+                    raise OKXAuthError(f"OKX 业务错误: code={data.get('code')} msg={data.get('msg')}", 400)
+
+                return {
+                    "status_code": response.status_code,
+                    "data": data,
+                    "headers": {k.lower(): v for k, v in dict(response.headers).items()},
+                    "fetched_at": datetime.now(timezone.utc).isoformat()
+                }
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                last_error = OKXAuthError("OKX 网络超时或连接失败", 504)
+                if attempt < retries:
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                raise last_error
+            except OKXAuthError as e:
+                raise e
+            except Exception as e:
+                last_error = e
+                break
+    # 若循环结束仍未返回
+    raise OKXAuthError(f"未知错误: {str(last_error)}", 500)
 
 async def save_evidence(evidence_data: dict):
     """保存证据文件"""
     try:
         # 创建证据目录
         today = datetime.now().strftime("%Y-%m-%d")
-        evidence_dir = f"reports/evidence/{today}"
+        base = os.getenv("EVIDENCE_DIR", "reports/evidence")
+        evidence_dir = f"{base}/{today}"
         os.makedirs(evidence_dir, exist_ok=True)
         
         # 保存完整证据
@@ -177,6 +196,33 @@ def serialize_json_fixed(data: dict) -> str:
 async def health_check():
     """健康检查端点"""
     return {"status": "healthy", "service": "jp-verify", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+# 简单全局速率限制（内存版）：对非只读请求限流，默认 60 req / 60s / IP
+RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "60"))
+RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
+_rate_store: dict[str, dict[str, float]] = {}
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    method = request.method.upper()
+    if method in ("GET", "HEAD", "OPTIONS"):
+        return await call_next(request)
+
+    now = time.time()
+    ip = request.client.host if request.client else "unknown"
+    rec = _rate_store.get(ip)
+    if not rec or now >= rec["reset_at"]:
+        rec = {"count": 0, "reset_at": now + RATE_LIMIT_WINDOW}
+        _rate_store[ip] = rec
+    rec["count"] += 1
+    if rec["count"] > RATE_LIMIT_MAX:
+        retry_after = int(max(1, rec["reset_at"] - now))
+        content = {
+            "meta": {"service": "jp-verify", "timestamp": datetime.now(timezone.utc).isoformat()},
+            "error": {"code": "RATE_LIMITED", "msg": "请求过于频繁，请稍后重试", "retryAfter": retry_after}
+        }
+        return JSONResponse(status_code=429, content=content, headers={"Retry-After": str(retry_after)})
+    return await call_next(request)
 
 @app.post("/api/verify")
 async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks):
