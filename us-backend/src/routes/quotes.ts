@@ -1,6 +1,7 @@
 import express from 'express';
 import { QuoteService } from '../services/quoteService';
 import { CreateQuoteRequest } from '../models/product';
+import { AuthenticatedRequest } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -10,7 +11,7 @@ const router = express.Router();
  * 输入: product_id, principal, leverage
  * 返回: premium/payout 与 expires_at
  */
-router.post('/', async (req, res) => {
+router.post('/', async (req: AuthenticatedRequest, res) => {
   try {
     const { product_id, principal, leverage } = req.body;
     
@@ -34,8 +35,12 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // 获取用户ID（这里简化处理，实际应该从认证中间件获取）
-    const userId = req.headers['x-user-id'] as string || 'demo_user';
+    // 从认证中间件获取用户ID
+    const auth = req.auth as any;
+    const userId = (auth && typeof auth.userId === 'string') ? auth.userId : null;
+    if (!userId) {
+      return res.status(401).json({ error: 'UNAUTHORIZED' });
+    }
 
     const request: CreateQuoteRequest = {
       product_id,

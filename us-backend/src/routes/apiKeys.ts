@@ -8,15 +8,17 @@ const router = express.Router();
  * 获取当前用户ID的辅助函数
  * 从认证中间件中获取用户ID
  */
-function getCurrentUserId(req: express.Request): string {
-  // 从认证中间件中获取用户ID
+function getCurrentUserId(req: express.Request): string | null {
   const authUser = (req as any).auth;
+  // EnhancedAuth 中间件格式
   if (authUser && authUser.authInfo && authUser.authInfo.type === 'user') {
-    return authUser.authInfo.id;
+    return authUser.authInfo.id as string;
   }
-  
-  // 如果认证中间件没有设置用户信息，返回默认值
-  return 'demo-user-id';
+  // 传统 AuthMiddleware（AuthenticatedUser）格式
+  if (authUser && typeof authUser.userId === 'string') {
+    return authUser.userId as string;
+  }
+  return null;
 }
 
 /**
@@ -26,6 +28,11 @@ function getCurrentUserId(req: express.Request): string {
 const saveApiKey: RequestHandler = async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({
+        error: { code: 'UNAUTHORIZED', message: '需要有效身份凭证' }
+      });
+    }
     const request: CreateApiKeyRequest = req.body;
 
     // 验证请求体
@@ -81,6 +88,11 @@ const saveApiKey: RequestHandler = async (req, res) => {
 const getApiKeys: RequestHandler = async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({
+        error: { code: 'UNAUTHORIZED', message: '需要有效身份凭证' }
+      });
+    }
     const apiKeyService = new ApiKeyService();
     const apiKeys = await apiKeyService.getUserApiKeys(userId);
 
@@ -117,6 +129,11 @@ const getApiKeys: RequestHandler = async (req, res) => {
 const verifyApiKey: RequestHandler = async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({
+        error: { code: 'UNAUTHORIZED', message: '需要有效身份凭证' }
+      });
+    }
     const request: VerifyApiKeyRequest = req.body;
 
     // 验证请求体
@@ -165,6 +182,11 @@ const verifyApiKey: RequestHandler = async (req, res) => {
 const deleteApiKey: RequestHandler = async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({
+        error: { code: 'UNAUTHORIZED', message: '需要有效身份凭证' }
+      });
+    }
     const exchange = req.params.exchange;
 
     if (!exchange) {

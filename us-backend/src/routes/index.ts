@@ -46,7 +46,8 @@ export default function registerRoutes(app: express.Application, deps: RouteDepe
   app.use('/api/v1', claimsRoutes(claimsService, authService));
   app.use('/api/v1/payment-proofs', paymentProofsRoutes(paymentProofService, orderService, authService));
   app.use('/api/v1/min', minSchemaRoutes());
-  app.use('/api/v1/quotes', quotesRoutes);
+  // 报价接口也要求认证，避免匿名 demo 回落
+  app.use('/api/v1/quotes', requireAuth, quotesRoutes);
   app.use('/api/v1/api-keys', requireAuth, apiKeysRoutes);
   app.use('/api/v1/pricing', pricingRoutes);
   app.use('/api/v1/voucher', voucherRoutes);
