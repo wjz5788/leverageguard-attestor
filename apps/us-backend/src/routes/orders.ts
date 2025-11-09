@@ -3,6 +3,7 @@ import { z } from 'zod';
 import OrderService, { OrderError } from '../services/orderService.js';
 import { createEnhancedAuthMiddleware } from '../middleware/enhancedAuth.js';
 import AuthService from '../services/authService.js';
+import { db, withTransaction } from '../database/db.js';
 
 const previewSchema = z.object({
   skuId: z.string().min(1),
@@ -27,6 +28,29 @@ const createSchema = z.object({
 
 const toFixedString = (value: number, fractionDigits: number) =>
   value.toFixed(fractionDigits);
+
+async function getIdempotency(key: string): Promise<any | null> {
+  return new Promise((resolve) => {
+    db.get('SELECT response_json FROM idempotency_store WHERE idempotency_key = ?', [key], (err: any, row: any) => {
+      if (err || !row) return resolve(null);
+      try { resolve(JSON.parse(row.response_json)); } catch { resolve(null); }
+    });
+  });
+}
+
+async function setIdempotency(key: string, response: any): Promise<void> {
+  const payload = JSON.stringify(response);
+  return withTransaction(async () => {
+    return new Promise((resolve, reject) => {
+      db.run(
+        `INSERT OR REPLACE INTO idempotency_store (idempotency_key, response_json, created_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        [key, payload],
+        (err: any) => (err ? reject(err) : resolve())
+      );
+    });
+  });
+}
 
 export default function ordersRoutes(orderService: OrderService, authService: AuthService) {
   const router = express.Router();
@@ -104,7 +128,7 @@ export default function ordersRoutes(orderService: OrderService, authService: Au
   });
 
   // 创建订单 - 需要认证
-  router.post('/orders', orderAuth, (req, res) => {
+  router.post('/orders', orderAuth, async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
@@ -115,10 +139,16 @@ export default function ordersRoutes(orderService: OrderService, authService: Au
     }
 
     try {
+      // 先查幂等性：若存在则直接返回快照
+      const existing = await getIdempotency(parsed.data.idempotencyKey);
+      if (existing) {
+        return res.status(200).json(existing);
+      }
+
       const { order, created } = orderService.createOrder(parsed.data);
       const payment = orderService.getPaymentConfig();
 
-      return res.status(created ? 201 : 200).json({
+      const response = {
         ok: true,
         order: {
           id: order.id,
@@ -135,7 +165,11 @@ export default function ordersRoutes(orderService: OrderService, authService: Au
           createdAt: order.createdAt,
           payment
         }
-      });
+      };
+
+      // 异步持久化幂等性快照（不阻塞响应）
+      setIdempotency(order.idempotencyKey, response).catch(() => {});
+      return res.status(created ? 201 : 200).json(response);
     } catch (error) {
       if (error instanceof OrderError) {
         return res.status(error.httpStatus).json({
