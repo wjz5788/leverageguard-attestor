@@ -3,7 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import morgan from 'morgan';
+import pino from 'pino';
+import pinoHttp from 'pino-http';
 import memoryDbManager from './database/memoryDb.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
 import rateLimit from 'express-rate-limit';
@@ -15,6 +16,8 @@ import PaymentProofService from './services/paymentProofService.js';
 import { LinkService } from './services/linkService.js';
 import { ContractListenerService } from './services/contractListenerService.js';
 import registerRoutes from './routes/index.js';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 // 创建Express应用
 const app = express();
@@ -41,9 +44,17 @@ if (!origins || origins === '*') {
 app.use(express.json({ limit: '10mb' })); // JSON解析
 app.use(express.urlencoded({ extended: true })); // URL编码解析
 
-// 日志中间件
+// 结构化日志（替代 morgan），贯穿 requestId
 if (process.env.NODE_ENV !== 'test') {
-  app.use(morgan('combined'));
+  const isDev = process.env.NODE_ENV !== 'production';
+  const logger = pino({
+    level: process.env.LOG_LEVEL || 'info',
+    transport: isDev ? { target: 'pino-pretty', options: { colorize: true } } : undefined,
+  });
+  app.use(pinoHttp({
+    logger,
+    customProps: (_req: any, res: any) => ({ requestId: (res.locals || {}).requestId }),
+  } as any));
 }
 
 // 防重放中间件（保护所有非GET请求）
@@ -77,6 +88,13 @@ const contractListenerService = new ContractListenerService(orderService);
 
 // 路由配置
 registerRoutes(app, { dbManager: memoryDbManager, authService, orderService, claimsService, paymentProofService, linkService, contractListenerService });
+
+// 提供 OpenAPI 文档（静态文件）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+app.get('/openapi.json', (_req, res) => {
+  res.sendFile(join(__dirname, '..', 'openapi.json'));
+});
 
 // 注入依赖到应用实例
 app.set('dbManager', memoryDbManager);

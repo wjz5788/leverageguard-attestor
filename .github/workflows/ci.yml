@@ -33,6 +33,11 @@ jobs:
         if: ${{ hashFiles('apps/us-backend/package.json') != '' }}
         run: pnpm --filter ./apps/us-backend build
 
+      - name: Backend OpenAPI check
+        if: ${{ hashFiles('apps/us-backend/openapi.json') != '' }}
+        working-directory: apps/us-backend
+        run: node scripts/check-openapi.mjs
+
       - name: Frontend typecheck
         if: ${{ hashFiles('apps/us-frontend/tsconfig.json') != '' }}
         run: pnpm --filter ./apps/us-frontend exec tsc --noEmit
@@ -60,4 +65,3 @@ jobs:
       - name: py_compile
         if: ${{ hashFiles('apps/jp-verify/main.py') != '' }}
         run: python -m py_compile $(git ls-files 'apps/jp-verify/**/*.py')
-
