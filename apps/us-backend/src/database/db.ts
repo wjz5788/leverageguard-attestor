@@ -22,6 +22,13 @@ export class DatabaseManager {
         console.error('Error opening database:', err.message);
       } else {
         console.log('Connected to SQLite database');
+        // PRAGMA 设置：WAL 模式 + busy 超时
+        try {
+          this.db!.exec('PRAGMA journal_mode=WAL;');
+          this.db!.exec('PRAGMA busy_timeout=3000;');
+        } catch (e) {
+          console.warn('Failed to apply PRAGMA settings:', e);
+        }
         // 异步初始化数据库
         this.initialize().catch(error => {
           console.error('Database initialization failed:', error);
@@ -40,6 +47,8 @@ export class DatabaseManager {
       // 运行所有迁移
       const migrations = [
         '001_initial_schema.sql',
+        // 事件与订单快照（只信链上事件）
+        '001_create_contract_events.sql',
         '002_org_structure.sql',
         '002_verify_schema.sql',
         '003_policy_claim_payout.sql',
@@ -116,6 +125,9 @@ function execAsync(database: sqlite3.Database, sql: string): Promise<void> {
 export async function withTransaction<T>(fn: (tx: sqlite3.Database) => Promise<T>): Promise<T> {
   // serialize guarantees statements run sequentially on this connection
   db.serialize();
+  // SQLite并发与可靠性：WAL + busy_timeout
+  await execAsync(db, 'PRAGMA journal_mode=WAL');
+  await execAsync(db, 'PRAGMA busy_timeout=3000');
   await execAsync(db, 'BEGIN IMMEDIATE');
   try {
     const result = await fn(db);

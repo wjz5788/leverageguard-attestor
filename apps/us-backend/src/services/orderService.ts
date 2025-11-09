@@ -179,9 +179,9 @@ export default class OrderService {
     const nowIso = new Date().toISOString();
     const orderId = `ord_${uuid()}`;
     
-    // PaymentProof机制：不再信任paymentTx，实现状态机流转
-    const paymentStatus: 'pending' | 'paid' = input.paymentProofId ? 'paid' : 'pending';
-    const status: OrderStatus = input.paymentProofId ? 'paid' : 'pending';
+    // 支付状态仅由链上事件驱动：创建时一律 pending
+    const paymentStatus: 'pending' = 'pending';
+    const status: OrderStatus = 'pending';
 
     const order: OrderRecord = {
       id: orderId,
@@ -198,6 +198,7 @@ export default class OrderService {
       paymentMethod,
       paymentTx: undefined, // 不再存储paymentTx，使用paymentProof机制
       paymentStatus,
+      // 可存储上传的 paymentProofId 以供审计，但不影响状态机
       paymentProofId: input.paymentProofId,
       orderRef: input.orderRef,
       exchange: input.exchange,
@@ -289,5 +290,24 @@ export default class OrderService {
     ];
 
     return new Map(skus.map((sku) => [sku.id, sku]));
+  }
+
+  /**
+   * 由链上事件驱动的回填：按钱包+金额（6位整型）匹配最近 pending 订单并标记为 paid。
+   * 返回是否命中。
+   */
+  markPaidByWalletAndAmount(wallet: string, amount6d: number): boolean {
+    const w = wallet.toLowerCase();
+    const candidates = Array.from(this.orders.values())
+      .filter(o => o.wallet === w && o.status === 'pending' && o.premiumUSDC6d === amount6d)
+      .sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    if (!candidates.length) return false;
+    const target = candidates[0];
+    target.status = 'paid';
+    target.paymentStatus = 'paid';
+    target.updatedAt = new Date().toISOString();
+    this.orders.set(target.id, target);
+    return true;
   }
 }

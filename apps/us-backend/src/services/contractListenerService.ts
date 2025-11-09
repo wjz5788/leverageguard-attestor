@@ -1,5 +1,6 @@
 import { JsonRpcProvider, Contract, Log } from "ethers";
-import { DatabaseManager, db } from "../database/db.js";
+import { DatabaseManager, db, withTransaction } from "../database/db.js";
+import OrderService from "./orderService.js";
 import { AlertService } from "./alertService.js";
 
 /**
@@ -13,8 +14,9 @@ export class ContractListenerService {
   private isListening: boolean = false;
   private alertService: AlertService;
   private lastHealthCheck: number = Date.now();
+  private orderService?: OrderService;
 
-  constructor() {
+  constructor(orderService?: OrderService) {
     // 从环境变量获取配置
     const RPC = process.env.BASE_RPC ?? "https://mainnet.base.org";
     const CONTRACT_ADDRESS = process.env.CHECKOUT_USDC_ADDRESS ?? "0xc423c34b57730ba87fb74b99180663913a345d68";
@@ -23,6 +25,7 @@ export class ContractListenerService {
 
     this.provider = new JsonRpcProvider(RPC);
     this.db = db;
+    this.orderService = orderService;
     
     // 初始化告警服务
     const alertConfig = {
@@ -83,7 +86,7 @@ export class ContractListenerService {
           // 1) 校验事件数据
           await this.validateEvent(ev, orderId, buyer, amount, quoteHash);
 
-          // 2) 回填订单状态
+          // 2) 回填订单状态（只信链上事件）
           await this.updateOrderStatus(ev, orderId, buyer, amount, quoteHash);
 
           // 3) 发送合约事件告警
@@ -180,8 +183,7 @@ export class ContractListenerService {
   ): Promise<void> {
     console.log("📝 更新订单状态...");
 
-    // 记录事件到数据库
-    await this.recordEvent({
+    const payload = {
       txHash: ev.transactionHash,
       logIndex: ev.logIndex,
       orderId,
@@ -190,11 +192,21 @@ export class ContractListenerService {
       quoteHash,
       blockNumber: ev.blockNumber,
       timestamp: new Date()
-    });
+    } as const;
 
-    // 更新订单状态为paid
-    // TODO: 根据你的订单服务实现
-    console.log("📋 订单状态更新: paid");
+    await withTransaction(async () => {
+      await this.recordEvent(payload);
+      // 仅在内存订单中尝试回填（按钱包+金额6d匹配最近的pending订单）
+      try {
+        const amt6d = Number(payload.amount);
+        if (Number.isFinite(amt6d) && this.orderService) {
+          const ok = this.orderService.markPaidByWalletAndAmount(payload.buyer, amt6d);
+          console.log(ok ? "📋 订单状态更新: paid" : "ℹ️ 未匹配到待支付订单（已记录事件）");
+        }
+      } catch (e) {
+        console.warn('回填订单状态失败（已记录事件）:', e);
+      }
+    });
   }
 
   /**

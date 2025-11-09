@@ -59,7 +59,7 @@ const orderService = new OrderService();
 const claimsService = new ClaimsService(orderService);
 const paymentProofService = new PaymentProofService();
 const linkService = new LinkService();
-const contractListenerService = new ContractListenerService();
+const contractListenerService = new ContractListenerService(orderService);
 
 // 路由配置
 registerRoutes(app, { dbManager: memoryDbManager, authService, orderService, claimsService, paymentProofService, linkService, contractListenerService });
