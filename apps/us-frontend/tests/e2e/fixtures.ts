@@ -55,15 +55,15 @@ export const test = base.extend<TestFixtures>({
       await toastLocator.waitFor({ state: 'hidden', timeout: 10000 });
     };
 
-    // Connect wallet (mock implementation)
+    // Connect wallet (mock implementation) - 使用可访问性优先选择器
     page.connectWallet = async () => {
-      // Look for wallet connection button
-      const walletButton = page.locator('button:has-text("Connect"):visible, button:has-text("Wallet"):visible').first();
+      // Look for wallet connection button - 增强可访问性选择器
+      const walletButton = page.locator('button:has-text("Connect"):visible, button:has-text("Wallet"):visible, [role="button"]:has-text("Connect"):visible, [role="button"]:has-text("Wallet"):visible, [aria-label*="connect"]:visible').first();
       if (await walletButton.isVisible()) {
         await walletButton.click();
         
-        // Look for MetaMask or wallet option
-        const metaMaskOption = page.locator('button:has-text("MetaMask"), div:has-text("MetaMask")').first();
+        // Look for MetaMask or wallet option - 使用可访问性优先选择器
+        const metaMaskOption = page.locator('button:has-text("MetaMask"), div:has-text("MetaMask"), [role="button"]:has-text("MetaMask"), [aria-label*="MetaMask"]').first();
         if (await metaMaskOption.isVisible()) {
           await metaMaskOption.click();
         }

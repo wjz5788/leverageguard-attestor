@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:subpath": "tsc && BASE_URL=/subpath/ vite build",
+    "build:github": "tsc && BASE_URL=/LiqPass/ vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "npm run test:unit && npm run test:e2e",

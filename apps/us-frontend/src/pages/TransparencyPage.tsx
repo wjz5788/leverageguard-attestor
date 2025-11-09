@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area, PieChart, Pie, Cell, Legend } from "recharts";
-import { RefreshCw, AlertTriangle, Database, ShieldCheck, ExternalLink, Wallet, BarChart3, PieChart as PieChartIcon, Gauge, Clock, Copy, ChevronDown, ChevronRight } from "lucide-react";
+import { RefreshCw, Database, ShieldCheck, ExternalLink, Wallet, BarChart3, PieChart as PieChartIcon, Gauge, Clock, Copy, ChevronDown, ChevronRight } from "lucide-react";
+import { ErrorMessage, LoadingSpinner } from '../components/ErrorBoundary';
 
 /**
  * LiqPass · 透明度页 (/transparency)
@@ -156,9 +157,17 @@ function genMock(range: string) {
   return { overview, series, distribution, events, audit };
 }
 
-async function safeFetchJSON(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+async function safeFetchJSON(url: string, requestId: string) {
+  const res = await fetch(url, {
+    headers: {
+      'X-Request-ID': requestId,
+    },
+  });
+  if (!res.ok) {
+    const error = new Error(`HTTP ${res.status}`);
+    (error as any).requestId = requestId;
+    throw error;
+  }
   return await res.json();
 }
 
@@ -171,6 +180,7 @@ export default function TransparencyPage() {
   const [showCumulative, setShowCumulative] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [errorRequestId, setErrorRequestId] = useState<string>('');
 
   const [overview, setOverview] = useState<any>(null);
   const [series, setSeries] = useState<any[]>([]);
@@ -183,13 +193,17 @@ export default function TransparencyPage() {
   async function loadAll() {
     setLoading(true);
     setErr(null);
+    setErrorRequestId('');
+    
+    const requestId = `transparency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
     try {
       const [ov, ts, dist, ev, au] = await Promise.all([
-        safeFetchJSON(`${API_BASE}/transparency/overview?range=${range}`),
-        safeFetchJSON(`${API_BASE}/transparency/timeseries?range=${range}&interval=1d`),
-        safeFetchJSON(`${API_BASE}/transparency/distribution?range=${range}`),
-        safeFetchJSON(`${API_BASE}/transparency/events?limit=20`),
-        safeFetchJSON(`${API_BASE}/transparency/audit`),
+        safeFetchJSON(`${API_BASE}/transparency/overview?range=${range}`, requestId),
+        safeFetchJSON(`${API_BASE}/transparency/timeseries?range=${range}&interval=1d`, requestId),
+        safeFetchJSON(`${API_BASE}/transparency/distribution?range=${range}`, requestId),
+        safeFetchJSON(`${API_BASE}/transparency/events?limit=20`, requestId),
+        safeFetchJSON(`${API_BASE}/transparency/audit`, requestId),
       ]);
 
       // 填充累计字段（如果后端未给）
@@ -205,15 +219,24 @@ export default function TransparencyPage() {
       setDistribution(dist);
       setEvents(ev || []);
       setAudit(au);
-    } catch (e) {
-      console.warn("API错误，启用mock:", e);
+    } catch (e: any) {
+      console.error("[Transparency] API error", e);
+      const errorRequestId = e.requestId || requestId;
+      setErrorRequestId(errorRequestId);
+      
+      // 回退到 mock 数据（仅演示）
       const mock = genMock(range);
       setOverview(mock.overview);
       setSeries(mock.series);
       setDistribution(mock.distribution);
       setEvents(mock.events);
       setAudit(mock.audit);
-      setErr(String(e instanceof Error ? e.message : e));
+      
+      if (import.meta.env.DEV) {
+        setErr(`数据加载失败，已回退至演示数据 (错误ID: ${errorRequestId})`);
+      } else {
+        setErr('数据加载失败，请稍后重试');
+      }
     } finally {
       setLoading(false);
     }
@@ -346,10 +369,11 @@ export default function TransparencyPage() {
               </div>
             )}
             {err && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-amber-800">
-                <AlertTriangle size={16} className="mt-0.5" />
-                <span className="text-xs">接口异常已使用演示数据：{err}</span>
-              </div>
+              <ErrorMessage 
+                error={new Error(err)} 
+                requestId={errorRequestId}
+                onRetry={loadAll}
+              />
             )}
           </div>
         </div>

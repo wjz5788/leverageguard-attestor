@@ -1,83 +1,135 @@
-// 全局 Authorization 注入与未认证阻断
-// 轻量级：在应用启动时调用 installAuthFetch() 即可
+/**
+ * 认证增强的 fetch 封装
+ * 支持开发/生产双模路由，DEV 用代理，PROD 用 VITE_API_URL
+ */
 
-type FetchInput = RequestInfo | URL;
+// 工厂函数：创建带认证逻辑的 fetch
+export const createAuthFetch = (baseUrl = '') => {
+  // 开发模式检测
+  const isDev = import.meta.env.DEV;
+  
+  // 获取认证头
+  const getAuthHeader = (): string | null => {
+    try {
+      const jwt = localStorage.getItem('liqpass.jwt') || 
+                 localStorage.getItem('liqpass.token') || 
+                 localStorage.getItem('auth.token');
+      
+      if (jwt?.trim()) return `Bearer ${jwt.trim()}`;
 
-function isBusinessApi(url: string): boolean {
-  // 业务接口前缀（相对路径），含 /api 与 /api/v1
-  if (!url.startsWith('/')) return false; // 仅拦截同源相对请求
-  const lower = url.toLowerCase();
-  // 白名单：健康检查与认证
-  const whitelist = [
-    '/healthz',
-    '/api/v1/health',
-    '/api/v1/auth',
-  ];
-  if (whitelist.some((p) => lower === p || lower.startsWith(p + '/'))) return false;
-  // 其他 /api 开头的一律视为业务接口
-  return lower.startsWith('/api');
-}
+      const apiKey = localStorage.getItem('liqpass.apiKey') || 
+                    localStorage.getItem('liqpass.readKey') || 
+                    localStorage.getItem('x-api-key');
+      
+      if (apiKey?.trim()) return `LiqPass-Api-Key ${apiKey.trim()}`;
+    } catch {}
+    return null;
+  };
 
-function getAuthHeader(): string | null {
-  try {
-    const jwt =
-      localStorage.getItem('liqpass.jwt') ||
-      localStorage.getItem('liqpass.token') ||
-      localStorage.getItem('auth.token');
-    if (jwt && jwt.trim()) return `Bearer ${jwt.trim()}`;
+  // 判断是否为业务 API
+  const isBusinessApi = (url: string): boolean => {
+    if (!url.startsWith('/')) return false;
+    const lower = url.toLowerCase();
+    
+    // 白名单：健康检查与认证
+    const whitelist = ['/healthz', '/api/v1/health', '/api/v1/auth'];
+    if (whitelist.some(p => lower === p || lower.startsWith(p + '/'))) return false;
+    
+    return lower.startsWith('/api');
+  };
 
-    const apiKey =
-      localStorage.getItem('liqpass.apiKey') ||
-      localStorage.getItem('liqpass.readKey') ||
-      localStorage.getItem('x-api-key');
-    if (apiKey && apiKey.trim()) return `LiqPass-Api-Key ${apiKey.trim()}`;
-  } catch {}
-  return null;
-}
+  // 生成 requestId
+  const generateRequestId = (): string => {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  };
 
-export function installAuthFetch() {
-  if (typeof window === 'undefined' || typeof window.fetch !== 'function') return;
-  const originalFetch = window.fetch.bind(window);
+  return async (endpoint: string, options?: RequestInit) => {
+    const requestId = generateRequestId();
+    
+    // 构建完整 URL
+    const fullUrl = baseUrl + endpoint;
+    
+    if (isDev) {
+      console.log(`[authFetch] ${requestId} → ${fullUrl}`);
+    }
 
-  window.fetch = (async (input: FetchInput, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.pathname + input.search : (input as Request).url;
-    const isBiz = typeof url === 'string' && isBusinessApi(url);
-
-    // 开发模式轻量日志
-    const dev = (import.meta as any)?.env?.DEV || (process as any)?.env?.NODE_ENV !== 'production';
-
-    if (isBiz) {
+    // 业务 API 需要认证
+    if (isBusinessApi(endpoint)) {
       const auth = getAuthHeader();
       if (!auth) {
-        if (dev) console.warn('[authFetch] block unauthenticated request:', url);
-        // 阻断外发：返回 401 响应
-        return new Response(
-          JSON.stringify({ error: 'UNAUTHORIZED', message: '请先登录后再访问' }),
-          { status: 401, headers: { 'Content-Type': 'application/json' } }
-        );
+        const error = {
+          error: 'UNAUTHORIZED',
+          message: '请先登录后再访问',
+          requestId
+        };
+        
+        if (isDev) {
+          console.warn(`[authFetch] ${requestId} 未认证请求被阻断:`, endpoint);
+        }
+        
+        return new Response(JSON.stringify(error), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
       }
 
-      // 注入 Authorization 头
-      const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
+      // 注入认证头
+      const headers = new Headers(options?.headers);
       headers.set('Authorization', auth);
-      if (dev) console.debug('[authFetch] injected Authorization for:', url);
-
-      const nextInit: RequestInit = {
-        ...init,
-        headers,
-      };
-      const resp = await originalFetch(input, nextInit);
-
-      if (resp.status === 401 || resp.status === 403) {
-        if (dev) console.warn('[authFetch] auth rejected:', resp.status, url);
+      headers.set('X-Request-ID', requestId);
+      
+      if (isDev) {
+        console.debug(`[authFetch] ${requestId} 注入认证头`);
       }
-      return resp;
+
+      try {
+        const response = await fetch(fullUrl, {
+          ...options,
+          headers,
+        });
+
+        if (response.status === 401 || response.status === 403) {
+          if (isDev) {
+            console.warn(`[authFetch] ${requestId} 认证失败:`, response.status);
+          }
+        }
+
+        return response;
+      } catch (error) {
+        if (isDev) {
+          console.error(`[authFetch] ${requestId} 请求失败:`, error);
+        }
+        throw error;
+      }
     }
 
     // 非业务请求，直接透传
-    return originalFetch(input as any, init);
-  }) as any;
-}
+    return fetch(fullUrl, options);
+  };
+};
+
+// 创建默认实例
+// DEV: 使用代理（baseUrl 为空）
+// PROD: 使用 VITE_API_URL
+const baseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL ?? '');
+export const authFetch = createAuthFetch(baseUrl);
+
+// 兼容旧版 installAuthFetch
+export const installAuthFetch = () => {
+  if (typeof window === 'undefined') return;
+  
+  const originalFetch = window.fetch;
+  
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : 
+               input instanceof URL ? input.pathname + input.search : 
+               (input as Request).url;
+    
+    // 使用 authFetch 处理
+    const response = await authFetch(url, init);
+    return response;
+  };
+};
 
 export default installAuthFetch;
 
