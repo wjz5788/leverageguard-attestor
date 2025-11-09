@@ -7,7 +7,7 @@ const router = express.Router();
 const PRICER_PRIVATE_KEY = process.env.PRICER_PRIVATE_KEY || '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 
 // 合约地址（应该与前端一致）
-const POLICY_ADDR = process.env.POLICY_ADDR || '0x0000000000000000000000000000000000000000';
+const POLICY_ADDR = process.env.POLICY_ADDR || '0xC423C34b57730Ba87FB74b99180663913a345D68';
 
 /**
  * POST /api/v1/pricing/quote

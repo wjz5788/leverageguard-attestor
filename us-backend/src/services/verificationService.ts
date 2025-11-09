@@ -23,7 +23,9 @@ export class VerificationService {
       const validationResult = this.validateRequest(request);
       if (!validationResult.valid) {
         return {
-          success: false,
+          status: 'failed',
+          sessionId,
+          verifiedAt: new Date().toISOString(),
           error: validationResult.error,
           requestId,
           timestamp: new Date().toISOString()
@@ -51,8 +53,10 @@ export class VerificationService {
 
       // 5. 构建响应
       const response: VerifyResponse = {
-        success: verifyResult.status === 'verified',
-        data: verifyResult,
+        status: verifyResult.status === 'verified' ? 'success' : 'failed',
+        sessionId,
+        verifiedAt: new Date().toISOString(),
+        result: verifyResult,
         requestId,
         timestamp: new Date().toISOString()
       };
@@ -62,7 +66,9 @@ export class VerificationService {
     } catch (error) {
       console.error('Verification service error:', error);
       return {
-        success: false,
+        status: 'failed',
+        sessionId,
+        verifiedAt: new Date().toISOString(),
         error: error instanceof Error ? error.message : 'Unknown error',
         requestId,
         timestamp: new Date().toISOString()

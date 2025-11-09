@@ -4,12 +4,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
-import dbManager from './database/db.js';
+import memoryDbManager from './database/memoryDb.js';
 import AuthService from './services/authService.js';
 import OrderService from './services/orderService.js';
 import ClaimsService from './services/claimsService.js';
 import PaymentProofService from './services/paymentProofService.js';
 import { LinkService } from './services/linkService.js';
+import { ContractListenerService } from './services/contractListenerService.js';
 import registerRoutes from './routes/index.js';
 
 // 创建Express应用
@@ -37,17 +38,19 @@ const orderService = new OrderService();
 const claimsService = new ClaimsService(orderService);
 const paymentProofService = new PaymentProofService();
 const linkService = new LinkService();
+const contractListenerService = new ContractListenerService();
 
 // 路由配置
-registerRoutes(app, { dbManager, authService, orderService, claimsService, paymentProofService, linkService });
+registerRoutes(app, { dbManager: memoryDbManager, authService, orderService, claimsService, paymentProofService, linkService, contractListenerService });
 
 // 注入依赖到应用实例
-app.set('dbManager', dbManager);
+app.set('dbManager', memoryDbManager);
 app.set('authService', authService);
 app.set('orderService', orderService);
 app.set('claimsService', claimsService);
 app.set('paymentProofService', paymentProofService);
 app.set('linkService', linkService);
+app.set('contractListenerService', contractListenerService);
 
 // 根路由
 app.get('/', (req, res) => {

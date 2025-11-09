@@ -347,9 +347,9 @@ export default class ClaimsService {
   }
 
   /**
-   * 获取赔付统计
+   * 获取赔付统计（管理员接口）
    */
-  getClaimsStats(): ClaimsStats {
+  getAdminClaimsStats(): ClaimsStats {
     const allClaims = Array.from(this.claims.values());
     
     const totalClaims = allClaims.length;

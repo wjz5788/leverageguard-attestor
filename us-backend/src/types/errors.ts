@@ -248,15 +248,14 @@ export class RateLimitError extends AppError {
     retryAfter?: number,
     details?: ErrorDetails[]
   ) {
-    super(ERROR_CODES.RATE_LIMITED, message, 429, 'low', details);
-    this.name = 'RateLimitError';
+    // 构建完整的details数组
+    const fullDetails = [
+      ...(details || []),
+      ...(retryAfter ? [{ suggestion: `请在 ${retryAfter} 秒后重试` }] : []),
+    ];
     
-    if (retryAfter) {
-      this.details = [
-        ...(this.details || []),
-        { suggestion: `请在 ${retryAfter} 秒后重试` },
-      ];
-    }
+    super(ERROR_CODES.RATE_LIMITED, message, 429, 'low', fullDetails);
+    this.name = 'RateLimitError';
   }
 }
 

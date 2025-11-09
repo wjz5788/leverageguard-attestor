@@ -38,7 +38,7 @@ router.post('/:exchange', async (req, res) => {
     const response = await verificationService.verifyApiKey(request);
     
     // 返回响应
-    res.status(response.success ? 200 : 400).json(response);
+    res.status(response.status === 'success' ? 200 : 400).json(response);
     
   } catch (error) {
     console.error('V2验证路由错误:', error);
@@ -213,8 +213,8 @@ router.post('/batch', async (req, res) => {
           const response = await verificationService.verifyApiKey(request);
           return {
             exchange: request.exchange,
-            success: response.success,
-            data: response.data,
+            success: response.status === 'success',
+            data: response.result,
             error: response.error
           };
         } catch (error) {

@@ -301,7 +301,7 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
   // 获取赔付统计 - 需要管理员权限
   router.get('/admin/claims/stats', adminAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const stats = await claimsService.getClaimsStats();
+      const stats = await claimsService.getAdminClaimsStats();
       
       return res.json({
         ok: true,

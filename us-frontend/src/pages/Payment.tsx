@@ -7,6 +7,21 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Breadcrumb } from '../components/ui/Breadcrumb';
 import { Dictionary } from '../types';
+import { ethers } from 'ethers';
+
+// 合约地址和ABI配置
+const POLICY_ADDR: string =
+  (import.meta as any).env?.VITE_POLICY_ADDR ||
+  '0x0000000000000000000000000000000000000000';
+const USDC_ADDR = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'; // Base USDC(6d)
+const ERC20_ABI = [
+  'function allowance(address owner,address spender) view returns (uint256)',
+  'function approve(address spender,uint256 amount) returns (bool)'
+];
+const POLICY_ABI = [
+  'function buyPolicy((address wallet,uint32 skuId,bytes32 exchangeId,bytes32 accountHash,uint256 deadline,uint256 nonce,bytes32 voucherId),bytes,(address wallet,bytes32 inputHash,uint96 price,uint96 maxPayout,uint32 durationHours,bytes32 quoteId,uint256 deadline,uint256 chainId,address contractAddr),bytes,uint32 skuId,uint96 notional,bytes32 verifyHash) returns (uint256)',
+  'event PolicyPurchased(uint256 indexed policyId,address indexed buyer,uint32 skuId,uint96 price,bytes32 quoteId,bytes32 inputHash,bytes32 verifyHash)'
+];
 
 interface PaymentProps {
   t: Dictionary;
@@ -28,34 +43,7 @@ const mockPaymentData = {
       '自动理赔'
     ]
   },
-  '2': {
-    id: '2',
-    product: '7d',
-    symbol: 'ETHUSDT',
-    amount: 15,
-    duration: 168,
-    description: '7天ETH/USDT爆仓保险',
-    features: [
-      '7天内有效',
-      'ETH/USDT交易对',
-      '固定赔付金额',
-      '自动理赔'
-    ]
-  },
-  '3': {
-    id: '3',
-    product: '30d',
-    symbol: 'SOLUSDT',
-    amount: 10,
-    duration: 720,
-    description: '30天SOL/USDT爆仓保险',
-    features: [
-      '30天内有效',
-      'SOL/USDT交易对',
-      '固定赔付金额',
-      '自动理赔'
-    ]
-  }
+  
 };
 
 type MockPayment = typeof mockPaymentData['1'];
@@ -137,11 +125,134 @@ export const Payment: React.FC<PaymentProps> = ({ t }) => {
       return;
     }
 
+    if (!POLICY_ADDR || POLICY_ADDR === '0x0000000000000000000000000000000000000000') {
+      push({ title: '缺少合约地址：请设置 VITE_POLICY_ADDR', type: 'error' });
+      return;
+    }
+
     setIsProcessing(true);
     
-    // 模拟支付处理
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      // 1) 向后端要参数化报价（PRICER 出签）
+      const quoteData = paymentData?.kind === 'quote' ? paymentData.data : null;
+      const linkData = paymentData?.kind === 'link' ? paymentData.data : null;
+      
+      let quotePayload: any;
+      
+      if (quoteData) {
+        // 使用来自报价页面的数据
+        quotePayload = {
+          principal: quoteData.principal,
+          leverage: quoteData.leverage,
+          durationHours: quoteData.windowHours,
+          skuId: 101, // 默认SKU
+          wallet: address
+        };
+      } else if (linkData) {
+        // 使用来自支付链接的数据
+        quotePayload = {
+          principal: linkData.amount * 10, // 转换为本金
+          leverage: 20, // 默认杠杆
+          durationHours: linkData.duration,
+          skuId: 101, // 默认SKU
+          wallet: address
+        };
+      } else {
+        throw new Error('无效的支付数据');
+      }
+
+      const qRes = await fetch('/api/v1/pricing/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(quotePayload)
+      });
+      
+      if (!qRes.ok) throw new Error('报价失败');
+      const q = await qRes.json();
+      const { quote, quoteSig, idempotencyKey } = q || {};
+      if (!quote?.price || !quoteSig) throw new Error('报价签名缺失');
+      if (String(quote.contractAddr).toLowerCase() !== POLICY_ADDR.toLowerCase()) {
+        throw new Error('合约路由不匹配');
+      }
+      
+      const now = Math.floor(Date.now()/1000);
+      if (now > Number(quote.deadline)) throw new Error('报价已过期，请刷新');
+
+      // 2) 向后端要 Voucher（ATTESTOR 出签）
+      const vRes = await fetch('/api/v1/voucher/issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wallet: address,
+          skuId: quote.skuId ?? 101,
+          exchangeId: quote.exchangeId ?? '0x6f6b785f000000000000000000000000000000000000000000000000000000', // "okx" 占位
+          accountHash: quote.accountHash
+        })
+      });
+      
+      if (!vRes.ok) throw new Error('资格凭证失败');
+      const v = await vRes.json();
+      const { voucher, voucherSig, verifyHash } = v || {};
+      if (!voucher || !voucherSig) throw new Error('Voucher 签名缺失');
+
+      // 3) allowance 不足则 approve
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const usdc = new ethers.Contract(USDC_ADDR, ERC20_ABI, signer);
+      const need = BigInt(quote.price); // 后端返回 6 位整数
+      const cur: bigint = await usdc.allowance(await signer.getAddress(), POLICY_ADDR);
+      
+      if (cur < need) {
+        const txA = await usdc.approve(POLICY_ADDR, need);
+        await txA.wait();
+      }
+
+      // 4) 调合约 buyPolicy（链上扣费+铸 SBT）
+      const policy = new ethers.Contract(POLICY_ADDR, POLICY_ABI, signer);
+      const skuId = Number(quote.skuId ?? 101);
+      const notional = BigInt(Math.round(quotePayload.principal * quotePayload.leverage)) * 1_000_000n;
+      const _verifyHash = verifyHash ?? quote.inputHash;
+
+      const tx = await policy.buyPolicy(
+        voucher, voucherSig,
+        quote,   quoteSig,
+        skuId,   notional, _verifyHash
+      );
+      const rc = await tx.wait();
+
+      // 5) 从事件抓 policyId，再落订单（以链上为准）
+      let policyId: string | undefined;
+      try {
+        for (const l of rc.logs ?? []) {
+          const parsed = policy.interface.parseLog(l);
+          if (parsed?.name === 'PolicyPurchased') {
+            policyId = parsed?.args?.policyId?.toString();
+            break;
+          }
+        }
+      } catch {}
+      
+      if (!policyId) throw new Error('链上未返回 policyId');
+
+      const createRes = await fetch('/api/v1/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idempotencyKey,
+          policyId,
+          wallet: address,
+          principal: quotePayload.principal,
+          leverage: quotePayload.leverage,
+          premiumUSDC_6d: String(need),
+          chain: 'base',
+          purchaseTx: tx.hash,
+          paymentMethod: 'buyPolicy'
+        })
+      });
+      
+      if (!createRes.ok) throw new Error('创建订单失败');
+
+      // 清理session storage
       if (paymentData?.kind === 'quote') {
         try {
           sessionStorage.removeItem('lp_quote_preview');
@@ -149,9 +260,14 @@ export const Payment: React.FC<PaymentProps> = ({ t }) => {
           // 忽略清理异常
         }
       }
+      
       push({ title: '支付成功', type: 'success' });
       navigate('/success');
-    }, 2000);
+    } catch (e: any) {
+      push({ title: e?.message || '支付失败', type: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const breadcrumbItems = [

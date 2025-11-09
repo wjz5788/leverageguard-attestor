@@ -119,7 +119,15 @@ export type VerifyResult = {
   
   // 验证证据
   proof?: {
-    echo: OrderEcho;
+    echo: {
+      firstOrderIdLast4?: string;
+      firstFillQty?: string;
+      firstFillTime?: string;
+      // 扩展字段
+      orderType?: string;
+      side?: string;
+      instrument?: string;
+    };
     hash: string;
     evidence?: {
       orderSnapshot: any;
