@@ -5,8 +5,7 @@
   "type": "module",
   "private": true,
   "workspaces": [
-    "us-frontend",
-    "us-backend", 
+    "apps/*",
     "liqpass-verify",
     "leverageguard-docs"
   ],

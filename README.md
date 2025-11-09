@@ -9,6 +9,29 @@
 
 LiqPass 是一个为加密货币交易者提供智能爆仓保护的专业平台。通过动态赔付机制和实时订单验证，为交易者提供公平、透明的风险保障服务。
 
+## 🚦 上线一步走（极简）
+
+- 拉依赖：`pnpm -w install`
+- 配置环境：复制根 `.env.example` 为 `.env`，并为每个服务复制其 `.env.sample` 为 `.env`
+  - Backend: `apps/us-backend/.env.sample`
+  - Frontend: `apps/us-frontend/.env.sample`
+  - Chain Listener: `apps/chain-listener/.env.sample`
+  - JP Verify: `apps/jp-verify/.env.sample`
+- 启动前校验：服务自带 `env:check`（缺配置将退出）
+- 最小 CI：PR 自动运行类型检查/构建（存在模块才执行）
+
+安全闸门已启用（保持默认开启即可）。若需关闭，预留开关：`STRICT_AUTH / REQUIRE_JWT / MAINTENANCE_MODE / ALLOW_DEMO_FALLBACK=false`。
+
+## 🧪 烟囱测试（10 分钟）
+
+1. 触发一次小额 USDC 支付，产出 `PremiumPaid`（Base 主网/测试网均可）。
+2. 后端日志看到监听入库 1 次，无重复；订单从 `pending → paid`。
+3. 重启后端：无重复入库；可从 `lastProcessedBlock - confirmations` 回放。
+4. 调用 `jp-verify`：证据摘要/URI 入库（见 `reports/evidence/YYYY-MM-DD/`）。
+5. 健康探针：
+   - Backend: `GET /api/v1/health` 与 `GET /api/v1/health/ready` 返回 200
+   - JP Verify: `GET /healthz` 返回 200；断开 RPC 后 `/ready` 应变红（若实现）
+
 ## 📋 项目状态
 
 | 模块 | 状态 | 进度 | 备注 |
@@ -53,15 +76,18 @@ LiqPass 是一个为加密货币交易者提供智能爆仓保护的专业平台
 
 ```
 LiqPass/
-├── us-frontend/          # 美国站点前端 (React + TypeScript + Vite)
-├── us-backend/           # 统一后端服务 (Node.js + Express + TypeScript)
-├── jp-verify/           # 日本验证服务 (Python + FastAPI)
-├── contracts/           # 智能合约 (Solidity + Hardhat)
-├── liqpass-verify/      # 合约验证工具
-├── leverageguard-docs/  # 项目文档站点 (Docusaurus)
-├── docs/               # 技术文档和规范
-├── scripts/            # 部署和运维脚本
-└── reports/            # 测试报告和证据
+├── apps/
+│   ├── us-backend/        # 统一后端服务 (Node.js + TS)
+│   ├── us-frontend/       # 前端 (React + Vite + TS)
+│   ├── chain-listener/    # 链上监听回填服务
+│   └── jp-verify/         # 交易证据验证服务 (Python)
+├── contracts/             # 智能合约 (Hardhat)
+├── packages/
+│   └── abi/               # 合约 ABI 与地址（单一事实来源）
+├── docs/                  # 技术与运维文档
+├── scripts/               # 部署与运维脚本
+├── examples/              # 使用示例
+└── data/                  # 运行数据与临时文件（已忽略）
 ```
 
 ## 🚀 快速开始
@@ -88,13 +114,16 @@ pnpm --filter liqpass-verify install
 
 ```bash
 # 启动后端服务 (端口: 3002)
-cd us-backend && pnpm dev
+cd apps/us-backend && pnpm dev
 
-# 启动前端应用 (端口: 3000) 
-cd us-frontend && pnpm dev
+# 启动前端应用 (端口: 3000)
+cd apps/us-frontend && pnpm dev
+
+# 启动链上监听（可选）
+cd apps/chain-listener && pnpm run watch:checkout
 
 # 启动JP验证服务 (端口: 8082)
-cd jp-verify && python main.py
+cd apps/jp-verify && ./start.sh
 ```
 
 ### 生产环境构建
@@ -114,13 +143,13 @@ pnpm --filter us-backend build
 
 ```bash
 # 后端环境配置
-cp us-backend/.env.example us-backend/.env
+cp apps/us-backend/.env.sample apps/us-backend/.env
 
 # 前端环境配置  
-cp us-frontend/.env.example us-frontend/.env
+cp apps/us-frontend/.env.sample apps/us-frontend/.env
 
 # 验证服务配置
-cp jp-verify/.env.example jp-verify/.env
+cp apps/jp-verify/.env.sample apps/jp-verify/.env
 ```
 
 ### 数据库设置
