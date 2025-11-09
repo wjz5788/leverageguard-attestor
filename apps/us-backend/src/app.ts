@@ -23,7 +23,21 @@ const app = express();
 app.use(requestIdMiddleware); // 请求ID
 app.use(helmet()); // 安全头
 app.use(compression()); // 压缩响应
-app.use(cors()); // CORS支持
+
+// CORS 白名单（ALLOWED_ORIGINS=逗号分隔；为空或*表示全放行，仅建议在开发使用）
+const origins = (process.env.ALLOWED_ORIGINS || '').trim();
+if (!origins || origins === '*') {
+  app.use(cors());
+} else {
+  const allow = origins.split(',').map(s => s.trim()).filter(Boolean);
+  app.use(cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // 非浏览器请求
+      cb(null, allow.includes(origin));
+    },
+    credentials: true,
+  }));
+}
 app.use(express.json({ limit: '10mb' })); // JSON解析
 app.use(express.urlencoded({ extended: true })); // URL编码解析
 
