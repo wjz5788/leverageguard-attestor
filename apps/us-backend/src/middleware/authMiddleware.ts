@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import AuthService, { AuthenticatedUser } from '../services/authService';
+import { AuthenticationError, ERROR_CODES } from '../types/errors.js';
 
 export interface AuthInfo {
   method?: string;
@@ -36,21 +37,19 @@ export function createAuthMiddleware(authService: AuthService): RequireAuthMiddl
     const token = extractToken(req);
 
     if (!token) {
-      res.status(401).json({
-        error: 'Unauthorized',
-        message: 'A valid bearer token is required.'
-      });
-      return;
+      return next(new AuthenticationError(
+        ERROR_CODES.UNAUTHORIZED,
+        'A valid bearer token is required.'
+      ));
     }
 
     const session = await authService.validateSession(token);
 
     if (!session) {
-      res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Session is invalid or has expired.'
-      });
-      return;
+      return next(new AuthenticationError(
+        ERROR_CODES.SESSION_EXPIRED,
+        'Session is invalid or has expired.'
+      ));
     }
 
     req.auth = {

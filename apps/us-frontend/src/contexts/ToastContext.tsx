@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { ToastItem } from '../types';
-import { generateId } from '../utils';
+import { ToastItem } from '../types.ts';
+import { generateId } from '../utils.ts';
 
 interface ToastContextType {
   push: (toast: Omit<ToastItem, 'id'>) => void;

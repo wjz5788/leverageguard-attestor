@@ -100,3 +100,29 @@ const dbManager = new DatabaseManager(process.env.DB_URL || './data/liqpass.db')
 
 export const db = dbManager.getDatabase();
 export default dbManager;
+
+// --- Transaction helpers (sqlite3) ---
+
+function execAsync(database: sqlite3.Database, sql: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    database.exec(sql, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
+/**
+ * Execute a function within a SQLite transaction.
+ * Ensures BEGIN/COMMIT/ROLLBACK with proper error propagation.
+ */
+export async function withTransaction<T>(fn: (tx: sqlite3.Database) => Promise<T>): Promise<T> {
+  // serialize guarantees statements run sequentially on this connection
+  db.serialize();
+  await execAsync(db, 'BEGIN IMMEDIATE');
+  try {
+    const result = await fn(db);
+    await execAsync(db, 'COMMIT');
+    return result;
+  } catch (err) {
+    try { await execAsync(db, 'ROLLBACK'); } catch {}
+    throw err;
+  }
+}

@@ -1,5 +1,5 @@
 import express from 'express';
-import dbManager, { db as sqlite } from '../database/db.js';
+import dbManager, { db as sqlite, withTransaction } from '../database/db.js';
 
 // SQLite3 回调风格转 Promise
 const runAsync = (sql: string, params: any[] = []) => new Promise<{ changes: number; lastID?: number }>((resolve, reject) => {
@@ -91,24 +91,32 @@ export default function minSchemaRoutes() {
       if (!request_id || !normalized_json || !raw_json || !meta_json) {
         return res.status(400).json({ ok: false, message: 'missing required fields' });
       }
-      await runAsync(
-        `INSERT OR REPLACE INTO verify_results (request_id, normalized_json, raw_json, meta_json)
-         VALUES (?, ?, ?, ?)`,
-        [request_id, typeof normalized_json === 'string' ? normalized_json : JSON.stringify(normalized_json), typeof raw_json === 'string' ? raw_json : JSON.stringify(raw_json), typeof meta_json === 'string' ? meta_json : JSON.stringify(meta_json)]
-      );
-      // 更新请求状态为 success
-      await runAsync(`UPDATE verify_requests SET status='success', error_msg=NULL WHERE id=?`, [request_id]);
 
-      if (evidence && evidence.root) {
-        const root = evidence.root;
-        const parent_root = evidence.parent_root ?? null;
-        const leaves_count = evidence.leaves_count ?? (Array.isArray(evidence.leaves) ? evidence.leaves.length : null);
+      await withTransaction(async () => {
         await runAsync(
-          `INSERT OR REPLACE INTO evidence_blobs (request_id, root, parent_root, leaves_count, evidence_json)
-           VALUES (?, ?, ?, ?, ?)`,
-          [request_id, root, parent_root, leaves_count ?? 0, JSON.stringify(evidence)]
+          `INSERT OR REPLACE INTO verify_results (request_id, normalized_json, raw_json, meta_json)
+           VALUES (?, ?, ?, ?)`,
+          [
+            request_id,
+            typeof normalized_json === 'string' ? normalized_json : JSON.stringify(normalized_json),
+            typeof raw_json === 'string' ? raw_json : JSON.stringify(raw_json),
+            typeof meta_json === 'string' ? meta_json : JSON.stringify(meta_json),
+          ]
         );
-      }
+
+        await runAsync(`UPDATE verify_requests SET status='success', error_msg=NULL WHERE id=?`, [request_id]);
+
+        if (evidence && evidence.root) {
+          const root = evidence.root;
+          const parent_root = evidence.parent_root ?? null;
+          const leaves_count = evidence.leaves_count ?? (Array.isArray(evidence.leaves) ? evidence.leaves.length : null);
+          await runAsync(
+            `INSERT OR REPLACE INTO evidence_blobs (request_id, root, parent_root, leaves_count, evidence_json)
+             VALUES (?, ?, ?, ?, ?)`,
+            [request_id, root, parent_root, leaves_count ?? 0, JSON.stringify(evidence)]
+          );
+        }
+      });
 
       const result = await getAsync(`SELECT * FROM verify_results WHERE request_id=?`, [request_id]);
       const ev = await getAsync(`SELECT * FROM evidence_blobs WHERE request_id=?`, [request_id]);
@@ -120,4 +128,3 @@ export default function minSchemaRoutes() {
 
   return router;
 }
-
