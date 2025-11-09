@@ -56,7 +56,8 @@ export class DatabaseManager {
         '005_auth_sessions.sql',
         '006_payment_proofs.sql',
         '007_products_quotes.sql',
-        '008_api_keys.sql'
+        '008_api_keys.sql',
+        '009_listener_checkpoint.sql'
       ];
       
       const executeMigration = (index: number) => {

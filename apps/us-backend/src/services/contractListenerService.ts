@@ -15,6 +15,7 @@ export class ContractListenerService {
   private alertService: AlertService;
   private lastHealthCheck: number = Date.now();
   private orderService?: OrderService;
+  private confirmations: number;
 
   constructor(orderService?: OrderService) {
     // 从环境变量获取配置
@@ -35,6 +36,7 @@ export class ContractListenerService {
       emailConfig: process.env.EMAIL_CONFIG ? JSON.parse(process.env.EMAIL_CONFIG) : undefined
     };
     this.alertService = new AlertService(alertConfig);
+    this.confirmations = Number(process.env.EVENT_CONFIRMATIONS || 3);
     
     // CheckoutUSDC合约ABI（根据你的实际ABI调整）
     const ABI = [
@@ -59,6 +61,13 @@ export class ContractListenerService {
     }
 
     console.log("🚀 启动PremiumPaid事件监听...");
+
+    // 回放最近未确认窗口内的事件，避免重启丢失
+    try {
+      await this.replayFromCheckpoint();
+    } catch (e) {
+      console.warn('回放历史事件失败（将继续实时监听）:', e);
+    }
 
     // 监听PremiumPaid事件
     this.contract.on("PremiumPaid", async (...args) => {
@@ -117,6 +126,49 @@ export class ContractListenerService {
 
     this.isListening = true;
     console.log("✅ PremiumPaid事件监听器已启动");
+  }
+
+  private async getLastProcessedBlock(): Promise<number> {
+    return new Promise((resolve) => {
+      this.db.get('SELECT last_processed_block FROM chain_listener WHERE id=?', ['checkout_usdc'], (err: any, row: any) => {
+        if (err || !row) return resolve(0);
+        resolve(Number(row.last_processed_block) || 0);
+      });
+    });
+  }
+
+  private async setLastProcessedBlock(block: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        `INSERT INTO chain_listener (id, last_processed_block, updated_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(id) DO UPDATE SET last_processed_block=excluded.last_processed_block, updated_at=CURRENT_TIMESTAMP`,
+        ['checkout_usdc', block],
+        (err: any) => (err ? reject(err) : resolve())
+      );
+    });
+  }
+
+  private async replayFromCheckpoint(): Promise<void> {
+    const current = await this.provider.getBlockNumber();
+    const last = await this.getLastProcessedBlock();
+    const toBlock = current - this.confirmations;
+    if (toBlock <= 0) return;
+    const fromBlock = Math.max(0, last > 0 ? last - this.confirmations : toBlock - 1000);
+    if (fromBlock >= toBlock) return;
+
+    console.log(`⏪ 回放 PremiumPaid 事件: from=${fromBlock} to=${toBlock}`);
+    const filter = this.contract.filters.PremiumPaid();
+    const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
+    for (const ev of events) {
+      try {
+        const [orderId, buyer, amount, quoteHash, timestamp] = ev.args as any;
+        await this.validateEvent(ev.log, orderId, buyer, amount, quoteHash);
+        await this.updateOrderStatus(ev.log, orderId, buyer, amount, quoteHash);
+      } catch (e) {
+        console.warn('回放事件处理失败:', e);
+      }
+    }
   }
 
   /**
@@ -196,6 +248,7 @@ export class ContractListenerService {
 
     await withTransaction(async () => {
       await this.recordEvent(payload);
+      await this.setLastProcessedBlock(payload.blockNumber);
       // 仅在内存订单中尝试回填（按钱包+金额6d匹配最近的pending订单）
       try {
         const amt6d = Number(payload.amount);
