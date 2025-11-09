@@ -1,5 +1,6 @@
 import express from 'express';
 import { ethers } from 'ethers';
+import { z } from 'zod';
 
 const router = express.Router();
 
@@ -13,35 +14,21 @@ const POLICY_ADDR = process.env.POLICY_ADDR || '0xC423C34b57730Ba87FB74b99180663
  * POST /api/v1/pricing/quote
  * 定价报价接口 - 返回EIP-712签名报价
  */
+const quoteSchema = z.object({
+  principal: z.number().positive(),
+  leverage: z.number().positive(),
+  durationHours: z.number().int().positive().optional(),
+  skuId: z.number().int().positive().optional(),
+  wallet: z.string().regex(/^0x[a-fA-F0-9]{40}$/)
+});
+
 router.post('/quote', async (req, res) => {
   try {
-    const { principal, leverage, durationHours, skuId, wallet } = req.body;
-    
-    // 验证必填字段
-    if (!principal || !leverage || !wallet) {
-      return res.status(400).json({
-        error: '缺少必要参数: principal, leverage, wallet'
-      });
+    const parsed = quoteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', issues: parsed.error.issues });
     }
-
-    // 验证数据类型
-    if (typeof principal !== 'number' || principal <= 0) {
-      return res.status(400).json({
-        error: 'principal 必须是正数'
-      });
-    }
-
-    if (typeof leverage !== 'number' || leverage <= 0) {
-      return res.status(400).json({
-        error: 'leverage 必须是正数'
-      });
-    }
-
-    if (!ethers.isAddress(wallet)) {
-      return res.status(400).json({
-        error: '无效的钱包地址'
-      });
-    }
+    const { principal, leverage, durationHours, skuId, wallet } = parsed.data;
 
     // 计算保费（简化版，实际应该根据产品逻辑计算）
     const baseFee = Math.min(0.15, 0.05 + (leverage - 20) * 0.001 + (principal / 500) * 0.02);
@@ -103,20 +90,11 @@ router.post('/quote', async (req, res) => {
     // 生成幂等键
     const idempotencyKey = ethers.hexlify(ethers.randomBytes(16));
 
-    res.json({
-      success: true,
-      data: {
-        idempotencyKey,
-        quote,
-        quoteSig
-      }
-    });
+    res.json({ success: true, data: { idempotencyKey, quote, quoteSig } });
 
   } catch (error: any) {
     console.error('定价报价失败:', error);
-    res.status(500).json({
-      error: error.message || '定价报价失败'
-    });
+    res.status(500).json({ ok: false, error: error.message || '定价报价失败' });
   }
 });
 
