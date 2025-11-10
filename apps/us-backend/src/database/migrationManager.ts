@@ -80,6 +80,7 @@ export class MigrationManager {
       '009_order_quotes.sql',
       '010_idempotency_store.sql',
       '010_persist_memory_tables.sql',
+      '011_wallet_login_challenges.sql',
       '202412120000__create_migrations_tracker.sql'
     ];
 

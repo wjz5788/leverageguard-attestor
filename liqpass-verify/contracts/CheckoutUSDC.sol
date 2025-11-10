@@ -24,7 +24,12 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
         bytes32 indexed orderId,
         address indexed buyer,
         uint256 amount,
-        bytes32 indexed quoteHash   // ✅ 索引 quoteHash，便于检索
+       
+        bytes32 indexed quoteHash,
+        address token,
+        address treasury,
+        uint256 chainId,
+        uint256 timestamp
     );
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     event EmergencyWithdraw(address indexed to, address indexed token, uint256 amount);
@@ -67,7 +72,17 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
         require(isValidAmount(amount), "invalid amount");
         // 直接转入金库，不在合约囤资
         USDC.safeTransferFrom(msg.sender, treasury, amount);
-        emit PremiumPaid(orderId, msg.sender, amount, quoteHash);
+      
+         emit PremiumPaid(
+            orderId,
+            msg.sender,
+            amount,
+            quoteHash,
+            address(USDC),
+            treasury,
+            block.chainid,
+            block.timestamp
+        );
     }
 
     /// @notice 安全兜底：若有误存代币，可由 owner 取回（不含 ETH）

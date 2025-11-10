@@ -18,6 +18,10 @@ const walletLoginSchema = z.object({
 
 const loginSchema = z.union([emailLoginSchema, walletLoginSchema]);
 
+const walletChallengeSchema = z.object({
+  walletAddress: z.string().min(1)
+});
+
 function formatLoginResult(result: LoginResult) {
   return {
     token: result.token,
@@ -34,6 +38,39 @@ function formatLoginResult(result: LoginResult) {
 export default function authRoutes(authService: AuthService, requireAuth: RequireAuthMiddleware) {
   const router = express.Router();
 
+  router.post('/challenge', async (req, res) => {
+    const parseResult = walletChallengeSchema.safeParse(req.body);
+
+    if (!parseResult.success) {
+      return res.status(400).json({
+        error: 'INVALID_REQUEST',
+        message: 'Wallet challenge request is invalid.',
+        issues: parseResult.error.issues
+      });
+    }
+
+    try {
+      const challenge = await authService.issueWalletChallenge(parseResult.data.walletAddress, {
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent') ?? undefined
+      });
+      return res.status(201).json(challenge);
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return res.status(400).json({
+          error: error.code,
+          message: error.message
+        });
+      }
+
+      console.error('Challenge error:', error);
+      return res.status(500).json({
+        error: 'CHALLENGE_FAILED',
+        message: 'Unable to create wallet challenge at this time.'
+      });
+    }
+  });
+
   router.post('/login', async (req, res) => {
     const parseResult = loginSchema.safeParse(req.body);
 
@@ -47,7 +84,10 @@ export default function authRoutes(authService: AuthService, requireAuth: Requir
 
     try {
       const payload = parseResult.data as LoginPayload;
-      const result = await authService.verifyLogin(payload);
+      const result = await authService.verifyLogin(payload, {
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent') ?? undefined
+      });
 
       return res.status(200).json(formatLoginResult(result));
     } catch (error) {

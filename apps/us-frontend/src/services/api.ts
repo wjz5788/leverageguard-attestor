@@ -149,7 +149,8 @@ class ApiService {
   private baseUrl: string;
   
   constructor() {
-    this.baseUrl = getEnv().VITE_API_BASE_URL;
+    const env = getEnv();
+    this.baseUrl = env.VITE_API_BASE_URL || env.VITE_API_BASE;
   }
   
   // GET请求

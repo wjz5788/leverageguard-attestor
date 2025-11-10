@@ -37,14 +37,14 @@ async function setCursor(blockNumber) {
   });
 }
 
-async function insertPremiumPaid(id, txHash, logIndex, blockNumber, orderId, payer, token, treasury, amount, rawArgsJson) {
+async function insertPremiumPaid(id, txHash, logIndex, blockNumber, orderId, payer, token, treasury, amount, chainId, rawArgsJson) {
   return new Promise((resolve, reject) => {
     const sql = `
       INSERT OR IGNORE INTO premium_paid
-      (id, tx_hash, log_index, block_number, order_id, payer, token, treasury, amount, raw_args_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, tx_hash, log_index, block_number, order_id, payer, token, treasury, amount, chain_id, raw_args_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    db.run(sql, [id, txHash, logIndex, blockNumber, orderId, payer, token, treasury, amount, rawArgsJson], function(err) {
+    db.run(sql, [id, txHash, logIndex, blockNumber, orderId, payer, token, treasury, amount, chainId, rawArgsJson], function(err) {
       if (err) reject(err);
       else resolve({ changes: this.changes });
     });
@@ -84,12 +84,13 @@ function decodePremiumPaid(log) {
     }
     const args = parsed.args;
     const orderId = (args.orderId ?? args[0])?.toString?.() ?? null;
-    const payer = (args.payer ?? args[1] ?? '')?.toString?.().toLowerCase() ?? null;
+    const payer = (args.buyer ?? args[1] ?? '')?.toString?.().toLowerCase() ?? null;
     const amount = (args.amount ?? args[2]) ? (args.amount ?? args[2]).toString() : null;
-    const token = (args.token ?? args[3] ?? '')?.toString?.().toLowerCase() ?? null;
-    const treasury = (args.treasury ?? args[4] ?? '')?.toString?.().toLowerCase() ?? null;
+    const token = (args.token ?? args[4] ?? '')?.toString?.().toLowerCase() ?? null;
+    const treasury = (args.treasury ?? args[5] ?? '')?.toString?.().toLowerCase() ?? null;
+    const chainId = (args.chainId ?? args[6]) ? (args.chainId ?? args[6]).toString() : null;
     return {
-      orderId, payer, amount, token, treasury,
+      orderId, payer, amount, token, treasury, chainId,
       raw: JSON.stringify(args, (_, v) => typeof v === 'bigint' ? v.toString() : v)
     };
   } catch {
@@ -141,7 +142,7 @@ async function backfillAndWatch() {
       const id = `${log.transactionHash}:${log.index}`;
       await insertPremiumPaid(
         id, log.transactionHash, log.index, log.blockNumber,
-        parsed.orderId, parsed.payer, parsed.token, parsed.treasury, parsed.amount, parsed.raw
+        parsed.orderId, parsed.payer, parsed.token, parsed.treasury, parsed.amount, parsed.chainId, parsed.raw
       );
       const ver = await verifyUSDCTransfer(log.transactionHash, parsed.payer, parsed.amount);
       if (ver.ok) {
@@ -170,7 +171,7 @@ async function backfillAndWatch() {
     const id = `${log.transactionHash}:${log.index}`;
     await insertPremiumPaid(
       id, log.transactionHash, log.index, log.blockNumber,
-      parsed.orderId, parsed.payer, parsed.token, parsed.treasury, parsed.amount, parsed.raw
+      parsed.orderId, parsed.payer, parsed.token, parsed.treasury, parsed.amount, parsed.chainId, parsed.raw
     );
     const ver = await verifyUSDCTransfer(log.transactionHash, parsed.payer, parsed.amount);
     if (ver.ok) {

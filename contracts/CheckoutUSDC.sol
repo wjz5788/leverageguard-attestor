@@ -37,6 +37,9 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
         address indexed buyer,
         uint256 amount,
         bytes32 indexed quoteHash,
+        address token,
+        address treasury,
+        uint256 chainId,
         uint256 timestamp
     );
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
@@ -115,7 +118,16 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
         USDC.safeTransferFrom(msg.sender, treasury, amount);
         
         // 发出支付事件
-        emit PremiumPaid(orderId, msg.sender, amount, quoteHash, block.timestamp);
+        emit PremiumPaid(
+            orderId,
+            msg.sender,
+            amount,
+            quoteHash,
+            address(USDC),
+            treasury,
+            block.chainid,
+            block.timestamp
+        );
         emit OrderProcessed(orderId, msg.sender);
     }
 

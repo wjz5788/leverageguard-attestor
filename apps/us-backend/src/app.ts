@@ -18,6 +18,7 @@ import { dbManager } from './database/db.js';
 import { registerRoutes } from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/requestLogger.js';
+import { requestIdMiddleware } from './middleware/requestId.js';
 import { setupSwagger } from './utils/swagger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +44,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // 日志中间件
+app.use(requestIdMiddleware);
 app.use(requestLogger);
 
 // Swagger 文档

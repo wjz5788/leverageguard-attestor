@@ -5,6 +5,7 @@
 
 export interface EnvConfig {
   VITE_API_BASE: string;
+  VITE_API_BASE_URL: string;
   VITE_CHECKOUT_USDC_ADDRESS: string;
   VITE_BASE_USDC_ADDRESS: string;
   VITE_TREASURY_ADDRESS: string;
@@ -39,7 +40,6 @@ function validateEnv(): EnvConfig {
   
   // 必填字段检查
   const requiredFields = [
-    'VITE_API_BASE',
     'VITE_CHECKOUT_USDC_ADDRESS', 
     'VITE_BASE_USDC_ADDRESS',
     'VITE_TREASURY_ADDRESS',
@@ -50,7 +50,10 @@ function validateEnv(): EnvConfig {
   if (missingFields.length > 0) {
     throw new Error(`缺少必需的环境变量: ${missingFields.join(', ')}`);
   }
-
+  const apiBaseRaw = env.VITE_API_BASE ?? env.VITE_API_BASE_URL;
+  if (!apiBaseRaw) {
+    throw new Error('VITE_API_BASE 或 VITE_API_BASE_URL 必须配置');
+  }
   // 地址格式验证
   const addresses = [
     { key: 'VITE_CHECKOUT_USDC_ADDRESS', value: env.VITE_CHECKOUT_USDC_ADDRESS },
@@ -64,8 +67,8 @@ function validateEnv(): EnvConfig {
   }
 
   // URL格式验证
-  if (!isValidUrl(env.VITE_API_BASE)) {
-    throw new Error('VITE_API_BASE 必须是有效的URL');
+  if (!isValidUrl(apiBaseRaw)) {
+    throw new Error('VITE_API_BASE / VITE_API_BASE_URL 必须是有效的URL');
   }
 
   if (!isValidUrl(env.VITE_BASE_RPC)) {
@@ -73,7 +76,8 @@ function validateEnv(): EnvConfig {
   }
 
   return {
-    VITE_API_BASE: env.VITE_API_BASE,
+    VITE_API_BASE: apiBaseRaw,
+    VITE_API_BASE_URL: apiBaseRaw,
     VITE_CHECKOUT_USDC_ADDRESS: env.VITE_CHECKOUT_USDC_ADDRESS,
     VITE_BASE_USDC_ADDRESS: env.VITE_BASE_USDC_ADDRESS,
     VITE_TREASURY_ADDRESS: env.VITE_TREASURY_ADDRESS,

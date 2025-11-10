@@ -40,7 +40,7 @@ export class ContractListenerService {
     
     // CheckoutUSDC合约ABI（根据你的实际ABI调整）
     const ABI = [
-      "event PremiumPaid(bytes32 indexed orderId, address indexed buyer, uint256 amount, bytes32 indexed quoteHash, uint256 timestamp)",
+      "event PremiumPaid(bytes32 indexed orderId, address indexed buyer, uint256 amount, bytes32 indexed quoteHash, address token, address treasury, uint256 chainId, uint256 timestamp)",
       "function USDC() public view returns (address)",
       "function treasury() public view returns (address)",
       "function owner() public view returns (address)",
@@ -72,48 +72,60 @@ export class ContractListenerService {
     // 监听PremiumPaid事件
     this.contract.on("PremiumPaid", async (...args) => {
       try {
-        const ev = args[args.length - 1] as Log;
-        
-        // 从事件参数中提取数据
-        const orderId = args[0];
-        const buyer = args[1];
-        const amount = args[2];
-        const quoteHash = args[3];
-        const timestamp = args[4];
+        const ev = args[args.length - 1] as EventLog;
+        const eventArgs = ev.args as any;
+        const orderId = eventArgs.orderId ?? eventArgs[0];
+        const buyer = eventArgs.buyer ?? eventArgs[1];
+        const amount = eventArgs.amount ?? eventArgs[2];
+        const quoteHash = eventArgs.quoteHash ?? eventArgs[3];
+        const token = eventArgs.token ?? eventArgs[4];
+        const treasury = eventArgs.treasury ?? eventArgs[5];
+        const chainId = eventArgs.chainId ?? eventArgs[6];
+        const timestamp = eventArgs.timestamp ?? eventArgs[7];
+
+        const orderIdHex = orderId?.toString?.() ?? '';
+        const buyerAddr = buyer?.toString?.() ?? '';
+        const amountStr = amount?.toString?.() ?? '0';
+        const ts = Number(timestamp);
+        const isoTimestamp = Number.isFinite(ts) ? new Date(ts * 1000).toISOString() : new Date().toISOString();
+        const tokenAddr = token?.toString?.() ?? '';
+        const treasuryAddr = treasury?.toString?.() ?? '';
+        const chainIdStr = chainId?.toString?.();
 
         console.log("🎯 监听到PremiumPaid事件:", {
           transactionHash: ev.transactionHash,
           logIndex: ev.index,
-          orderId,
-          buyer,
-          amount: amount.toString(),
+          orderId: orderIdHex,
+          buyer: buyerAddr,
+          amount: amountStr,
           quoteHash,
-          timestamp: new Date(Number(timestamp) * 1000).toISOString()
+          token: tokenAddr,
+          treasury: treasuryAddr,
+          chainId: chainIdStr,
+          timestamp: isoTimestamp
         });
 
         try {
-          // 1) 校验事件数据
-          await this.validateEvent(ev, orderId, buyer, amount, quoteHash);
+          await this.validateEvent(ev, orderIdHex, buyerAddr, amount, quoteHash, tokenAddr, treasuryAddr, chainId);
+          await this.updateOrderStatus(ev, orderIdHex, buyerAddr, amount, quoteHash, tokenAddr, treasuryAddr, timestamp);
 
-          // 2) 回填订单状态（只信链上事件）
-          await this.updateOrderStatus(ev, orderId, buyer, amount, quoteHash);
-
-          // 3) 发送合约事件告警
           await this.alertService.sendContractEventAlert({
             eventName: "PremiumPaid",
             transactionHash: ev.transactionHash,
             blockNumber: ev.blockNumber,
             logIndex: ev.index,
-            orderId,
-            amount: amount.toString(),
-            payer: buyer
+            orderId: orderIdHex,
+            amount: amountStr,
+            payer: buyerAddr,
+            token: tokenAddr,
+            treasury: treasuryAddr,
+            chainId: chainIdStr
           });
 
           console.log("✅ 事件处理完成");
         } catch (error) {
           console.error("❌ 事件处理失败:", error);
-          
-          // 发送错误告警
+
           await this.alertService.sendSystemErrorAlert(
             error as Error,
             `处理PremiumPaid事件失败: ${ev.transactionHash}`
@@ -162,16 +174,24 @@ export class ContractListenerService {
     const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
     for (const ev of events) {
       try {
-        // 在ethers v6中，queryFilter返回的事件对象是EventLog类型，包含args属性
         const eventLog = ev as EventLog;
-        const orderId = eventLog.args[0];
-        const buyer = eventLog.args[1];
-        const amount = eventLog.args[2];
-        const quoteHash = eventLog.args[3];
-        const timestamp = eventLog.args[4];
-        
-        await this.validateEvent(eventLog, orderId, buyer, amount, quoteHash);
-        await this.updateOrderStatus(eventLog, orderId, buyer, amount, quoteHash);
+        const eventArgs = eventLog.args as any;
+        const orderId = eventArgs.orderId ?? eventArgs[0];
+        const buyer = eventArgs.buyer ?? eventArgs[1];
+        const amount = eventArgs.amount ?? eventArgs[2];
+        const quoteHash = eventArgs.quoteHash ?? eventArgs[3];
+        const token = eventArgs.token ?? eventArgs[4];
+        const treasury = eventArgs.treasury ?? eventArgs[5];
+        const chainId = eventArgs.chainId ?? eventArgs[6];
+        const timestamp = eventArgs.timestamp ?? eventArgs[7];
+
+        const orderIdHex = orderId?.toString?.() ?? '';
+        const buyerAddr = buyer?.toString?.() ?? '';
+        const tokenAddr = token?.toString?.() ?? '';
+        const treasuryAddr = treasury?.toString?.() ?? '';
+
+        await this.validateEvent(eventLog, orderIdHex, buyerAddr, amount, quoteHash, tokenAddr, treasuryAddr, chainId);
+        await this.updateOrderStatus(eventLog, orderIdHex, buyerAddr, amount, quoteHash, tokenAddr, treasuryAddr, timestamp);
       } catch (e) {
         console.warn('回放事件处理失败:', e);
       }
@@ -200,27 +220,42 @@ export class ContractListenerService {
     orderId: string,
     buyer: string,
     amount: bigint,
-    quoteHash: string
+    quoteHash: string,
+    token: string,
+    treasury: string,
+    chainId: bigint | number
   ): Promise<void> {
     console.log("🔍 验证事件数据...");
 
-    // 1) 校验to=TREASURY
-    const treasuryAddress = await this.contract.treasury();
-    const expectedTreasury = process.env.TREASURY_ADDRESS ?? "0xaa1f4df6fc3ad033cc71d561689189d11ab54f4b";
-    
-    if (treasuryAddress.toLowerCase() !== expectedTreasury.toLowerCase()) {
-      throw new Error(`Treasury地址不匹配: ${treasuryAddress} != ${expectedTreasury}`);
+    const expectedTreasury = (process.env.TREASURY_ADDRESS ?? "0xaa1f4df6fc3ad033cc71d561689189d11ab54f4b").toLowerCase();
+    const expectedUsdc = (process.env.BASE_USDC_ADDRESS ?? "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913").toLowerCase();
+
+    const normalizedTreasury = (treasury ?? '').toString().toLowerCase();
+    const normalizedToken = (token ?? '').toString().toLowerCase();
+
+    if (!normalizedTreasury || normalizedTreasury !== expectedTreasury) {
+      throw new Error(`Treasury地址不匹配: ${normalizedTreasury} != ${expectedTreasury}`);
     }
 
-    // 2) 校验token=USDC
-    const usdcAddress = await this.contract.USDC();
-    const expectedUsdc = process.env.BASE_USDC_ADDRESS ?? "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
-    
-    if (usdcAddress.toLowerCase() !== expectedUsdc.toLowerCase()) {
-      throw new Error(`USDC地址不匹配: ${usdcAddress} != ${expectedUsdc}`);
+    if (!normalizedToken || normalizedToken !== expectedUsdc) {
+      throw new Error(`USDC地址不匹配: ${normalizedToken} != ${expectedUsdc}`);
     }
 
-    // 3) 校验订单是否已处理（幂等性检查）
+    const network = await this.provider.getNetwork();
+    const chainIdBigInt = typeof chainId === 'bigint' ? chainId : BigInt(chainId ?? 0);
+    if (chainIdBigInt !== network.chainId) {
+      throw new Error(`链ID不匹配: 事件=${chainIdBigInt.toString()} 网络=${network.chainId.toString()}`);
+    }
+
+    if (!orderId || !buyer || !quoteHash) {
+      throw new Error('事件字段缺失，无法验证订单。');
+    }
+
+    if (amount <= 0n) {
+      throw new Error('事件金额非法。');
+    }
+
+    // 事件幂等性检查
     const isProcessed = await this.isEventProcessed(ev.transactionHash, ev.index);
     if (isProcessed) {
       console.log("⚠️  事件已处理过，跳过重复处理");
@@ -238,19 +273,28 @@ export class ContractListenerService {
     orderId: string,
     buyer: string,
     amount: bigint,
-    quoteHash: string
+    quoteHash: string,
+    token: string,
+    treasury: string,
+    timestamp: bigint | number
   ): Promise<void> {
     console.log("📝 更新订单状态...");
+
+    const ts = typeof timestamp === 'bigint' ? Number(timestamp) : Number(timestamp);
+    const eventDate = Number.isFinite(ts) ? new Date(ts * 1000) : new Date();
+    const buyerAddress = buyer?.toString?.().toLowerCase?.() ?? buyer;
 
     const payload = {
       txHash: ev.transactionHash,
       logIndex: ev.index,
       orderId,
-      buyer,
+      buyer: buyerAddress,
       amount: amount.toString(),
       quoteHash,
       blockNumber: ev.blockNumber,
-      timestamp: new Date()
+      timestamp: eventDate,
+      token: token?.toString?.().toLowerCase?.() ?? token,
+      treasury: treasury?.toString?.().toLowerCase?.() ?? treasury
     } as const;
 
     await withTransaction(async () => {
@@ -319,6 +363,8 @@ export class ContractListenerService {
     quoteHash: string;
     blockNumber: number;
     timestamp: Date;
+    token?: string | null;
+    treasury?: string | null;
   }): Promise<void> {
     return new Promise((resolve, reject) => {
       this.db.run(

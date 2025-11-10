@@ -1,5 +1,7 @@
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { v4 as uuid } from 'uuid';
+import { getAddress, verifyMessage } from 'ethers';
+import { randomBytes } from 'crypto';
 
 export type LoginType = 'email' | 'wallet';
 
@@ -50,12 +52,23 @@ export interface LoginResult {
   profile: UserProfile;
 }
 
+export interface WalletChallenge {
+  nonce: string;
+  message: string;
+  expiresAt: string;
+}
+
+export interface LoginContext {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 export interface AuthServiceOptions {
   jwtSecret?: string;
   sessionDurationMs?: number;
 }
 
-import { AppError, ERROR_CODES } from '../types/errors.js';
+import { AppError } from '../types/errors.js';
 
 export class AuthError extends AppError {
   constructor(code: string, message: string, httpStatus: number = 400) {
@@ -79,41 +92,53 @@ export default class AuthService {
     this.db = dbManager.getDatabase();
   }
 
-  async verifyLogin(payload: LoginPayload): Promise<LoginResult> {
-    if (payload.type === 'email') {
-      this.assertEmailPayload(payload);
-    } else {
-      this.assertWalletPayload(payload);
+  async verifyLogin(payload: LoginPayload, context: LoginContext = {}): Promise<LoginResult> {
+    let processed: LoginPayload = payload;
+    let userId: string | null = null;
+
+    try {
+      if (payload.type === 'email') {
+        this.assertEmailPayload(payload);
+      } else {
+        this.assertWalletPayload(payload);
+        const normalizedWallet = await this.validateWalletLogin(payload);
+        processed = { ...payload, walletAddress: normalizedWallet };
+      }
+
+      userId = this.resolveUserId(processed);
+      const profile = await this.ensureProfile(userId, processed);
+      const session = this.createSession(userId, processed.type);
+
+      const nowIso = new Date().toISOString();
+      const persistedProfile: UserProfile = {
+        ...profile,
+        id: userId,
+        walletAddress: processed.type === 'wallet' ? processed.walletAddress : profile.walletAddress,
+        lastLoginAt: nowIso
+      };
+
+      await this.saveSession(session);
+      await this.updateProfile(userId, { lastLoginAt: nowIso, walletAddress: persistedProfile.walletAddress });
+      await this.recordAuthLog(userId, processed.type, true, null, context);
+
+      return {
+        token: session.token,
+        session,
+        profile: persistedProfile
+      };
+    } catch (error) {
+      if (userId && processed.type === 'wallet') {
+        await this.recordAuthLog(userId, 'wallet', false, (error as Error).message, context);
+      }
+      throw error;
     }
-
-    const userId = this.resolveUserId(payload);
-    const profile = await this.ensureProfile(userId, payload);
-    const session = this.createSession(userId, payload.type);
-
-    const nowIso = new Date().toISOString();
-    const persistedProfile: UserProfile = {
-      ...profile,
-      id: userId,
-      lastLoginAt: nowIso
-    };
-
-    // 保存会话到数据库
-    await this.saveSession(session);
-    // 更新用户最后登录时间
-    await this.updateProfile(userId, { lastLoginAt: nowIso });
-
-    return {
-      token: session.token,
-      session,
-      profile: persistedProfile
-    };
   }
 
   async validateSession(token: string): Promise<AuthenticatedUser | null> {
     try {
       const decoded = jwt.verify(token, this.jwtSecret) as JwtPayload & { type?: LoginType };
       const session = await this.getSession(token);
-      
+
       if (!session || !decoded?.sub || session.userId !== decoded.sub) {
         return null;
       }
@@ -132,6 +157,37 @@ export default class AuthService {
     } catch (error) {
       return null;
     }
+  }
+
+  async issueWalletChallenge(walletAddress: string, context: LoginContext = {}): Promise<WalletChallenge> {
+    if (!walletAddress) {
+      throw new AuthError('INVALID_WALLET', 'Wallet address is required to request a challenge.');
+    }
+
+    const normalized = this.normalizeWalletAddress(walletAddress);
+    const issuedAt = new Date();
+    const expiresAt = new Date(issuedAt.getTime() + this.getChallengeTtlMs());
+    const nonce = this.generateNonce();
+    const message = this.buildChallengeMessage(normalized, nonce, issuedAt, context);
+
+    await this.db.run(
+      `INSERT INTO wallet_login_challenges (nonce, wallet_address, message, issued_at, expires_at, consumed_at)
+       VALUES (?, ?, ?, ?, ?, NULL)
+       ON CONFLICT(nonce) DO UPDATE SET wallet_address=excluded.wallet_address, message=excluded.message, issued_at=excluded.issued_at, expires_at=excluded.expires_at, consumed_at=NULL`,
+      [
+        nonce,
+        normalized,
+        message,
+        issuedAt.toISOString(),
+        expiresAt.toISOString()
+      ]
+    );
+
+    return {
+      nonce,
+      message,
+      expiresAt: expiresAt.toISOString()
+    };
   }
 
   async getProfile(userId: string): Promise<UserProfile | null> {
@@ -234,6 +290,50 @@ export default class AuthService {
     if (!payload.walletAddress || !payload.signature || !payload.nonce) {
       throw new AuthError('INVALID_CHALLENGE', 'Wallet address, signature, and nonce are required.');
     }
+
+    if (!this.isValidNonce(payload.nonce)) {
+      throw new AuthError('INVALID_CHALLENGE', 'Nonce format is invalid.');
+    }
+  }
+
+  private async validateWalletLogin(payload: WalletLoginPayload): Promise<string> {
+    const normalizedWallet = this.normalizeWalletAddress(payload.walletAddress);
+    const challenge = await this.db.get(
+      'SELECT nonce, wallet_address, message, expires_at, consumed_at FROM wallet_login_challenges WHERE nonce = ?',
+      [payload.nonce]
+    ) as any;
+
+    if (!challenge) {
+      throw new AuthError('INVALID_CHALLENGE', 'Login challenge not found.');
+    }
+
+    if ((challenge.wallet_address as string).toLowerCase() !== normalizedWallet) {
+      throw new AuthError('INVALID_CHALLENGE', 'Challenge does not belong to this wallet.');
+    }
+
+    if (challenge.consumed_at) {
+      throw new AuthError('CHALLENGE_USED', 'Login challenge already used.');
+    }
+
+    const expiresAt = new Date(challenge.expires_at);
+    if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+      await this.markChallengeConsumed(payload.nonce);
+      throw new AuthError('CHALLENGE_EXPIRED', 'Login challenge has expired.');
+    }
+
+    let recovered: string;
+    try {
+      recovered = this.normalizeWalletAddress(verifyMessage(challenge.message, payload.signature));
+    } catch (error) {
+      throw new AuthError('INVALID_SIGNATURE', 'Wallet signature verification failed.');
+    }
+
+    if (recovered !== normalizedWallet) {
+      throw new AuthError('INVALID_SIGNATURE', 'Wallet signature does not match the provided address.');
+    }
+
+    await this.markChallengeConsumed(payload.nonce);
+    return normalizedWallet;
   }
 
   private resolveUserId(payload: LoginPayload): string {
@@ -242,6 +342,62 @@ export default class AuthService {
     }
 
     return `wallet:${payload.walletAddress.toLowerCase()}`;
+  }
+
+  private async markChallengeConsumed(nonce: string): Promise<void> {
+    try {
+      await this.db.run(
+        'UPDATE wallet_login_challenges SET consumed_at = CURRENT_TIMESTAMP WHERE nonce = ?',
+        [nonce]
+      );
+    } catch (error) {
+      console.warn('Failed to mark wallet login challenge consumed', error);
+    }
+  }
+
+  private normalizeWalletAddress(address: string): string {
+    try {
+      return getAddress(address).toLowerCase();
+    } catch {
+      throw new AuthError('INVALID_WALLET', 'Invalid wallet address provided.');
+    }
+  }
+
+  private generateNonce(): string {
+    return randomBytes(16).toString('hex');
+  }
+
+  private getChallengeTtlMs(): number {
+    const fromEnv = Number(process.env.WALLET_CHALLENGE_TTL_MS ?? '0');
+    if (Number.isFinite(fromEnv) && fromEnv > 0) {
+      return fromEnv;
+    }
+    return 5 * 60 * 1000; // default 5 minutes
+  }
+
+  private buildChallengeMessage(wallet: string, nonce: string, issuedAt: Date, context: LoginContext): string {
+    const domain = process.env.AUTH_CHALLENGE_DOMAIN ?? 'LiqPass';
+    const lines = [
+      `${domain} wants you to sign in with your Ethereum account.`,
+      '',
+      `Wallet: ${wallet}`,
+      `Nonce: ${nonce}`,
+      `Issued At: ${issuedAt.toISOString()}`
+    ];
+
+    if (context.ipAddress) {
+      lines.push(`IP: ${context.ipAddress}`);
+    }
+
+    if (context.userAgent) {
+      lines.push(`User-Agent: ${context.userAgent}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private isValidNonce(nonce: string): boolean {
+    return typeof nonce === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(nonce);
   }
 
   private async ensureProfile(userId: string, payload: LoginPayload): Promise<UserProfile> {
@@ -370,5 +526,29 @@ export default class AuthService {
   async cleanupExpiredSessions(): Promise<void> {
     const now = new Date().toISOString();
     await this.db.run('DELETE FROM sessions WHERE expires_at < ?', [now]);
+  }
+
+  private async recordAuthLog(
+    userId: string,
+    loginType: LoginType,
+    success: boolean,
+    errorMessage: string | null,
+    context: LoginContext
+  ): Promise<void> {
+    try {
+      await this.db.run(
+        'INSERT INTO auth_logs (id, user_id, action, login_type, ip_address, user_agent, success, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        uuid(),
+        userId,
+        'login',
+        loginType,
+        context.ipAddress ?? null,
+        context.userAgent ?? null,
+        success ? 1 : 0,
+        errorMessage ?? null
+      );
+    } catch (error) {
+      console.warn('Failed to record auth log', error);
+    }
   }
 }
