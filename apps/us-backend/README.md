@@ -79,11 +79,21 @@ npm run dev
 
 ## 开发
 
+### 环境要求
+- Node.js 18+ 
+- SQLite3
+- TypeScript 5.0+
+
+### 开发命令
+
 ```bash
+# 安装依赖
+npm install
+
 # 开发模式（热重载）
 npm run dev
 
-# 构建
+# 构建（TypeScript编译）
 npm run build
 
 # 生产模式
@@ -91,7 +101,30 @@ npm start
 
 # 测试
 npm test
+
+# 类型检查
+npm run type-check
 ```
+
+### 常见问题
+
+#### TypeScript编译错误
+如果遇到TypeScript编译错误，请检查：
+1. 数据库访问是否使用了正确的异步回调模式
+2. 所有回调函数是否添加了类型注解 `(err: any, result: any) => {}`
+3. 接口定义是否完整
+
+#### 数据库连接问题
+确保：
+1. `DB_FILE`路径存在且可写
+2. SQLite3驱动正确安装
+3. 数据库表结构已初始化
+
+### 代码规范
+- 使用TypeScript严格模式
+- 所有异步操作必须使用回调函数
+- 数据库访问层必须添加完整的类型注解
+- 遵循现有的代码结构和命名规范
 
 ## 部署
 
