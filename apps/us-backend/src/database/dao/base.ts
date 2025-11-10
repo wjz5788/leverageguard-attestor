@@ -1,5 +1,5 @@
 // DAO层基础接口定义
-import { Database } from 'better-sqlite3';
+import type { Database } from 'sqlite3';
 
 export interface BaseDAO<T> {
   findById(id: string): T | undefined;
@@ -36,12 +36,24 @@ export abstract class BaseDAOImpl<T extends { id: string }> implements BaseDAO<T
 
   findById(id: string): T | undefined {
     const stmt = this.db.prepare(`SELECT * FROM ${this.tableName} WHERE id = ?`);
-    return stmt.get(id) as T | undefined;
+    let result: T | undefined;
+    stmt.get(id, (err, row) => {
+      if (!err) {
+        result = row as T;
+      }
+    });
+    return result;
   }
 
   findAll(limit = 100, offset = 0): T[] {
     const stmt = this.db.prepare(`SELECT * FROM ${this.tableName} LIMIT ? OFFSET ?`);
-    return stmt.all(limit, offset) as T[];
+    let results: T[] = [];
+    stmt.all(limit, offset, (err: any, rows: any) => {
+      if (!err) {
+        results = rows as T[];
+      }
+    });
+    return results;
   }
 
   abstract create(entity: T): T;
@@ -49,8 +61,13 @@ export abstract class BaseDAOImpl<T extends { id: string }> implements BaseDAO<T
 
   delete(id: string): boolean {
     const stmt = this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`);
-    const result = stmt.run(id);
-    return result.changes > 0;
+    let changes = 0;
+    stmt.run(id, function(err) {
+      if (!err) {
+        changes = this.changes;
+      }
+    });
+    return changes > 0;
   }
 
   count(filter?: Record<string, any>): number {
@@ -66,8 +83,13 @@ export abstract class BaseDAOImpl<T extends { id: string }> implements BaseDAO<T
     }
 
     const stmt = this.db.prepare(sql);
-    const result = stmt.get(...params) as { count: number };
-    return result?.count || 0;
+    let count = 0;
+    stmt.get(...params, (err: any, row: any) => {
+      if (!err && row) {
+        count = (row as { count: number }).count;
+      }
+    });
+    return count;
   }
 
   protected paginate(pageRequest: PageRequest): { limit: number; offset: number } {

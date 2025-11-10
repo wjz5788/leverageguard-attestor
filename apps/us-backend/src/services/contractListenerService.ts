@@ -1,4 +1,4 @@
-import { JsonRpcProvider, Contract, Log } from "ethers";
+import { JsonRpcProvider, Contract, Log, EventLog } from "ethers";
 import { DatabaseManager, db, withTransaction } from "../database/db.js";
 import OrderService from "./orderService.js";
 import { AlertService } from "./alertService.js";
@@ -162,9 +162,16 @@ export class ContractListenerService {
     const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
     for (const ev of events) {
       try {
-        const [orderId, buyer, amount, quoteHash, timestamp] = ev.args as any;
-        await this.validateEvent(ev.log, orderId, buyer, amount, quoteHash);
-        await this.updateOrderStatus(ev.log, orderId, buyer, amount, quoteHash);
+        // 在ethers v6中，queryFilter返回的事件对象是EventLog类型，包含args属性
+        const eventLog = ev as EventLog;
+        const orderId = eventLog.args[0];
+        const buyer = eventLog.args[1];
+        const amount = eventLog.args[2];
+        const quoteHash = eventLog.args[3];
+        const timestamp = eventLog.args[4];
+        
+        await this.validateEvent(eventLog, orderId, buyer, amount, quoteHash);
+        await this.updateOrderStatus(eventLog, orderId, buyer, amount, quoteHash);
       } catch (e) {
         console.warn('回放事件处理失败:', e);
       }
@@ -214,7 +221,7 @@ export class ContractListenerService {
     }
 
     // 3) 校验订单是否已处理（幂等性检查）
-    const isProcessed = await this.isEventProcessed(ev.transactionHash, ev.logIndex);
+    const isProcessed = await this.isEventProcessed(ev.transactionHash, ev.index);
     if (isProcessed) {
       console.log("⚠️  事件已处理过，跳过重复处理");
       throw new Error("事件已处理");
@@ -237,7 +244,7 @@ export class ContractListenerService {
 
     const payload = {
       txHash: ev.transactionHash,
-      logIndex: ev.logIndex,
+      logIndex: ev.index,
       orderId,
       buyer,
       amount: amount.toString(),
@@ -288,7 +295,7 @@ export class ContractListenerService {
       this.db.get(
         'SELECT id FROM contract_events WHERE tx_hash = ? AND log_index = ?',
         [txHash, logIndex],
-        (err, row) => {
+        (err: Error | null, row: any) => {
           if (err) {
             console.error('❌ 查询事件处理状态失败:', err);
             reject(err);
@@ -330,7 +337,7 @@ export class ContractListenerService {
           Math.floor(eventData.timestamp.getTime() / 1000),
           'processed'
         ],
-        function(err) {
+        function(this: any, err: Error | null) {
           if (err) {
             console.error('❌ 记录事件到数据库失败:', err);
             reject(err);

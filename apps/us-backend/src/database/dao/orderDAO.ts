@@ -1,5 +1,5 @@
 // 订单DAO实现
-import { Database } from 'better-sqlite3';
+import type { Database } from 'sqlite3';
 import { BaseDAOImpl, PageRequest, PageResponse } from './base.js';
 
 export interface Order {
@@ -84,7 +84,8 @@ export class OrderDAO extends BaseDAOImpl<Order> {
     `);
 
     const now = new Date().toISOString();
-    const result = stmt.run(
+    let changes = 0;
+    stmt.run(
       order.id,
       order.user_id,
       order.wallet_address,
@@ -102,10 +103,15 @@ export class OrderDAO extends BaseDAOImpl<Order> {
       order.updated_at || now,
       order.expires_at || null,
       order.paid_at || null,
-      order.claimed_at || null
+      order.claimed_at || null,
+      function(this: any, err: any) {
+        if (!err) {
+          changes = this.changes;
+        }
+      }
     );
 
-    if (result.changes === 0) {
+    if (changes === 0) {
       throw new Error('Failed to create order');
     }
 
@@ -127,7 +133,8 @@ export class OrderDAO extends BaseDAOImpl<Order> {
       WHERE id = ?
     `);
 
-    const result = stmt.run(
+    let changes = 0;
+    stmt.run(
       updated.status,
       updated.updated_at,
       updated.expires_at || null,
@@ -136,17 +143,27 @@ export class OrderDAO extends BaseDAOImpl<Order> {
       updated.payment_proof_id || null,
       updated.evidence_id || null,
       updated.claim_id || null,
-      id
+      id,
+      function(this: any, err: any) {
+        if (!err) {
+          changes = this.changes;
+        }
+      }
     );
 
-    return result.changes > 0 ? updated : undefined;
+    return changes > 0 ? updated : undefined;
   }
 
   findByUserId(userId: string, pageRequest: PageRequest): PageResponse<Order> {
     const { limit, offset } = this.paginate(pageRequest);
     
     const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM orders WHERE user_id = ?`);
-    const total = (countStmt.get(userId) as { count: number }).count;
+    let total = 0;
+    countStmt.get(userId, (err: any, row: any) => {
+      if (!err && row) {
+        total = (row as { count: number }).count;
+      }
+    });
 
     const dataStmt = this.db.prepare(`
       SELECT * FROM orders 
@@ -155,7 +172,12 @@ export class OrderDAO extends BaseDAOImpl<Order> {
       LIMIT ? OFFSET ?
     `);
     
-    const data = dataStmt.all(userId, limit, offset) as Order[];
+    let data: Order[] = [];
+    dataStmt.all(userId, limit, offset, (err: any, rows: any) => {
+      if (!err) {
+        data = rows as Order[];
+      }
+    });
 
     return {
       data,
@@ -170,7 +192,12 @@ export class OrderDAO extends BaseDAOImpl<Order> {
     const { limit, offset } = this.paginate(pageRequest);
     
     const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM orders WHERE wallet_address = ?`);
-    const total = (countStmt.get(walletAddress) as { count: number }).count;
+    let total = 0;
+    countStmt.get(walletAddress, (err: any, row: any) => {
+      if (!err && row) {
+        total = (row as { count: number }).count;
+      }
+    });
 
     const dataStmt = this.db.prepare(`
       SELECT * FROM orders 
@@ -179,7 +206,12 @@ export class OrderDAO extends BaseDAOImpl<Order> {
       LIMIT ? OFFSET ?
     `);
     
-    const data = dataStmt.all(walletAddress, limit, offset) as Order[];
+    let data: Order[] = [];
+    dataStmt.all(walletAddress, limit, offset, (err: any, rows: any) => {
+      if (!err) {
+        data = rows as Order[];
+      }
+    });
 
     return {
       data,
@@ -211,10 +243,20 @@ export class OrderDAO extends BaseDAOImpl<Order> {
     params.push(limit, offset);
 
     const countStmt = this.db.prepare(countSql);
-    const total = (countStmt.get(...params.slice(0, -2)) as { count: number }).count;
+    let total = 0;
+    countStmt.get(...params.slice(0, -2), (err: any, row: any) => {
+      if (!err && row) {
+        total = (row as { count: number }).count;
+      }
+    });
 
     const dataStmt = this.db.prepare(dataSql);
-    const data = dataStmt.all(...params) as Order[];
+    let data: Order[] = [];
+    dataStmt.all(...params, (err: any, rows: any) => {
+      if (!err) {
+        data = rows as Order[];
+      }
+    });
 
     return {
       data,
@@ -278,11 +320,21 @@ export class OrderDAO extends BaseDAOImpl<Order> {
     
     // 获取总数
     const totalStmt = this.db.prepare(`${countSql} ${whereClause}`);
-    const total = (totalStmt.get(...params) as { count: number }).count;
+    let total = 0;
+    totalStmt.get(...params, (err: any, row: any) => {
+      if (!err && row) {
+        total = (row as { count: number }).count;
+      }
+    });
 
     // 获取数据
     const dataStmt = this.db.prepare(`${sql} ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`);
-    const data = dataStmt.all(...params, limit, offset) as Order[];
+    let data: Order[] = [];
+    dataStmt.all(...params, limit, offset, (err: any, rows: any) => {
+      if (!err) {
+        data = rows as Order[];
+      }
+    });
 
     return {
       data,
@@ -301,7 +353,13 @@ export class OrderDAO extends BaseDAOImpl<Order> {
       ORDER BY expires_at ASC 
       LIMIT ?
     `);
-    return stmt.all(expiresBefore, limit) as Order[];
+    let data: Order[] = [];
+    stmt.all(expiresBefore, limit, (err: any, rows: any) => {
+      if (!err) {
+        data = rows as Order[];
+      }
+    });
+    return data;
   }
 
   findUnpaidOrders(createdBefore: string, limit = 100): Order[] {
@@ -311,7 +369,13 @@ export class OrderDAO extends BaseDAOImpl<Order> {
       ORDER BY created_at ASC 
       LIMIT ?
     `);
-    return stmt.all(createdBefore, limit) as Order[];
+    let data: Order[] = [];
+    stmt.all(createdBefore, limit, (err: any, rows: any) => {
+      if (!err) {
+        data = rows as Order[];
+      }
+    });
+    return data;
   }
 
   updateStatus(id: string, status: Order['status']): Order | undefined {
@@ -325,8 +389,11 @@ export class OrderDAO extends BaseDAOImpl<Order> {
       WHERE id IN (${ids.map(() => '?').join(',')})
     `);
     
-    const result = stmt.run(status, new Date().toISOString(), ...ids);
-    return result.changes;
+    let changes = 0;
+    stmt.run(status, new Date().toISOString(), ...ids, function(this: any) {
+      changes = this.changes;
+    });
+    return changes;
   }
 
   getOrderStats(userId?: string): {
@@ -354,12 +421,22 @@ export class OrderDAO extends BaseDAOImpl<Order> {
     sql += ` GROUP BY status`;
 
     const stmt = this.db.prepare(sql);
-    const rows = stmt.all(...params) as Array<{
+    let rows: Array<{
       status: string;
       count: number;
       principal_sum: number;
       premium_sum: number;
-    }>;
+    }> = [];
+    stmt.all(...params, (err: any, resultRows: any) => {
+      if (!err) {
+        rows = resultRows as Array<{
+          status: string;
+          count: number;
+          principal_sum: number;
+          premium_sum: number;
+        }>;
+      }
+    });
 
     const byStatus: Record<string, number> = {};
     let total = 0;

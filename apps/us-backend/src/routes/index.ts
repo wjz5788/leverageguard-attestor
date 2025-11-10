@@ -15,6 +15,7 @@ import OrderService from '../services/orderService.js';
 import ClaimsService from '../services/claimsService.js';
 import PaymentProofService from '../services/paymentProofService.js';
 import { LinkService } from '../services/linkService.js';
+import { ContractListenerService } from '../services/contractListenerService.js';
 import minSchemaRoutes from './min.js';
 import quotesRoutes from './quotes.js';
 import apiKeysRoutes from './apiKeys.js';
@@ -29,6 +30,7 @@ export interface RouteDependencies {
   claimsService: ClaimsService;
   paymentProofService: PaymentProofService;
   linkService: LinkService;
+  contractListenerService: ContractListenerService;
 }
 
 export default function registerRoutes(app: express.Application, deps: RouteDependencies) {

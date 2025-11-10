@@ -12,7 +12,7 @@ const createProofSchema = z.object({
   fromAddr: z.string().min(1),
   toAddr: z.string().min(1),
   amountMinUnit: z.string().min(1),
-  amountUsdc: z.number().positive(),
+  amountUSDC6d: z.number().positive(),
   txHash: z.string().min(1)
 });
 
@@ -74,7 +74,7 @@ export default function paymentProofsRoutes(
           fromAddr: proof.fromAddr,
           toAddr: proof.toAddr,
           amountMinUnit: proof.amountMinUnit,
-          amountUsdc: proof.amountUsdc,
+          amountUSDC6d: proof.amountUSDC6d,
           txHash: proof.txHash,
           status: proof.status,
           createdAt: proof.createdAt
@@ -131,7 +131,7 @@ export default function paymentProofsRoutes(
           fromAddr: result.proof!.fromAddr,
           toAddr: result.proof!.toAddr,
           amountMinUnit: result.proof!.amountMinUnit,
-          amountUsdc: result.proof!.amountUsdc,
+          amountUSDC6d: result.proof!.amountUSDC6d,
           txHash: result.proof!.txHash,
           status: result.proof!.status,
           blockNumber: result.proof!.blockNumber,
@@ -224,7 +224,7 @@ export default function paymentProofsRoutes(
           fromAddr: proof.fromAddr,
           toAddr: proof.toAddr,
           amountMinUnit: proof.amountMinUnit,
-          amountUsdc: proof.amountUsdc,
+          amountUSDC6d: proof.amountUSDC6d,
           txHash: proof.txHash,
           status: proof.status,
           blockNumber: proof.blockNumber,
@@ -268,7 +268,7 @@ export default function paymentProofsRoutes(
           fromAddr: proof.fromAddr,
           toAddr: proof.toAddr,
           amountMinUnit: proof.amountMinUnit,
-          amountUsdc: proof.amountUsdc,
+          amountUSDC6d: proof.amountUSDC6d,
           txHash: proof.txHash,
           status: proof.status,
           blockNumber: proof.blockNumber,
@@ -299,7 +299,7 @@ export default function paymentProofsRoutes(
           orderId: proof.orderId,
           txHash: proof.txHash,
           status: proof.status,
-          amountUsdc: proof.amountUsdc,
+          amountUSDC6d: proof.amountUSDC6d,
           createdAt: proof.createdAt,
           confirmedAt: proof.confirmedAt
         }))

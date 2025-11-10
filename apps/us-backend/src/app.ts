@@ -54,7 +54,7 @@ if (process.env.NODE_ENV !== 'test') {
   app.use(pinoHttp({
     logger,
     customProps: (_req: any, res: any) => ({ requestId: (res.locals || {}).requestId }),
-  } as any));
+  }));
 }
 
 // 防重放中间件（保护所有非GET请求）

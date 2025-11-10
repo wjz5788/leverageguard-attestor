@@ -17,7 +17,7 @@ const createSchema = z.object({
   principal: z.coerce.number().positive(),
   leverage: z.coerce.number().positive(),
   wallet: z.string().min(1),
-  premiumUSDC: z.coerce.number().positive(),
+  premiumUSDC6d: z.coerce.number().positive(),
   idempotencyKey: z.string().min(1),
   paymentMethod: z.enum(['permit2', 'approve_transfer']),
   paymentProofId: z.string().min(1).optional(),

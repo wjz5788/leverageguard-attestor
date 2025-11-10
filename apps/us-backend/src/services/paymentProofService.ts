@@ -15,7 +15,7 @@ export interface PaymentProofInput {
   fromAddr: string;
   toAddr: string;
   amountMinUnit: string;
-  amountUsdc: number;
+  amountUSDC6d: number;
   txHash: string;
 }
 
@@ -55,7 +55,7 @@ export default class PaymentProofService {
       fromAddr: input.fromAddr.toLowerCase(),
       toAddr: input.toAddr.toLowerCase(),
       amountMinUnit: input.amountMinUnit,
-      amountUsdc: input.amountUsdc,
+      amountUSDC6d: input.amountUSDC6d,
       txHash: input.txHash,
       status: 'pending',
       createdAt: nowIso

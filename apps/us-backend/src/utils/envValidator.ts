@@ -13,6 +13,7 @@ type EnvConfig = {
   vaultAddress: string;
   chainId: number;
   usdcAddress: string;
+  dbAdapter: string;
   dbFile: string;
   listener: ListenerConfig;
 };
@@ -33,6 +34,7 @@ export class EnvValidator {
     process.env.PAYMENT_VAULT_ADDRESS = config.vaultAddress;
     process.env.PAYMENT_CHAIN_ID = String(config.chainId);
     process.env.USDC_ADDRESS = config.usdcAddress;
+    process.env.DB_ADAPTER = config.dbAdapter;
     process.env.DB_FILE = config.dbFile;
     process.env.CONFIRMATIONS = String(config.listener.confirmations);
     process.env.LISTENER_POLL_INTERVAL_SEC = String(config.listener.pollIntervalSec);
@@ -106,6 +108,10 @@ export class EnvValidator {
     else if (!this.isValidEthereumAddress(usdcAddress)) errors.push('USDC_ADDRESS 不是有效的以太坊地址');
     else if (this.isBlackholeAddress(usdcAddress)) errors.push('USDC_ADDRESS 不能是黑洞地址');
 
+    const dbAdapter = (process.env.DB_ADAPTER || 'sqlite').trim();
+    if (!dbAdapter) errors.push('DB_ADAPTER 环境变量缺失');
+    else if (dbAdapter !== 'sqlite') errors.push('DB_ADAPTER 当前仅支持 sqlite');
+
     const dbFile = (process.env.DB_FILE || './data/liqpass.db').trim();
 
     // listener settings
@@ -121,6 +127,7 @@ export class EnvValidator {
       vaultAddress,
       chainId,
       usdcAddress,
+      dbAdapter,
       dbFile,
       listener: {
         confirmations,
@@ -169,10 +176,11 @@ export class EnvValidator {
     console.log(`   chain_id: ${cfg.chainId}`);
     console.log(`   usdc: ${mask(cfg.usdcAddress)}`);
     console.log(`   vault: ${mask(cfg.vaultAddress)}`);
+    console.log(`   db_adapter: ${cfg.dbAdapter}`);
+    console.log(`   db_file: ${cfg.dbFile}`);
     console.log(
       `   listener: { confirmations: ${cfg.listener.confirmations}, safe_depth: ${cfg.listener.safeDepth}, poll: ${cfg.listener.pollIntervalSec}s, from_block: ${cfg.listener.replayFromBlock} }`
     );
-    console.log(`   db_file: ${cfg.dbFile}`);
   }
 
   private static compatDeadlineStr(): string {

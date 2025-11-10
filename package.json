@@ -14,7 +14,12 @@
     "build": "pnpm --filter us-frontend build && pnpm --filter us-backend build",
     "test": "pnpm --filter us-frontend test && pnpm --filter us-backend test",
     "lint": "pnpm --filter us-frontend lint && pnpm --filter us-backend lint",
-    "clean": "pnpm --filter us-frontend clean && pnpm --filter us-backend clean"
+    "clean": "pnpm --filter us-frontend clean && pnpm --filter us-backend clean",
+    "docs:check-links": "node scripts/docs-update.js check-links",
+    "docs:lint": "node scripts/docs-update.js lint",
+    "docs:changelog": "node scripts/docs-update.js changelog",
+    "docs:status": "node scripts/docs-update.js status",
+    "docs:full-check": "node scripts/docs-update.js full-check"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^4.0.3",
