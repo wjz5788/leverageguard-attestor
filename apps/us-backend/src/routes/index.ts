@@ -1,5 +1,5 @@
 import type express from 'express';
-import memoryDbManager from '../database/memoryDb.js';
+import { dbManager } from '../database/db.js';
 import AuthService from '../services/authService.js';
 import { createAuthMiddleware } from '../middleware/authMiddleware.js';
 import verificationRoutes from './verification.js';
@@ -24,7 +24,7 @@ import voucherRoutes from './voucher.js';
 import verificationV2Routes from './verification-v2.js';
 
 export interface RouteDependencies {
-  dbManager: typeof memoryDbManager;
+  dbManager: typeof dbManager;
   authService: AuthService;
   orderService: OrderService;
   claimsService: ClaimsService;

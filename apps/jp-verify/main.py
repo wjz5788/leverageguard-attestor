@@ -178,11 +178,50 @@ async def save_evidence(evidence_data: dict):
     except Exception as e:
         print(f"保存证据文件失败: {e}")
 
+async def save_pending_evidence(error_data: dict, request_data: VerifyRequest):
+    """保存待补全证据"""
+    try:
+        # 创建待补全证据目录
+        today = datetime.now().strftime("%Y-%m-%d")
+        base = os.getenv("PENDING_EVIDENCE_DIR", "reports/pending_evidence")
+        pending_dir = f"{base}/{today}"
+        os.makedirs(pending_dir, exist_ok=True)
+        
+        # 生成待补全证据ID
+        pending_id = f"pending_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        
+        # 构建待补全证据数据
+        pending_data = {
+            "pendingId": pending_id,
+            "request": {
+                "exchange": request_data.exchange,
+                "ordId": request_data.ordId,
+                "instId": request_data.instId,
+                "uid": request_data.uid
+            },
+            "error": error_data.get("error"),
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "status": "pending"
+        }
+        
+        # 保存待补全证据
+        pending_file = f"{pending_dir}/{pending_id}.json"
+        with open(pending_file, "w", encoding="utf-8") as f:
+            json.dump(pending_data, f, indent=2, ensure_ascii=False)
+            
+        print(f"保存待补全证据: {pending_id}")
+        return pending_id
+            
+    except Exception as e:
+        print(f"保存待补全证据失败: {e}")
+        return None
+
 def generate_evidence_id():
     """生成证据ID"""
     return f"evi_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
 import sha3  # 用于 keccak256
+from rfc8785 import dumps as jcs_dumps  # JCS Canonical JSON
 
 def calculate_hash(data: str) -> str:
     """计算 keccak256 哈希值"""
@@ -191,6 +230,63 @@ def calculate_hash(data: str) -> str:
 def serialize_json_fixed(data: dict) -> str:
     """固定顺序序列化 JSON"""
     return json.dumps(data, separators=(',', ':'), sort_keys=True, ensure_ascii=False)
+
+def serialize_jcs_canonical(data: dict) -> str:
+    """JCS Canonical JSON 序列化"""
+    return jcs_dumps(data).decode('utf-8')
+
+def normalize_evidence_data(order_data: dict, position_data: dict) -> dict:
+    """
+    规范化证据数据
+    字段映射最小集：exchange/account_id/symbol/order_id/side/leverage/margin_mode/liq_flag/timestamp_sec/filled_sz/avg_px/liq_px/reason
+    """
+    normalized = {}
+    
+    # 从订单数据中提取字段
+    if order_data and 'data' in order_data:
+        order_list = order_data['data']
+        if order_list and len(order_list) > 0:
+            order = order_list[0]
+            
+            # 基础字段映射
+            normalized['exchange'] = 'okx'
+            normalized['account_id'] = order.get('uid', '')
+            normalized['symbol'] = order.get('instId', '')
+            normalized['order_id'] = order.get('ordId', '')
+            normalized['side'] = order.get('side', '')
+            normalized['timestamp_sec'] = str(int(order.get('cTime', 0)) // 1000) if order.get('cTime') else ''
+            normalized['filled_sz'] = order.get('accFillSz', '0')
+            normalized['avg_px'] = order.get('avgPx', '0')
+            
+    # 从持仓数据中提取字段
+    if position_data and 'data' in position_data:
+        position_list = position_data['data']
+        if position_list and len(position_list) > 0:
+            position = position_list[0]
+            
+            normalized['leverage'] = position.get('lever', '1')
+            normalized['margin_mode'] = position.get('mgnMode', '')
+            normalized['liq_px'] = position.get('liqPx', '')
+            
+            # 判断强平状态
+            liq_flag = False
+            if position.get('pos') and float(position.get('pos', 0)) == 0:
+                # 检查历史记录或其他强平指标
+                liq_flag = True
+            normalized['liq_flag'] = str(liq_flag).lower()
+            
+            # 强平原因
+            if liq_flag:
+                normalized['reason'] = 'forced-liquidation'
+            else:
+                normalized['reason'] = ''
+    
+    # 剔除空字段
+    return {k: v for k, v in normalized.items() if v != '' and v != '0'}
+
+def create_evidence_root(canonical_json: str) -> str:
+    """创建 evidence_root = keccak256(UTF8(CanonicalJSON))"""
+    return calculate_hash(canonical_json)
 
 @app.get("/healthz")
 async def health_check():
@@ -281,50 +377,34 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
         # 处理响应数据
         total_time = int((time.time() - start_time) * 1000)
         
-        # 从实际数据中提取订单信息（这里需要根据实际API响应进行解析）
-        # 目前使用示例数据，实际应该从order_result中提取
-        normalized_data = {
-            "order": {
-                "side": "buy",  # 从实际数据中提取
-                "px": "65000.5",
-                "sz": "1.0",
-                "state": "filled",
-                "avgFillPx": "65010.2",
-                "accFillSz": "1.0",
-                "fee": "-1.23",
-                "ts": "2025-11-03T22:31:45Z"
-            },
-            "position": {
-                "lever": "50",
-                "mode": "isolated",
-                "liqPx": "64010.0",
-                "adl": False,
-                "liquidated": True,  # 核心字段，从实际数据判断
-                "liquidatedAt": "2025-11-03T22:32:10Z",
-                "reason": "forced-liquidation"
-            }
-        }
+        # 规范化证据数据
+        normalized_data = normalize_evidence_data(
+            order_result.get('data', {}),
+            positions_result.get('data', {})
+        )
+        
+        # 创建 JCS Canonical JSON
+        canonical_json = serialize_jcs_canonical(normalized_data)
+        evidence_root = create_evidence_root(canonical_json)
         
         # 构建证据链
         evidence_id = generate_evidence_id()
         
-        # 使用固定序列化顺序计算哈希
+        # 序列化原始数据
         serialized_order = serialize_json_fixed(order_result)
         serialized_positions = serialize_json_fixed(positions_result)
-        serialized_normalized = serialize_json_fixed(normalized_data)
         
         # 计算叶子节点哈希
         leaves = [
             {"path": "raw.trade/order", "hash": calculate_hash(serialized_order)},
             {"path": "raw.account/positions", "hash": calculate_hash(serialized_positions)},
-            {"path": "normalized.position", "hash": calculate_hash(serialized_normalized)}
+            {"path": "normalized.evidence", "hash": evidence_root}
         ]
         
-        # 计算根哈希
-        root_data = [serialized_order, serialized_positions, serialized_normalized]
-        root_hash = calculate_hash(serialize_json_fixed({"leaves": root_data}))
+        # 计算根哈希（使用 evidence_root 作为根）
+        root_hash = evidence_root
         
-        # 构建响应
+        # 构建响应（包含三件套：原始快照、规范化 JSON、evidence_root）
         response_data = {
             "meta": {
                 "exchange": "okx",
@@ -336,7 +416,11 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
                 "requestId": request_id,
                 "version": "jp-verify@1.0.0"
             },
-            "normalized": normalized_data,
+            "normalized": {
+                "data": normalized_data,
+                "canonical_json": canonical_json,
+                "evidence_root": evidence_root
+            },
             "raw": {
                 "trade/order": order_result,
                 "account/positions": positions_result,
@@ -345,10 +429,10 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
             "evidence": {
                 "schemaVersion": "1.0.0",
                 "hashAlgo": "keccak256",
-                "serialization": "fixed-order",
+                "serialization": "jcs-canonical-json",
                 "leaves": leaves,
                 "root": root_hash,
-                "rootAlgo": "keccak256-merkle-v1",
+                "rootAlgo": "keccak256-evidence-root-v1",
                 "bundleHash": calculate_hash(serialize_json_fixed({
                     "meta": {
                         "exchange": "okx",
@@ -409,6 +493,9 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
         # 记录错误日志（脱敏）
         print(f"OKX 认证错误: {e.status_code} - {e.message}")
         
+        # 保存待补全证据
+        background_tasks.add_task(save_pending_evidence, error_response, request)
+        
         raise HTTPException(status_code=e.status_code, detail=error_response)
         
     except HTTPException:
@@ -443,6 +530,9 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
         
         # 记录错误日志（脱敏）
         print(f"内部错误: {str(e)}")
+        
+        # 保存待补全证据
+        background_tasks.add_task(save_pending_evidence, error_response, request)
         
         raise HTTPException(status_code=500, detail=error_response)
 

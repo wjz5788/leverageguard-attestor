@@ -80,10 +80,10 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
         return quoteHashExpiry[quoteHash] > block.timestamp;
     }
 
-    /// @notice 验证USDC金额是否有效（6位精度）
+    /// @notice 验证USDC金额是否有效（6位精度，步长1e-6）
     /// @param amount 要验证的金额
     function isValidAmount(uint256 amount) public pure returns (bool) {
-        return amount > 0 && amount % (10 ** (USDC_DECIMALS - 1)) == 0;
+        return amount > 0 && amount % (10 ** USDC_DECIMALS) == 0;
     }
 
     /// @notice 用户先对 USDC 执行 approve(CheckoutUSDC, amount)，再调用本函数完成支付

@@ -13,7 +13,7 @@ LiqPass 后端API服务器，提供保险订单管理、支付验证、链上事
 | `USDC_ADDRESS` | USDC合约地址 | `0x833589fCD6EDb6E08f4c7c32d4F71B54bDa02913` | ✅ |
 | `DB_ADAPTER` | 数据库适配器 | `sqlite`（当前仅支持） | ✅ |
 | `DB_FILE` | SQLite数据文件路径 | `data/us-backend.db` | ✅ |
-| `CONFIRMATIONS` | 事件确认门槛（区块数） | `12` | ✅ |
+| `CONFIRMATIONS` | 事件确认门槛（区块数） | `3` | ✅ |
 | `LISTENER_POLL_INTERVAL_SEC` | 监听器轮询间隔（秒） | `20` | ✅ |
 
 ### 可选环境变量

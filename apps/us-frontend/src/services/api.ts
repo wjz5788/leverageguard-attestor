@@ -4,6 +4,7 @@
  */
 
 import { getEnv } from '../env.ts';
+import { toUSDC6d } from '../lib/usdcUtils.ts';
 
 // API响应类型定义
 export interface ApiResponse<T = any> {
@@ -187,6 +188,21 @@ class ApiService {
     // 创建请求头
     finalConfig.headers = createHeaders(finalConfig);
     
+    // 处理请求体，转换premiumUSDC字段
+    if (finalConfig.body && typeof finalConfig.body === 'string') {
+      try {
+        const body = JSON.parse(finalConfig.body);
+        // 如果请求体包含premiumUSDC字段，转换为premiumUSDC_6d
+        if (body.premiumUSDC !== undefined && body.premiumUSDC_6d === undefined) {
+          body.premiumUSDC_6d = String(toUSDC6d(body.premiumUSDC));
+          delete body.premiumUSDC; // 删除旧字段
+          finalConfig.body = JSON.stringify(body);
+        }
+      } catch (e) {
+        // 如果解析失败，保持原样
+      }
+    }
+    
     try {
       const response = await fetchWithRetry(url, finalConfig);
       
@@ -200,7 +216,38 @@ class ApiService {
       
       // 检查响应状态
       if (!response.ok) {
-        const errorMessage = data?.error || data?.message || `HTTP ${response.status}`;
+        // 提取详细的错误信息
+        let errorMessage = data?.error || data?.message || `HTTP ${response.status}`;
+        
+        // 特定状态码的友好错误消息
+        switch (response.status) {
+          case 400:
+            errorMessage = data?.message || '请求参数错误，请检查输入';
+            break;
+          case 401:
+            errorMessage = '身份验证已过期，请重新登录';
+            break;
+          case 403:
+            errorMessage = '您没有权限执行此操作';
+            break;
+          case 404:
+            errorMessage = '请求的资源不存在';
+            break;
+          case 422:
+            errorMessage = data?.message || '数据验证失败，请检查输入';
+            break;
+          case 429:
+            errorMessage = '请求过于频繁，请稍后再试';
+            break;
+          case 500:
+            errorMessage = '服务器内部错误，请稍后再试';
+            break;
+          case 502:
+          case 503:
+            errorMessage = '服务暂时不可用，请稍后再试';
+            break;
+        }
+        
         throw new ApiError(errorMessage, response.status, response);
       }
       
@@ -296,6 +343,7 @@ export function handleApiError(error: unknown, showToast?: (message: string) => 
     message = error.message;
   }
   
+  // 只有当showToast函数提供时才显示Toast
   if (showToast) {
     showToast(message);
   }

@@ -9,7 +9,7 @@
 *   Use Ownable, Pausable, and ReentrancyGuard interfaces to manage contracts in `liqpass-verify`.
 *   Use the SafeERC20 library for safe ERC20 token operations in `liqpass-verify`.
 
-## 智能合约验证
+## 智能合约验证 (Base 主网 - Hardhat 一键验证)
 
 *   安装 Hardhat Etherscan 插件：`npm i -D @nomicfoundation/hardhat-etherscan`
 *   在 `hardhat.config.ts` 中配置 Basescan API 密钥和网络：
@@ -35,9 +35,9 @@ etherscan: {
 
 ```bash
 npx hardhat verify --network base \
-  0xc4d1bedc8850771af2d9db2c6d24ec21a8829709 \
-  0x833589fCd6EDb6E08f4c7C32D4f71B54bDA02913 \
-  0x9aea8865a46a37a9db738fd0f1ee2bed49d143f1
+  你的合约地址 \
+  构造参数1 \
+  构造参数2
 ```
 
     *   如果项目中有同名合约，请使用 `--contract contracts/CheckoutUSDC.sol:CheckoutUSDC` 明确指定合约全名。

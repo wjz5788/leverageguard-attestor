@@ -49,6 +49,12 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
     function pause()   external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
 
+    /// @notice 验证USDC金额是否有效（6位精度，步长1e-6）
+    /// @param amount 要验证的金额
+    function isValidAmount(uint256 amount) public pure returns (bool) {
+        return amount > 0 && amount % (10 ** 6) == 0;
+    }
+
     /// @notice 用户先对 USDC 执行 approve(CheckoutUSDC, amount)，再调用本函数完成支付
     /// @param orderId   订单ID（建议 keccak(UUID)，传 bytes32）
     /// @param amount    USDC 数量（6 位精度）
@@ -58,7 +64,7 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
         nonReentrant
         whenNotPaused
     {
-        require(amount > 0, "amount=0");
+        require(isValidAmount(amount), "invalid amount");
         // 直接转入金库，不在合约囤资
         USDC.safeTransferFrom(msg.sender, treasury, amount);
         emit PremiumPaid(orderId, msg.sender, amount, quoteHash);

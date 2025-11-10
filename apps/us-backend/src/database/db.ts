@@ -1,108 +1,90 @@
-import sqlite3 from 'sqlite3';
+import Database from 'better-sqlite3';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { MigrationManager } from './migrationManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export class DatabaseManager {
-  private db: sqlite3.Database | null = null;
+// 数据库接口定义
+export interface DatabaseInterface {
+  get(sql: string, ...params: any[]): any;
+  all(sql: string, ...params: any[]): any[];
+  run(sql: string, ...params: any[]): { changes: number; lastInsertRowid: number };
+  transaction(fn: () => void): () => void;
+}
 
-  constructor(dbPath: string = './data/liqpass.db') {
+export class DatabaseManager {
+  private db: Database.Database | null = null;
+  private dbPath: string;
+  private initialized: Promise<void>;
+
+  constructor(dbPath: string = './data/us-backend.db') {
+    this.dbPath = dbPath;
+    
     // 确保数据目录存在
     const dir = dirname(dbPath);
     if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+      mkdirSync(dir, { recursive: true, mode: 0o600 });
     }
 
     // 创建数据库连接
-    this.db = new sqlite3.Database(dbPath, (err) => {
-      if (err) {
-        console.error('Error opening database:', err.message);
-      } else {
-        console.log('Connected to SQLite database');
-        // PRAGMA 设置：WAL 模式 + busy 超时
-        try {
-          this.db!.exec('PRAGMA journal_mode=WAL;');
-          this.db!.exec('PRAGMA busy_timeout=3000;');
-        } catch (e) {
-          console.warn('Failed to apply PRAGMA settings:', e);
-        }
-        // 异步初始化数据库
-        this.initialize().catch(error => {
-          console.error('Database initialization failed:', error);
-        });
-      }
+    this.db = new Database(dbPath, { 
+      // verbose: console.log // 可选：启用详细日志
     });
+    
+    console.log('Connected to SQLite database with better-sqlite3');
+    
+    // PRAGMA 设置：WAL 模式 + busy 超时
+    this.db.exec('PRAGMA journal_mode=WAL;');
+    this.db.exec('PRAGMA busy_timeout=3000;');
+    
+    // 初始化数据库并保存Promise
+    this.initialized = this.initialize();
   }
 
   private async initialize() {
-    return new Promise<void>((resolve, reject) => {
-      if (!this.db) {
-        reject(new Error('Database not connected'));
-        return;
-      }
-
-      // 运行所有迁移
-      const migrations = [
-        '001_initial_schema.sql',
-        // 事件与订单快照（只信链上事件）
-        '001_create_contract_events.sql',
-        '002_org_structure.sql',
-        '002_verify_schema.sql',
-        '003_policy_claim_payout.sql',
-        '004_min_loop.sql',
-        '005_auth_sessions.sql',
-        '006_payment_proofs.sql',
-        '007_products_quotes.sql',
-        '008_api_keys.sql',
-        '009_listener_checkpoint.sql',
-        '010_idempotency_store.sql'
-      ];
-      
-      const executeMigration = (index: number) => {
-        if (index >= migrations.length) {
-          console.log('Database initialized successfully');
-          resolve();
-          return;
-        }
-
-        const migrationFile = migrations[index];
-        const migrationPath = join(__dirname, 'migrations', migrationFile);
-        const migrationSQL = readFileSync(migrationPath, 'utf-8');
-        
-        this.db!.exec(migrationSQL, (err) => {
-          if (err) {
-            console.error(`Migration ${migrationFile} failed:`, err);
-            reject(err);
-            return;
-          }
-          
-          console.log(`Migration ${migrationFile} executed successfully`);
-          executeMigration(index + 1);
-        });
-      };
-      
-      executeMigration(0);
-    });
+    try {
+      // 使用新的迁移管理器执行迁移
+      const migrationManager = new MigrationManager(this.db!);
+      await migrationManager.up();
+      console.log('Database initialized successfully');
+    } catch (error) {
+      console.error('Database initialization failed:', error);
+      throw error;
+    }
   }
 
-  getDatabase(): sqlite3.Database {
+  // 等待数据库初始化完成
+  public async waitForInitialization(): Promise<void> {
+    return this.initialized;
+  }
+
+  getDatabase(): DatabaseInterface {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
     return this.db;
   }
 
-  async close(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (!this.db) return resolve();
-      this.db.close((err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+  close(): void {
+    if (this.db) {
+      this.db.close();
+    }
+  }
+  
+  // 事务支持
+  withTransaction<T>(fn: () => T): T {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    
+    const transaction = this.db.transaction(() => {
+      return fn();
     });
+    
+    return transaction();
   }
 }
 
@@ -116,40 +98,17 @@ if (!resolvedDbPath) {
     console.warn(`⚠️  [Compat] 使用旧键 DB_URL，建议切换到 DB_FILE（将在 ${deadline.getFullYear()}-${mm}-${dd} 后移除）`);
     resolvedDbPath = process.env.DB_URL.trim();
   } else {
-    resolvedDbPath = './data/liqpass.db';
+    resolvedDbPath = './data/us-backend.db';
   }
 }
 
 const dbManager = new DatabaseManager(resolvedDbPath);
 
+// 等待数据库初始化完成
+await dbManager.waitForInitialization().catch(error => {
+  console.error('Failed to initialize database:', error);
+  process.exit(1);
+});
+
 export const db = dbManager.getDatabase();
 export default dbManager;
-
-// --- Transaction helpers (sqlite3) ---
-
-function execAsync(database: sqlite3.Database, sql: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    database.exec(sql, (err) => (err ? reject(err) : resolve()));
-  });
-}
-
-/**
- * Execute a function within a SQLite transaction.
- * Ensures BEGIN/COMMIT/ROLLBACK with proper error propagation.
- */
-export async function withTransaction<T>(fn: (tx: sqlite3.Database) => Promise<T>): Promise<T> {
-  // serialize guarantees statements run sequentially on this connection
-  db.serialize();
-  // SQLite并发与可靠性：WAL + busy_timeout
-  await execAsync(db, 'PRAGMA journal_mode=WAL');
-  await execAsync(db, 'PRAGMA busy_timeout=3000');
-  await execAsync(db, 'BEGIN IMMEDIATE');
-  try {
-    const result = await fn(db);
-    await execAsync(db, 'COMMIT');
-    return result;
-  } catch (err) {
-    try { await execAsync(db, 'ROLLBACK'); } catch {}
-    throw err;
-  }
-}

@@ -66,7 +66,7 @@ export class AuthError extends AppError {
 
 const DEFAULT_SESSION_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
-import dbManager from '../database/memoryDb.js';
+import dbManager from '../database/db.js';
 
 export default class AuthService {
   private readonly jwtSecret: string;

@@ -1,210 +1,262 @@
-// 验证路由 - 处理API密钥验证请求
-import express from 'express';
-import memoryDbManager from '../database/memoryDb.js';
-import VerificationService from '../services/verificationService.js';
-import ValidatorService from '../services/validatorService.js';
-import { VerifyRequest, VerifyResponse } from '../types/index.js';
+import { Router } from 'express';
+import { VerificationService } from '../services/verificationService.js';
+import { dbManager } from '../database/db.js';
+import { createApiKeyAuthMiddleware } from '../middleware/apiKeyAuth.js';
+import { ZodError } from 'zod';
+import { handleZodError } from '../middleware/validation.js';
+import { logger } from '../utils/logger.js';
 
-const router = express.Router();
+export default function verificationRoutes(dbManager: typeof dbManager) {
+  const router = Router();
+  const verificationService = new VerificationService(dbManager);
+  const requireApiKey = createApiKeyAuthMiddleware(dbManager);
 
-/**
- * POST /api/v1/verification/verify
- * 验证API密钥
- */
-router.post('/verify', async (req, res) => {
-  try {
-    const request: VerifyRequest = req.body;
-    
-    // 验证请求参数
-    const validator = new ValidatorService();
-    const validationResult = validator.validateRequest(request);
-    
-    if (!validationResult.valid) {
-      return res.status(400).json({
-        status: 'failed',
-        error: 'Validation failed',
-        details: validationResult.errors
+  /**
+   * @openapi
+   * /api/v1/verification/verify:
+   *   post:
+   *     summary: 提交验证请求
+   *     description: 提交一个新的验证请求，用于检查用户的资格
+   *     security:
+   *       - ApiKeyAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               walletAddress:
+   *                 type: string
+   *                 description: 钱包地址
+   *               chainId:
+   *                 type: number
+   *                 description: 链ID
+   *               signature:
+   *                 type: string
+   *                 description: 签名
+   *               message:
+   *                 type: string
+   *                 description: 签名消息
+   *             required:
+   *               - walletAddress
+   *               - chainId
+   *               - signature
+   *               - message
+   *     responses:
+   *       200:
+   *         description: 验证请求已提交
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     id:
+   *                       type: string
+   *                     status:
+   *                       type: string
+   *       400:
+   *         description: 请求参数错误
+   *       401:
+   *         description: API密钥无效
+   */
+  router.post('/verification/verify', requireApiKey, async (req, res) => {
+    try {
+      const { walletAddress, chainId, signature, message } = req.body;
+      
+      // 调用验证服务处理验证请求
+      const result = await verificationService.processVerification({
+        walletAddress,
+        chainId,
+        signature,
+        message
+      });
+      
+      res.json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return handleZodError(error, res);
+      }
+      
+      logger.error('Verification error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
       });
     }
-
-    // 创建验证服务实例
-    const dbManager = req.app.get('dbManager') as typeof memoryDbManager;
-    const verificationService = new VerificationService(dbManager);
-    
-    // 执行验证
-    const response = await verificationService.verifyApiKey(request);
-    
-    // 返回响应
-    res.status(response.status === 'success' ? 200 : 400).json(response);
-    
-  } catch (error) {
-    console.error('Verification route error:', error);
-    res.status(500).json({
-      status: 'failed',
-      error: 'Internal server error',
-      sessionId: `sess_${Date.now()}`,
-      verifiedAt: new Date().toISOString()
-    });
-  }
-});
-
-/**
- * GET /api/v1/verification/result/:sessionId
- * 获取验证结果
- */
-router.get('/result/:sessionId', async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    
-    if (!sessionId) {
-      return res.status(400).json({
-        error: 'Session ID is required'
-      });
-    }
-
-    // 创建验证服务实例
-    const dbManager = req.app.get('dbManager') as typeof memoryDbManager;
-    const verificationService = new VerificationService(dbManager);
-    
-    // 获取验证结果
-    const result = await verificationService.getVerificationResult(sessionId);
-    
-    if (!result) {
-      return res.status(404).json({
-        error: 'Verification result not found'
-      });
-    }
-    
-    res.json(result);
-    
-  } catch (error) {
-    console.error('Get verification result error:', error);
-    res.status(500).json({
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * GET /api/v1/verification/history/:accountId
- * 获取验证历史
- */
-router.get('/history/:accountId', async (req, res) => {
-  try {
-    const { accountId } = req.params;
-    const { limit = '10' } = req.query;
-    
-    if (!accountId) {
-      return res.status(400).json({
-        error: 'Account ID is required'
-      });
-    }
-
-    // 创建验证服务实例
-    const dbManager = req.app.get('dbManager') as typeof memoryDbManager;
-    const verificationService = new VerificationService(dbManager);
-    
-    // 获取验证历史
-    const history = await verificationService.getVerificationHistory(
-      accountId, 
-      parseInt(limit as string)
-    );
-    
-    res.json({
-      accountId,
-      count: history.length,
-      history
-    });
-    
-  } catch (error) {
-    console.error('Get verification history error:', error);
-    res.status(500).json({
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * POST /api/v1/verification/validate
- * 验证请求参数（不执行实际验证）
- */
-router.post('/validate', async (req, res) => {
-  try {
-    const request: VerifyRequest = req.body;
-    
-    // 验证请求参数
-    const validator = new ValidatorService();
-    const validationResult = validator.validateRequest(request);
-    const securityCheck = validator.checkApiKeySecurity(request.apiKey);
-    const report = validator.generateValidationReport(request);
-    
-    res.json({
-      validation: validationResult,
-      security: securityCheck,
-      report
-    });
-    
-  } catch (error) {
-    console.error('Validation route error:', error);
-    res.status(500).json({
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
- * GET /api/v1/verification/supported-exchanges
- * 获取支持的交易所列表和字段配置
- */
-router.get('/supported-exchanges', (req, res) => {
-  try {
-    // 交易所字段定义（与前端保持一致）
-    const EXCHANGES_META = {
-      OKX: {
-        label: 'OKX',
-        fields: [
-          { key: 'apiKey', label: 'API Key', sensitive: true },
-          { key: 'apiSecret', label: 'API Secret', sensitive: true },
-          { key: 'passphrase', label: 'Passphrase', sensitive: true },
-        ],
-      },
-      Hyperliquid: {
-        label: 'Hyperliquid',
-        fields: [
-          { key: 'apiKey', label: 'API Key', sensitive: true },
-          { key: 'apiSecret', label: 'API Secret / Signing Key', sensitive: true },
-          { key: 'accountId', label: 'Account ID / SubAccount', sensitive: false },
-        ],
-      },
-      Binance: {
-        label: 'Binance',
-        fields: [
-          { key: 'apiKey', label: 'API Key', sensitive: true },
-          { key: 'apiSecret', label: 'API Secret', sensitive: true },
-        ],
-      },
-    } as const;
-    
-    res.json({
-      exchanges: Object.keys(EXCHANGES_META),
-      fields: EXCHANGES_META,
-      environments: ['live', 'testnet']
-    });
-    
-  } catch (error) {
-    console.error('Supported exchanges route error:', error);
-    res.status(500).json({
-      error: 'Internal server error'
-    });
-  }
-});
-
-export default (dbManager: typeof memoryDbManager) => {
-  // 将数据库管理器注入到请求对象中
-  router.use((req, res, next) => {
-    req.app.set('dbManager', dbManager);
-    next();
   });
-  
+
+  /**
+   * @openapi
+   * /api/v1/verification/result/{id}:
+   *   get:
+   *     summary: 获取验证结果
+   *     description: 根据验证ID获取验证结果
+   *     security:
+   *       - ApiKeyAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: 验证ID
+   *     responses:
+   *       200:
+   *         description: 返回验证结果
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     id:
+   *                       type: string
+   *                     status:
+   *                       type: string
+   *                     result:
+   *                       type: boolean
+   *                     reason:
+   *                       type: string
+   *       400:
+   *         description: 请求参数错误
+   *       401:
+   *         description: API密钥无效
+   *       404:
+   *         description: 验证记录未找到
+   */
+  router.get('/verification/result/:id', requireApiKey, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // 获取验证结果
+      const result = await verificationService.getVerificationResult(id);
+      
+      if (!result) {
+        return res.status(404).json({
+          success: false,
+          error: 'Verification not found'
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return handleZodError(error, res);
+      }
+      
+      logger.error('Get verification result error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+      });
+    }
+  });
+
+  /**
+   * @openapi
+   * /api/v1/verification/history:
+   *   get:
+   *     summary: 获取验证历史记录
+   *     description: 获取指定钱包地址的验证历史记录
+   *     security:
+   *       - ApiKeyAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: walletAddress
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: 钱包地址
+   *       - in: query
+   *         name: limit
+   *         required: false
+   *         schema:
+   *           type: integer
+   *           default: 10
+   *         description: 返回记录数量限制
+   *       - in: query
+   *         name: offset
+   *         required: false
+   *         schema:
+   *           type: integer
+   *           default: 0
+   *         description: 偏移量
+   *     responses:
+   *       200:
+   *         description: 返回验证历史记录
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       walletAddress:
+   *                         type: string
+   *                       status:
+   *                         type: string
+   *                       createdAt:
+   *                         type: string
+   *                         format: date-time
+   *       400:
+   *         description: 请求参数错误
+   *       401:
+   *         description: API密钥无效
+   */
+  router.get('/verification/history', requireApiKey, async (req, res) => {
+    try {
+      const { walletAddress, limit = '10', offset = '0' } = req.query as { 
+        walletAddress: string; 
+        limit?: string; 
+        offset?: string 
+      };
+      
+      // 获取验证历史记录
+      const history = await verificationService.getVerificationHistory(
+        walletAddress,
+        parseInt(limit),
+        parseInt(offset)
+      );
+      
+      res.json({
+        success: true,
+        data: history
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return handleZodError(error, res);
+      }
+      
+      logger.error('Get verification history error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+      });
+    }
+  });
+
   return router;
-};
+}

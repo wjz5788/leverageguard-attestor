@@ -1,144 +1,93 @@
-// 主应用文件
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import pino from 'pino';
-import pinoHttp from 'pino-http';
-import memoryDbManager from './database/memoryDb.js';
-import { requestIdMiddleware } from './middleware/requestId.js';
 import rateLimit from 'express-rate-limit';
-import { RateLimitError } from './types/errors.js';
+import { createHttpTerminator } from 'http-terminator';
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yamljs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import AuthService from './services/authService.js';
 import OrderService from './services/orderService.js';
 import ClaimsService from './services/claimsService.js';
 import PaymentProofService from './services/paymentProofService.js';
-import { LinkService } from './services/linkService.js';
-import { ContractListenerService } from './services/contractListenerService.js';
-import registerRoutes from './routes/index.js';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import LinkService from './services/linkService.js';
+import ContractListenerService from './services/contractListenerService.js';
+import { dbManager } from './database/db.js';
+import { registerRoutes } from './routes/index.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { requestLogger } from './middleware/requestLogger.js';
+import { setupSwagger } from './utils/swagger.js';
 
-// 创建Express应用
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
+const port = process.env.PORT || 3000;
 
-// 中间件配置
-app.use(requestIdMiddleware); // 请求ID
-app.use(helmet()); // 安全头
-app.use(compression()); // 压缩响应
+// 安全中间件
+app.use(helmet());
+app.use(cors());
+app.use(compression());
 
-// CORS 白名单（ALLOWED_ORIGINS=逗号分隔；为空或*表示全放行，仅建议在开发使用）
-const origins = (process.env.ALLOWED_ORIGINS || '').trim();
-if (!origins || origins === '*') {
-  app.use(cors());
-} else {
-  const allow = origins.split(',').map(s => s.trim()).filter(Boolean);
-  app.use(cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // 非浏览器请求
-      cb(null, allow.includes(origin));
-    },
-    credentials: true,
-  }));
-}
-app.use(express.json({ limit: '10mb' })); // JSON解析
-app.use(express.urlencoded({ extended: true })); // URL编码解析
+// 请求限流
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分钟
+  max: 100 // 限制每个IP 15分钟内最多100个请求
+});
+app.use(limiter);
 
-// 结构化日志（替代 morgan），贯穿 requestId
-if (process.env.NODE_ENV !== 'test') {
-  const isDev = process.env.NODE_ENV !== 'production';
-  const logger = pino({
-    level: process.env.LOG_LEVEL || 'info',
-    transport: isDev ? { target: 'pino-pretty', options: { colorize: true } } : undefined,
-  });
-  app.use(pinoHttp({
-    logger,
-    customProps: (_req: any, res: any) => ({ requestId: (res.locals || {}).requestId }),
-  }));
+// 解析中间件
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// 日志中间件
+app.use(requestLogger);
+
+// Swagger 文档
+try {
+  const swaggerDocument = YAML.load(path.join(__dirname, '../docs/swagger.yaml'));
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+} catch (error) {
+  console.warn('警告: 无法加载Swagger文档:', error);
 }
 
-// 防重放中间件（保护所有非GET请求）
-import { replayProtection } from './middleware/replayProtection.js';
-app.use(replayProtection);
-
-// 速率限制（仅应用于写请求）
-const writeLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (_req, _res, next) => {
-    // 将 429 交由统一错误处理
-    // Retry-After 由错误处理中间件根据 details 自动设置
-    next(new RateLimitError('请求过于频繁，请稍后重试', 60));
-  },
-});
-app.use((req, res, next) => {
-  if (req.method === 'GET' || req.method === 'OPTIONS' || req.method === 'HEAD') return next();
-  return (writeLimiter as any)(req, res, next);
-});
-
-// 初始化依赖
+// 初始化服务
 const authService = new AuthService();
 const orderService = new OrderService();
-const claimsService = new ClaimsService(orderService);
+const claimsService = new ClaimsService();
 const paymentProofService = new PaymentProofService();
 const linkService = new LinkService();
-const contractListenerService = new ContractListenerService(orderService);
+const contractListenerService = new ContractListenerService();
 
-// 路由配置
-registerRoutes(app, { dbManager: memoryDbManager, authService, orderService, claimsService, paymentProofService, linkService, contractListenerService });
+// 注册路由
+registerRoutes(app, { dbManager, authService, orderService, claimsService, paymentProofService, linkService, contractListenerService });
 
-// 提供 OpenAPI 文档（静态文件）
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-app.get('/openapi.json', (_req, res) => {
-  res.sendFile(join(__dirname, '..', 'openapi.json'));
-});
-
-// 注入依赖到应用实例
-app.set('dbManager', memoryDbManager);
-app.set('authService', authService);
-app.set('orderService', orderService);
-app.set('claimsService', claimsService);
-app.set('paymentProofService', paymentProofService);
-app.set('linkService', linkService);
-app.set('contractListenerService', contractListenerService);
-
-// 根路由
-app.get('/', (req, res) => {
-  res.json({
-    message: 'LiqPass API Server',
-    version: '1.0.0',
-    endpoints: {
-      verification: '/api/v1/verification',
-      health: '/api/v1/health',
-      verify: '/api/v1/verify',
-      auth: '/api/v1/auth',
-      account: '/api/v1/account'
-    }
-  });
-});
-
-// 404处理
-app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Route not found',
-    path: req.originalUrl
-  });
-});
+// 将数据库管理器附加到应用上
+app.set('dbManager', dbManager);
 
 // 错误处理中间件
-import { createErrorHandlers, notFoundHandler } from './middleware/errorHandler.js';
+app.use(errorHandler);
 
-// 404处理
-app.use(notFoundHandler);
+// 启动服务器
+const server = app.listen(port, () => {
+  console.log(`🚀 US Backend listening at http://localhost:${port}`);
+  console.log(`📖 API Docs available at http://localhost:${port}/api-docs`);
+});
 
-// 统一错误处理链
-app.use(createErrorHandlers({
-  includeStackTrace: process.env.NODE_ENV === 'development',
-  logErrors: true,
-  exposeErrors: process.env.NODE_ENV === 'development',
-}));
+// 优雅关闭
+const httpTerminator = createHttpTerminator({ server });
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  await httpTerminator.terminate();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, shutting down gracefully...');
+  await httpTerminator.terminate();
+  process.exit(0);
+});
 
 export default app;

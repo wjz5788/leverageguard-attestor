@@ -1,6 +1,6 @@
 // 验证服务V2路由 - 支持多种交易所的订单验证接口
 import express from 'express';
-import memoryDbManager from '../database/memoryDb.js';
+import { dbManager } from '../database/db.js';
 import VerificationService from '../services/verificationService.js';
 import { VerifyRequest, VerifyResponse } from '../types/index.js';
 
@@ -31,7 +31,6 @@ router.post('/:exchange', async (req, res) => {
     }
 
     // 创建验证服务实例
-    const dbManager = req.app.get('dbManager') as typeof memoryDbManager;
     const verificationService = new VerificationService(dbManager);
     
     // 执行验证
@@ -66,7 +65,6 @@ router.get('/result/:sessionId', async (req, res) => {
     }
 
     // 创建验证服务实例
-    const dbManager = req.app.get('dbManager') as typeof memoryDbManager;
     const verificationService = new VerificationService(dbManager);
     
     // 获取验证结果
@@ -104,7 +102,6 @@ router.get('/history/:accountId', async (req, res) => {
     }
 
     // 创建验证服务实例
-    const dbManager = req.app.get('dbManager') as typeof memoryDbManager;
     const verificationService = new VerificationService(dbManager);
     
     // 获取验证历史
@@ -203,7 +200,6 @@ router.post('/batch', async (req, res) => {
       });
     }
 
-    const dbManager = req.app.get('dbManager') as typeof memoryDbManager;
     const verificationService = new VerificationService(dbManager);
     
     // 并行执行验证
@@ -243,7 +239,7 @@ router.post('/batch', async (req, res) => {
   }
 });
 
-export default (dbManager: typeof memoryDbManager) => {
+export default (dbManager: typeof dbManager) => {
   // 将数据库管理器注入到请求对象中
   router.use((req, res, next) => {
     req.app.set('dbManager', dbManager);

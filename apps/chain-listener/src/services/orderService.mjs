@@ -2,7 +2,7 @@
 import sqlite3 from 'sqlite3';
 import { JsonRpcProvider } from 'ethers';
 
-const CONFIRMATIONS = 12;
+const CONFIRMATIONS = 3;
 
 export function createOrderService(dbPath = './db/liqpass.sqlite') {
   const db = new sqlite3.Database(dbPath);

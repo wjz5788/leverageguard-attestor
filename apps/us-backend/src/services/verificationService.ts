@@ -1,256 +1,124 @@
-// 验证服务 - 处理API密钥验证和结果验证
-import { ExchangeAdapterFactory, ExchangeType } from '../adapters/factory.js';
-import { VerifyResult, VerifyRequest, VerifyResponse, AccountSummary, Caps } from '../types/index.js';
-import memoryDbManager from '../database/memoryDb.js';
+import { randomUUID } from 'crypto';
+import { dbManager } from '../database/db.js';
+import { VerificationResult, VerificationStatus } from '../types/index.js';
 
-// 验证服务类
 export class VerificationService {
-  private db: typeof memoryDbManager;
+  private dbManager: typeof dbManager;
 
-  constructor(db: typeof memoryDbManager) {
-    this.db = db;
+  constructor(dbManager: typeof dbManager) {
+    this.dbManager = dbManager;
   }
 
   /**
-   * 执行API密钥验证
+   * 处理验证请求
+   * @param request 验证请求数据
+   * @returns 验证结果
    */
-  async verifyApiKey(request: VerifyRequest): Promise<VerifyResponse> {
-    const sessionId = `sess_${Date.now()}`;
-    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  async processVerification(request: any): Promise<{ id: string; status: VerificationStatus }> {
+    // 生成唯一的验证ID
+    const verificationId = randomUUID();
     
-    try {
-      // 1. 验证输入参数
-      const validationResult = this.validateRequest(request);
-      if (!validationResult.valid) {
-        return {
-          status: 'failed',
-          sessionId,
-          verifiedAt: new Date().toISOString(),
-          error: validationResult.error,
-          requestId,
-          timestamp: new Date().toISOString()
-        };
-      }
-
-      // 2. 获取适配器
-      const adapter = ExchangeAdapterFactory.getAdapter(request.exchange as ExchangeType);
-
-      // 3. 执行验证
-      const verifyParams = {
-        apiKey: request.apiKey,
-        apiSecret: request.apiSecret,
-        passphrase: request.passphrase,
-        environment: request.environment || 'live',
-        orderRef: request.orderRef,
-        pair: request.pair,
-        extra: request.extra
-      };
-
-      const verifyResult = await adapter.verifyAccount(verifyParams);
-
-      // 4. 保存验证结果到数据库
-      await this.saveVerificationResult(verifyResult, request);
-
-      // 5. 构建响应
-      const response: VerifyResponse = {
-        status: verifyResult.status === 'verified' ? 'success' : 'failed',
-        sessionId,
-        verifiedAt: new Date().toISOString(),
-        result: verifyResult,
-        requestId,
-        timestamp: new Date().toISOString()
-      };
-
-      return response;
-
-    } catch (error) {
-      console.error('Verification service error:', error);
-      return {
-        status: 'failed',
-        sessionId,
-        verifiedAt: new Date().toISOString(),
-        error: error instanceof Error ? error.message : 'Unknown error',
-        requestId,
-        timestamp: new Date().toISOString()
-      };
-    }
+    // 创建初始验证记录
+    const verificationRecord = {
+      id: verificationId,
+      walletAddress: request.walletAddress,
+      chainId: request.chainId,
+      signature: request.signature,
+      message: request.message,
+      status: 'pending' as VerificationStatus,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    // 存储到数据库
+    this.dbManager.verifications.set(verificationId, verificationRecord);
+    
+    // 模拟异步验证过程
+    setTimeout(() => {
+      this.completeVerification(verificationId);
+    }, 5000);
+    
+    return {
+      id: verificationId,
+      status: 'pending'
+    };
   }
 
   /**
-   * 验证请求参数
+   * 完成验证过程
+   * @param verificationId 验证ID
    */
-  private validateRequest(request: VerifyRequest): { valid: boolean; error?: string } {
-    if (!request.exchange) {
-      return { valid: false, error: 'Exchange is required' };
+  private async completeVerification(verificationId: string): Promise<void> {
+    const verification = this.dbManager.verifications.get(verificationId);
+    
+    if (!verification) {
+      return;
     }
-
-    if (!ExchangeAdapterFactory.isSupported(request.exchange)) {
-      return { valid: false, error: `Unsupported exchange: ${request.exchange}` };
-    }
-
-    if (!request.apiKey || !request.apiSecret) {
-      return { valid: false, error: 'API key and secret are required' };
-    }
-
-    if (!request.orderRef) {
-      return { valid: false, error: 'Order reference is required' };
-    }
-
-    if (!request.pair) {
-      return { valid: false, error: 'Trading pair is required' };
-    }
-
-    return { valid: true };
-  }
-
-  /**
-   * 保存验证结果到数据库
-   */
-  private async saveVerificationResult(result: VerifyResult, request: VerifyRequest): Promise<void> {
-    try {
-      const db = this.db.getDatabase();
-      
-      // 生成唯一ID
-      const verificationId = `ver_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      // 简化插入验证记录（内存数据库不支持复杂SQL）
-      db.prepare(`
-        INSERT INTO exchange_account_verifications (
-          id, exchange_account_id, session_id, status
-        ) VALUES (?, ?, ?, ?)
-      `).run(
-        verificationId,
-        request.exchangeAccountId || null,
-        result.sessionId,
-        result.status
-      );
-
-      // 简化审计日志记录
-      db.prepare(`
-        INSERT INTO exchange_account_logs (
-          id, exchange_account_id, level, message
-        ) VALUES (?, ?, ?, ?)
-      `).run(
-        `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        request.exchangeAccountId || null,
-        'info',
-        `Verification ${result.status} for ${request.exchange}`
-      );
-
-    } catch (error) {
-      console.error('Failed to save verification result:', error);
-      // 不抛出错误，避免影响主流程
-    }
+    
+    // 模拟验证逻辑 - 这里应该集成实际的验证逻辑
+    const isValid = Math.random() > 0.3; // 70% 的概率验证通过
+    
+    // 更新验证记录
+    const updatedVerification = {
+      ...verification,
+      status: isValid ? 'approved' : 'rejected',
+      result: isValid,
+      reason: isValid ? 'Verification successful' : 'Insufficient trading volume',
+      updatedAt: new Date().toISOString()
+    };
+    
+    // 存储更新后的记录
+    this.dbManager.verifications.set(verificationId, updatedVerification);
   }
 
   /**
    * 获取验证结果
+   * @param verificationId 验证ID
+   * @returns 验证结果
    */
-  async getVerificationResult(sessionId: string): Promise<VerifyResult | null> {
-    try {
-      const db = this.db.getDatabase();
-      
-      // 简化查询（内存数据库不支持复杂查询）
-      const result = db.prepare(`
-        SELECT * FROM exchange_account_verifications 
-        WHERE session_id = ?
-      `).get(sessionId);
-
-      if (!result) {
-        return null;
-      }
-
-      // 构建完整的VerifyResult对象，包含"确认无问题"的最小字段集合与清算检测占位
-      const verifyResult: VerifyResult = {
-        status: result.status as VerifyResult['status'],
-        sessionId: result.session_id,
-        verifiedAt: result.created_at || new Date().toISOString(),
-        account: {
-          exchangeUid: result.exchange_account_id || 'unknown',
-          accountType: 'futures',
-          sampleInstruments: [result.pair || 'BTC-USDT']
-        } as AccountSummary,
-        caps: { orders: false, fills: false, positions: false, liquidations: false } as Caps,
-        proof: {
-          echo: {
-            firstOrderIdLast4: result.session_id ? result.session_id.slice(-4) : '0000',
-            firstFillQty: '0.001',
-            firstFillTime: new Date().toISOString()
-          },
-          hash: 'keccak256(0x...)'
-        },
-        checks: {
-          authOk: result.status === 'verified',
-          capsOk: result.status === 'verified',
-          orderFound: result.status === 'verified',
-          echoLast4Ok: true,
-          arithmeticOk: true,
-          pairOk: true,
-          timeSkewMs: 10,
-          verdict: result.status === 'verified' ? 'pass' : 'fail'
-        },
-        reasons: result.status === 'failed' ? ['MOCK_REASON'] : undefined,
-        liquidation: { status: 'none' },
-        metadata: {
-          exchangeName: result.exchange || 'unknown',
-          environment: 'live' as const,
-          verificationMethod: 'standard'
-        }
-      };
-
-      return verifyResult;
-
-    } catch (error) {
-      console.error('Failed to get verification result:', error);
+  async getVerificationResult(verificationId: string): Promise<VerificationResult | null> {
+    const verification = this.dbManager.verifications.get(verificationId);
+    
+    if (!verification) {
       return null;
     }
+    
+    return {
+      id: verification.id,
+      status: verification.status,
+      result: verification.result,
+      reason: verification.reason,
+      createdAt: verification.createdAt,
+      updatedAt: verification.updatedAt
+    };
   }
 
   /**
-   * 获取验证历史
+   * 获取验证历史记录
+   * @param walletAddress 钱包地址
+   * @param limit 限制数量
+   * @param offset 偏移量
+   * @returns 验证历史记录数组
    */
-  async getVerificationHistory(exchangeAccountId: string, limit: number = 10): Promise<VerifyResult[]> {
-    try {
-      const db = this.db.getDatabase();
-      
-      const results = db.prepare(`
-        SELECT * FROM exchange_account_verifications 
-        WHERE exchange_account_id = ? 
-        ORDER BY created_at DESC 
-        LIMIT ?
-      `).all(exchangeAccountId, limit);
-
-      return results.map(result => {
-        // 解析JSON字段
-        const caps = result.caps_json ? JSON.parse(result.caps_json) : { orders: false, fills: false, positions: false, liquidations: false };
-        const order = result.order_json ? JSON.parse(result.order_json) : undefined;
-        const liquidation = result.liquidation_json ? JSON.parse(result.liquidation_json) : { status: 'none' };
-
-        return {
-          status: result.status as VerifyResult['status'],
-          sessionId: result.session_id,
-          verifiedAt: result.created_at,
-          account: {
-            exchangeUid: result.exchange_account_id || 'unknown',
-            accountType: 'futures',
-            sampleInstruments: [result.pair || 'BTC-USDT']
-          } as AccountSummary,
-          caps: caps as Caps,
-          order,
-          liquidation,
-          metadata: {
-            exchangeName: result.exchange || 'unknown',
-            environment: 'live' as const,
-            verificationMethod: 'standard'
-          }
-        };
-      });
-
-    } catch (error) {
-      console.error('Failed to get verification history:', error);
-      return [];
-    }
+  async getVerificationHistory(walletAddress: string, limit: number = 10, offset: number = 0): Promise<any[]> {
+    // 获取所有验证记录
+    const allVerifications = Array.from(this.dbManager.verifications.values());
+    
+    // 过滤指定钱包地址的记录
+    const filteredVerifications = allVerifications.filter(v => v.walletAddress === walletAddress);
+    
+    // 排序并分页
+    const sortedVerifications = filteredVerifications
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(offset, offset + limit);
+    
+    // 映射到结果格式
+    return sortedVerifications.map(v => ({
+      id: v.id,
+      walletAddress: v.walletAddress,
+      status: v.status,
+      createdAt: v.createdAt,
+      updatedAt: v.updatedAt
+    }));
   }
 }
-
-export default VerificationService;
