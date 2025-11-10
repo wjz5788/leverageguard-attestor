@@ -9,6 +9,7 @@
     "build": "tsc",
     "prestart": "node scripts/envCheck.mjs",
     "start": "node dist/server.js",
+    "env:check": "node scripts/envCheck.mjs",
     "test": "vitest",
     "test:watch": "vitest --watch"
   },

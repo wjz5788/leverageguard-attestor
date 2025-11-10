@@ -106,8 +106,21 @@ export class DatabaseManager {
   }
 }
 
-// 创建全局数据库实例
-const dbManager = new DatabaseManager(process.env.DB_URL || './data/liqpass.db');
+// 创建全局数据库实例（新键 DB_FILE，兼容旧键 DB_URL）
+let resolvedDbPath = (process.env.DB_FILE || '').trim();
+if (!resolvedDbPath) {
+  if (process.env.DB_URL) {
+    const deadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const mm = String(deadline.getMonth() + 1).padStart(2, '0');
+    const dd = String(deadline.getDate()).padStart(2, '0');
+    console.warn(`⚠️  [Compat] 使用旧键 DB_URL，建议切换到 DB_FILE（将在 ${deadline.getFullYear()}-${mm}-${dd} 后移除）`);
+    resolvedDbPath = process.env.DB_URL.trim();
+  } else {
+    resolvedDbPath = './data/liqpass.db';
+  }
+}
+
+const dbManager = new DatabaseManager(resolvedDbPath);
 
 export const db = dbManager.getDatabase();
 export default dbManager;
