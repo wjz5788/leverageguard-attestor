@@ -66,4 +66,19 @@ describe('normalizePremiumUSDCFields', () => {
     expect(normalizePremiumUSDCFields(123 as any)).toBe(123);
     expect(normalizePremiumUSDCFields(null as any)).toBeNull();
   });
+
+  it('should skip conversion when premiumUSDC cannot be parsed', () => {
+    const payload = {
+      premiumUSDC: 'abc',
+      nested: {
+        premiumUSDC: '',
+      },
+    };
+
+    const result = normalizePremiumUSDCFields(structuredClone(payload));
+
+    expect(result).toEqual({
+      nested: {},
+    });
+  });
 });

@@ -1,6 +1,6 @@
 import { toUSDC6d } from './usdcUtils.ts';
 
-type JsonValue =
+export type JsonValue =
   | string
   | number
   | boolean
@@ -28,8 +28,15 @@ function transformPremiumUSDC(value: JsonValue): JsonValue {
     const record = value as Record<string, JsonValue>;
 
     if (Object.prototype.hasOwnProperty.call(record, 'premiumUSDC')) {
-      if (!Object.prototype.hasOwnProperty.call(record, 'premiumUSDC_6d')) {
-        record.premiumUSDC_6d = String(toUSDC6d(record.premiumUSDC as number | string));
+      // 只有当 premiumUSDC_6d 不存在或为空时才进行转换
+      if (!Object.prototype.hasOwnProperty.call(record, 'premiumUSDC_6d') || 
+          record.premiumUSDC_6d === null || 
+          record.premiumUSDC_6d === undefined ||
+          record.premiumUSDC_6d === '') {
+        const normalized = tryNormalizePremiumUSDC(record.premiumUSDC);
+        if (normalized !== undefined) {
+          record.premiumUSDC_6d = normalized;
+        }
       }
       delete record.premiumUSDC;
     }
@@ -51,4 +58,33 @@ function transformPremiumUSDC(value: JsonValue): JsonValue {
   }
 
   return value;
+}
+
+function tryNormalizePremiumUSDC(value: JsonValue | undefined): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return undefined;
+    }
+    return String(toUSDC6d(value));
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+
+    const numericValue = Number(trimmed);
+    if (!Number.isFinite(numericValue)) {
+      return undefined;
+    }
+
+    return String(toUSDC6d(numericValue));
+  }
+
+  return undefined;
 }
