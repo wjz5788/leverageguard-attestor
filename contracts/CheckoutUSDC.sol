@@ -86,7 +86,28 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
     /// @notice 验证USDC金额是否有效（6位精度，步长1e-6）
     /// @param amount 要验证的金额
     function isValidAmount(uint256 amount) public pure returns (bool) {
-        return amount > 0 && amount % (10 ** USDC_DECIMALS) == 0;
+        // 检查金额大于0
+        if (amount == 0) return false;
+        
+        // 检查金额不超过最大安全值（防止溢出）
+        if (amount > type(uint128).max) return false;
+        
+        // 检查精度：金额必须是1e6的整数倍
+        return amount % (10 ** USDC_DECIMALS) == 0;
+    }
+    
+    /// @notice 验证并标准化USDC金额
+    /// @param amount 要验证的金额
+    function validateAndNormalizeAmount(uint256 amount) public pure returns (uint256) {
+        require(isValidAmount(amount), "invalid amount");
+        
+        // 标准化金额：去除可能的尾随零
+        uint256 normalizedAmount = amount / (10 ** USDC_DECIMALS) * (10 ** USDC_DECIMALS);
+        
+        // 确保标准化后金额不变
+        require(normalizedAmount == amount, "amount normalization failed");
+        
+        return normalizedAmount;
     }
 
     /// @notice 用户先对 USDC 执行 approve(CheckoutUSDC, amount)，再调用本函数完成支付
@@ -101,8 +122,8 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
         // 验证订单是否已处理
         require(!orderProcessed[orderId], "order already processed");
         
-        // 验证金额有效性
-        require(isValidAmount(amount), "invalid amount");
+        // 验证并标准化金额
+        uint256 normalizedAmount = validateAndNormalizeAmount(amount);
         
         // 验证quoteHash有效性
         require(isValidQuoteHash(quoteHash), "invalid or expired quote hash");
@@ -115,13 +136,13 @@ contract CheckoutUSDC is Ownable, Pausable, ReentrancyGuard {
         orderProcessed[orderId] = true;
         
         // 直接转入金库，不在合约囤资
-        USDC.safeTransferFrom(msg.sender, treasury, amount);
+        USDC.safeTransferFrom(msg.sender, treasury, normalizedAmount);
         
         // 发出支付事件
         emit PremiumPaid(
             orderId,
             msg.sender,
-            amount,
+            normalizedAmount,
             quoteHash,
             address(USDC),
             treasury,

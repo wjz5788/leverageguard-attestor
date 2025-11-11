@@ -29,7 +29,29 @@ const port = process.env.PORT || 3000;
 
 // 安全中间件
 app.use(helmet());
-app.use(cors());
+
+// CORS配置 - 严格白名单
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // 允许无origin的请求（如移动应用或服务器间调用）
+    if (!origin) return callback(null, true);
+    
+    // 从环境变量获取允许的来源
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+    
+    // 检查来源是否在白名单中
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS阻止了来源: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+};
+app.use(cors(corsOptions));
 app.use(compression());
 
 // 请求限流
