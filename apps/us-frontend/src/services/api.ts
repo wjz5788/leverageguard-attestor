@@ -4,10 +4,7 @@
  */
 
 import { getEnv } from '../env.ts';
-import {
-  normalizePremiumUSDCFields,
-  type JsonValue,
-} from '../lib/premiumUSDCTransform.ts';
+import { toUSDC6d } from '../lib/usdcUtils.ts';
 
 // API响应类型定义
 export interface ApiResponse<T = any> {
@@ -147,53 +144,6 @@ async function fetchWithRetry(
   }
 }
 
-function normalizeFormDataPremiumFields(formData: FormData): void {
-  const premiumUSDCEntries = formData.getAll('premiumUSDC');
-  if (premiumUSDCEntries.length > 0) {
-    formData.delete('premiumUSDC');
-  }
-
-  const convertedPremium6d: string[] = [];
-
-  premiumUSDCEntries.forEach(value => {
-    if (typeof value !== 'string') {
-      return;
-    }
-
-    const normalized = normalizePremiumUSDCFields({
-      premiumUSDC: value,
-    } as Record<string, JsonValue>) as Record<string, JsonValue>;
-
-    const micro = normalized.premiumUSDC_6d;
-    if (typeof micro === 'string') {
-      convertedPremium6d.push(micro);
-    }
-  });
-
-  const existingPremium6d = formData.getAll('premiumUSDC_6d');
-  if (existingPremium6d.length > 0 || convertedPremium6d.length > 0) {
-    formData.delete('premiumUSDC_6d');
-  }
-
-  existingPremium6d.forEach(value => {
-    if (typeof value === 'string') {
-      formData.append('premiumUSDC_6d', value);
-      return;
-    }
-
-    if (typeof Blob !== 'undefined' && value instanceof Blob) {
-      formData.append('premiumUSDC_6d', value);
-      return;
-    }
-
-    formData.append('premiumUSDC_6d', String(value));
-  });
-
-  convertedPremium6d.forEach(value => {
-    formData.append('premiumUSDC_6d', value);
-  });
-}
-
 // 主API服务类
 class ApiService {
   private baseUrl: string;
@@ -235,18 +185,20 @@ class ApiService {
   private async request<T>(endpoint: string, config: RequestConfig): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const finalConfig = { ...DEFAULT_CONFIG, ...config };
-
+    
     // 创建请求头
     finalConfig.headers = createHeaders(finalConfig);
-
+    
     // 处理请求体，转换premiumUSDC字段
-    if (finalConfig.body instanceof FormData) {
-      normalizeFormDataPremiumFields(finalConfig.body);
-    } else if (finalConfig.body && typeof finalConfig.body === 'string') {
+    if (finalConfig.body && typeof finalConfig.body === 'string') {
       try {
         const body = JSON.parse(finalConfig.body);
-        const transformed = normalizePremiumUSDCFields(body);
-        finalConfig.body = JSON.stringify(transformed);
+        // 如果请求体包含premiumUSDC字段，转换为premiumUSDC_6d
+        if (body.premiumUSDC !== undefined && body.premiumUSDC_6d === undefined) {
+          body.premiumUSDC_6d = String(toUSDC6d(body.premiumUSDC));
+          delete body.premiumUSDC; // 删除旧字段
+          finalConfig.body = JSON.stringify(body);
+        }
       } catch (e) {
         // 如果解析失败，保持原样
       }
@@ -326,12 +278,8 @@ class ApiService {
     formData.append('file', file);
     
     if (additionalData) {
-      const normalizedAdditionalData = normalizePremiumUSDCFields(
-        additionalData as unknown as JsonValue
-      ) as Record<string, JsonValue>;
-
-      Object.keys(normalizedAdditionalData).forEach(key => {
-        formData.append(key, normalizedAdditionalData[key] as any);
+      Object.keys(additionalData).forEach(key => {
+        formData.append(key, additionalData[key]);
       });
     }
     
