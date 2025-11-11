@@ -22,6 +22,7 @@ import apiKeysRoutes from './apiKeys.js';
 import pricingRoutes from './pricing.js';
 import voucherRoutes from './voucher.js';
 import verificationV2Routes from './verification-v2.js';
+import transparencyRoutes from './transparency.js';
 
 export interface RouteDependencies {
   dbManager: typeof dbManager;
@@ -53,5 +54,6 @@ export default function registerRoutes(app: express.Application, deps: RouteDepe
   app.use('/api/v1/api-keys', requireAuth, apiKeysRoutes);
   app.use('/api/v1/pricing', pricingRoutes);
   app.use('/api/v1/voucher', voucherRoutes);
+  app.use('/api/v1/transparency', transparencyRoutes(orderService, claimsService, paymentProofService));
   app.use('/api/v2/verify', verificationV2Routes(dbManager));
 }

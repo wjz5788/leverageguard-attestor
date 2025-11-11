@@ -187,7 +187,16 @@ export default function TransparencyPage() {
   const [distribution, setDistribution] = useState<{ buckets: any[] }>({ buckets: [] });
   const [events, setEvents] = useState<any[]>([]);
   const [audit, setAudit] = useState<any>(null);
-  const hasAudit = useMemo(() => Boolean(audit && ((audit.contracts && audit.contracts.length) || audit.docHash || (audit.evidenceRoots && audit.evidenceRoots.length))), [audit]);
+  const hasAudit = useMemo(
+    () => Boolean(
+      audit && (
+        (audit.contracts && audit.contracts.length) ||
+        audit.docHash ||
+        (audit.evidenceRoots && audit.evidenceRoots.length)
+      )
+    ),
+    [audit]
+  );
   const [auditOpen, setAuditOpen] = useState(false);
 
   async function loadAll() {
@@ -293,6 +302,19 @@ export default function TransparencyPage() {
           </div>
         </div>
 
+        {err && (
+          <ErrorMessage
+            message={err}
+            requestId={errorRequestId || undefined}
+            onRetry={loadAll}
+            className="mb-4"
+          />
+        )}
+
+        {loading && (
+          <LoadingSpinner size="md" className="mb-6" text="透明度数据加载中..." />
+        )}
+
         {/* 顶部KPI */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
           {kpis.map((k, idx) => (
@@ -349,7 +371,7 @@ export default function TransparencyPage() {
           </div>
 
           {/* 仪表 */}
-          <div className={`rounded-2xl border bg-white/70 p-4 shadow-sm ${hasAudit ? "" : "hidden"}`}>
+          <div className="rounded-2xl border bg-white/70 p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-2"><Gauge size={16} /><span className="font-medium">金库充足度</span></div>
             {gauge.pct === null ? (
               <div className="text-sm text-stone-500">后端未提供 requiredReserve，暂不显示。可在 /transparency/overview 增加字段。</div>
@@ -367,13 +389,6 @@ export default function TransparencyPage() {
                 </div>
                 <div className="mt-1 text-xs text-stone-500">{gauge.state === "ok" ? "ok ≥ 100%" : gauge.state === "warn" ? "warn 70–100%" : "critical < 70%"}</div>
               </div>
-            )}
-            {err && (
-              <ErrorMessage 
-                error={new Error(err)} 
-                requestId={errorRequestId}
-                onRetry={loadAll}
-              />
             )}
           </div>
         </div>
@@ -410,45 +425,49 @@ export default function TransparencyPage() {
 
           <div className="lg:col-span-2 rounded-2xl border bg-white/70 p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-2"><Clock size={16} /><span className="font-medium">最近上链事件（20条）</span></div>
-            <div className="overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-stone-500">
-                    <th className="py-2 pr-4">时间(UTC)</th>
-                    <th className="py-2 pr-4">事件</th>
-                    <th className="py-2 pr-4">金额</th>
-                    <th className="py-2 pr-4">指纹</th>
-                    <th className="py-2 pr-4">tx</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {events.map((e, i) => (
-                    <tr key={i} className="border-t">
-                      <td className="py-2 pr-4 whitespace-nowrap">{new Date(e.ts_utc).toISOString().replace(".000Z", "Z")}</td>
-                      <td className="py-2 pr-4">{mapEventType(e.type)}</td>
-                      <td className="py-2 pr-4">{fmtUSDCCompat(e.amount_usdc)}</td>
-                      <td className="py-2 pr-4 font-mono">{(e.order_digest || e.orderDigest || "——").toString().slice(-6)}</td>
-                      <td className="py-2 pr-4">
-                        {e.tx_hash ? (
-                          <a className="inline-flex items-center gap-1 text-blue-600 hover:underline" href={BASESCAN_TX(e.tx_hash)} target="_blank" rel="noreferrer">
-                            查看 <ExternalLink size={14} />
-                          </a>
-                        ) : (
-                          <span className="text-stone-400">-</span>
-                        )}
-                      </td>
+            {events.length === 0 ? (
+              <div className="py-6 text-sm text-stone-500">暂无上链事件。</div>
+            ) : (
+              <div className="overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-stone-500">
+                      <th className="py-2 pr-4">时间(UTC)</th>
+                      <th className="py-2 pr-4">事件</th>
+                      <th className="py-2 pr-4">金额</th>
+                      <th className="py-2 pr-4">指纹</th>
+                      <th className="py-2 pr-4">tx</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {events.map((e, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="py-2 pr-4 whitespace-nowrap">{new Date(e.ts_utc).toISOString().replace(".000Z", "Z")}</td>
+                        <td className="py-2 pr-4">{mapEventType(e.type)}</td>
+                        <td className="py-2 pr-4">{fmtUSDCCompat(e.amount_usdc)}</td>
+                        <td className="py-2 pr-4 font-mono">{(e.order_digest || e.orderDigest || "——").toString().slice(-6)}</td>
+                        <td className="py-2 pr-4">
+                          {e.tx_hash ? (
+                            <a className="inline-flex items-center gap-1 text-blue-600 hover:underline" href={BASESCAN_TX(e.tx_hash)} target="_blank" rel="noreferrer">
+                              查看 <ExternalLink size={14} />
+                            </a>
+                          ) : (
+                            <span className="text-stone-400">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
 
         {/* 审计块 */}
         <div className="rounded-2xl border bg-white/70 p-4 shadow-sm">
           <div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><ShieldCheck size={16} /><span className="font-medium">审计信息</span></div><button onClick={() => setAuditOpen(v => !v)} className="text-sm inline-flex items-center gap-1 text-blue-600 hover:underline">{auditOpen ? <>收起<ChevronDown size={14} /></> : <>展开<ChevronRight size={14} /></>}</button></div>
-          {auditOpen && audit && (
+          {auditOpen && hasAudit && audit && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <div className="text-sm text-stone-500 mb-1">合约地址 · 链</div>
@@ -481,6 +500,9 @@ export default function TransparencyPage() {
                 </ul>
               </div>
             </div>
+          )}
+          {auditOpen && !hasAudit && (
+            <div className="text-sm text-stone-500">暂未配置审计信息。</div>
           )}
         </div>
 
