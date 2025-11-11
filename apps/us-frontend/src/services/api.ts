@@ -4,7 +4,7 @@
  */
 
 import { getEnv } from '../env.ts';
-import { toUSDC6d } from '../lib/usdcUtils.ts';
+import { normalizePremiumUSDCFields } from '../lib/premiumUSDCTransform.ts';
 
 // API响应类型定义
 export interface ApiResponse<T = any> {
@@ -193,12 +193,8 @@ class ApiService {
     if (finalConfig.body && typeof finalConfig.body === 'string') {
       try {
         const body = JSON.parse(finalConfig.body);
-        // 如果请求体包含premiumUSDC字段，转换为premiumUSDC_6d
-        if (body.premiumUSDC !== undefined && body.premiumUSDC_6d === undefined) {
-          body.premiumUSDC_6d = String(toUSDC6d(body.premiumUSDC));
-          delete body.premiumUSDC; // 删除旧字段
-          finalConfig.body = JSON.stringify(body);
-        }
+        const transformed = normalizePremiumUSDCFields(body);
+        finalConfig.body = JSON.stringify(transformed);
       } catch (e) {
         // 如果解析失败，保持原样
       }
