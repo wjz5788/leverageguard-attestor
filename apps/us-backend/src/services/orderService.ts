@@ -19,9 +19,20 @@ export interface OrderServiceOptions {
 type QuoteStorageRecord = QuotePreview & { consumed: boolean };
 
 // 获取经过校验的支付配置
-const getValidatedPaymentConfig = (): PaymentConfig => {
+const buildValidatedPaymentConfig = (): PaymentConfig => {
   try {
-    const config = EnvValidator.getPaymentConfig();
+    let config = EnvValidator.getPaymentConfig();
+
+    // 如果当前配置缺失关键字段，尝试触发一次校验来回填兼容键
+    if (!config.usdcAddress || !config.vaultAddress || !config.chainId) {
+      EnvValidator.validatePaymentConfig();
+      config = EnvValidator.getPaymentConfig();
+    }
+
+    if (!config.usdcAddress || !config.vaultAddress || !config.chainId) {
+      throw new Error('payment config is incomplete');
+    }
+
     return {
       usdcContract: config.usdcAddress,
       spenderOrVault: config.vaultAddress,
@@ -33,7 +44,14 @@ const getValidatedPaymentConfig = (): PaymentConfig => {
   }
 };
 
-const DEFAULT_PAYMENT: PaymentConfig = getValidatedPaymentConfig();
+let defaultPaymentCache: PaymentConfig | null = null;
+
+const getDefaultPaymentConfig = (): PaymentConfig => {
+  if (!defaultPaymentCache) {
+    defaultPaymentCache = buildValidatedPaymentConfig();
+  }
+  return defaultPaymentCache;
+};
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -48,7 +66,7 @@ export default class OrderService {
 
   constructor(options: OrderServiceOptions = {}) {
     this.payment = {
-      ...DEFAULT_PAYMENT,
+      ...getDefaultPaymentConfig(),
       ...options.paymentConfig
     };
 
