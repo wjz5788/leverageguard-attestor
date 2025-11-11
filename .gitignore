@@ -76,6 +76,7 @@ ENV/
 # Test files
 *.test.js
 *.test.ts
+!/apps/us-backend/test/*.test.ts
 
 # Documentation
 _site/
