@@ -1,26 +1,66 @@
 import express from 'express';
 import { z } from 'zod';
-import AuthService, { AuthError, LoginPayload, LoginResult } from '../services/authService.js';
+import AuthService, { AuthError, LoginResult } from '../services/authService.js';
 import { AuthenticatedRequest, RequireAuthMiddleware } from '../middleware/authMiddleware.js';
 
-const emailLoginSchema = z.object({
-  type: z.literal('email'),
-  email: z.string().email(),
-  password: z.string().min(6)
+const walletChallengeSchema = z.object({
+  walletAddress: z.string().min(1)
 });
 
-const walletLoginSchema = z.object({
-  type: z.literal('wallet'),
+const walletVerifySchema = z.object({
   walletAddress: z.string().min(1),
   signature: z.string().min(1),
   nonce: z.string().min(1)
 });
 
-const loginSchema = z.union([emailLoginSchema, walletLoginSchema]);
+const WALLET_ONLY_ERROR = {
+  error: 'WALLET_LOGIN_ONLY',
+  message: 'Email/password login is no longer supported. Use wallet login instead.'
+};
 
-const walletChallengeSchema = z.object({
-  walletAddress: z.string().min(1)
-});
+let blockedEmailAttempts = 0;
+
+function containsEmailCredentials(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  if (typeof candidate.email === 'string' || typeof candidate.password === 'string') {
+    return true;
+  }
+
+  if (candidate.type === 'email') {
+    return true;
+  }
+
+  if (candidate.credentials && typeof candidate.credentials === 'object') {
+    const nested = candidate.credentials as Record<string, unknown>;
+    if (typeof nested.email === 'string' || typeof nested.password === 'string') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function blockEmailLogin(req: express.Request, res: express.Response) {
+  blockedEmailAttempts += 1;
+  console.warn('[monitoring] auth_email_attempts_blocked', {
+    count: blockedEmailAttempts,
+    ip: req.ip,
+    userAgent: req.get('user-agent') ?? undefined
+  });
+  return res.status(410).json(WALLET_ONLY_ERROR);
+}
+
+export function getAuthEmailAttemptsBlockedCount(): number {
+  return blockedEmailAttempts;
+}
+
+export function resetAuthEmailAttemptsBlockedCount(): void {
+  blockedEmailAttempts = 0;
+}
 
 function formatLoginResult(result: LoginResult) {
   return {
@@ -38,7 +78,11 @@ function formatLoginResult(result: LoginResult) {
 export default function authRoutes(authService: AuthService, requireAuth: RequireAuthMiddleware) {
   const router = express.Router();
 
-  router.post('/challenge', async (req, res) => {
+  router.post('/wallet/nonce', async (req, res) => {
+    if (containsEmailCredentials(req.body)) {
+      return blockEmailLogin(req, res);
+    }
+
     const parseResult = walletChallengeSchema.safeParse(req.body);
 
     if (!parseResult.success) {
@@ -71,8 +115,12 @@ export default function authRoutes(authService: AuthService, requireAuth: Requir
     }
   });
 
-  router.post('/login', async (req, res) => {
-    const parseResult = loginSchema.safeParse(req.body);
+  router.post('/wallet/verify', async (req, res) => {
+    if (containsEmailCredentials(req.body)) {
+      return blockEmailLogin(req, res);
+    }
+
+    const parseResult = walletVerifySchema.safeParse(req.body);
 
     if (!parseResult.success) {
       return res.status(400).json({
@@ -83,8 +131,7 @@ export default function authRoutes(authService: AuthService, requireAuth: Requir
     }
 
     try {
-      const payload = parseResult.data as LoginPayload;
-      const result = await authService.verifyLogin(payload, {
+      const result = await authService.verifyLogin(parseResult.data, {
         ipAddress: req.ip,
         userAgent: req.get('user-agent') ?? undefined
       });
@@ -92,7 +139,7 @@ export default function authRoutes(authService: AuthService, requireAuth: Requir
       return res.status(200).json(formatLoginResult(result));
     } catch (error) {
       if (error instanceof AuthError) {
-        return res.status(401).json({
+        return res.status(error.httpStatus ?? 401).json({
           error: error.code,
           message: error.message
         });

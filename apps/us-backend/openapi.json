@@ -1,20 +1,246 @@
 {
   "openapi": "3.0.3",
-  "info": { "title": "LiqPass Backend API", "version": "1.0.0" },
+  "info": {
+    "title": "LiqPass Backend API",
+    "version": "1.0.0"
+  },
   "paths": {
-    "/api/v1/health": { "get": { "summary": "Health", "responses": { "200": {"description": "OK"} } } },
-    "/api/v1/health/ready": { "get": { "summary": "Ready", "responses": { "200": {"description": "OK"} } } },
+    "/api/v1/health": {
+      "get": {
+        "summary": "Health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "summary": "Ready",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/wallet/nonce": {
+      "post": {
+        "summary": "Request wallet login nonce",
+        "description": "Returns a nonce message that must be signed by the caller's wallet. Email/password login is not supported.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "walletAddress"
+                ],
+                "properties": {
+                  "walletAddress": {
+                    "type": "string",
+                    "description": "EVM wallet address"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Nonce issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "nonce",
+                    "message",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "nonce": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid wallet address"
+          },
+          "410": {
+            "description": "WALLET_LOGIN_ONLY – email/password payloads are rejected"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/wallet/verify": {
+      "post": {
+        "summary": "Verify wallet login signature",
+        "description": "Verifies a signed nonce and issues a wallet-only session token.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "walletAddress",
+                  "signature",
+                  "nonce"
+                ],
+                "properties": {
+                  "walletAddress": {
+                    "type": "string"
+                  },
+                  "signature": {
+                    "type": "string"
+                  },
+                  "nonce": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "token",
+                    "session",
+                    "profile"
+                  ],
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "session": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "loginType": {
+                          "type": "string",
+                          "enum": [
+                            "wallet"
+                          ]
+                        }
+                      }
+                    },
+                    "profile": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Challenge or signature validation failed"
+          },
+          "410": {
+            "description": "WALLET_LOGIN_ONLY – email/password payloads are rejected"
+          }
+        }
+      }
+    },
     "/api/v1/pricing/quote": {
       "post": {
         "summary": "Get quote",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": {"type":"object","properties": {"principal":{"type":"number"},"leverage":{"type":"number"},"durationHours":{"type":"integer"},"skuId":{"type":"integer"},"wallet":{"type":"string"}}, "required": ["principal","leverage","wallet"] } } } },
-        "responses": { "200": {"description": "OK"}, "400": {"description": "Invalid"} }
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "principal": {
+                    "type": "number"
+                  },
+                  "leverage": {
+                    "type": "number"
+                  },
+                  "durationHours": {
+                    "type": "integer"
+                  },
+                  "skuId": {
+                    "type": "integer"
+                  },
+                  "wallet": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "principal",
+                  "leverage",
+                  "wallet"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid"
+          }
+        }
       }
     },
     "/api/v1/orders": {
-      "post": { "summary": "Create order", "responses": { "201": {"description": "Created"}, "200": {"description": "Exists"}, "400": {"description": "Invalid"} } },
-      "get": { "summary": "List orders", "responses": { "200": {"description": "OK"} } }
+      "post": {
+        "summary": "Create order",
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "200": {
+            "description": "Exists"
+          },
+          "400": {
+            "description": "Invalid"
+          }
+        }
+      },
+      "get": {
+        "summary": "List orders",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
-

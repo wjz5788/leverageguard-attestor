@@ -34,6 +34,10 @@ LiqPass 后端API服务器，提供保险订单管理、支付验证、链上事
 | `PRICER_PRIVATE_KEY` | 定价器私钥（0x+64hex） | `0x...` |
 | `ISSUER_PRIVATE_KEY` | 发行器私钥（0x+64hex） | `0x...` |
 
+> **重要：仅支持钱包登录**
+>
+> 后端仅接受基于钱包签名的登录流程。任何包含 `email` 或 `password` 字段的登录请求都会返回 `410 Gone`，错误码 `WALLET_LOGIN_ONLY`，并且不会生成会话或令牌。
+
 ### 集成服务
 
 | 变量名 | 说明 | 示例值 |
