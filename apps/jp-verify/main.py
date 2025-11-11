@@ -55,6 +55,142 @@ class OKXAuthError(Exception):
         self.status_code = status_code
         super().__init__(self.message)
 
+class APIKeySecurityError(Exception):
+    """API密钥安全错误"""
+    def __init__(self, message, status_code=400):
+        self.message = message
+        self.status_code = status_code
+        super().__init__(self.message)
+
+# API密钥安全配置
+API_KEY_MIN_LENGTH = 20
+SECRET_KEY_MIN_LENGTH = 30
+PASSPHRASE_MIN_LENGTH = 6
+MAX_API_KEY_AGE_DAYS = 90  # 密钥最大使用期限
+BLACKLISTED_KEYS = set()  # 内存中的黑名单（生产环境应使用Redis等持久化存储）
+
+# 密钥使用频率限制
+KEY_USAGE_LIMIT = {
+    'per_minute': 60,  # 每分钟最多60次请求
+    'per_hour': 1000,  # 每小时最多1000次请求
+}
+
+# 密钥使用记录
+_key_usage = {}  # 格式: {api_key: {'minute_count': 0, 'hour_count': 0, 'last_used': timestamp}}
+
+def validate_api_key_format(api_key: str) -> bool:
+    """验证API密钥格式"""
+    if not api_key or len(api_key) < API_KEY_MIN_LENGTH:
+        return False
+    # 检查是否为有效的Base64格式（OKX API密钥通常是Base64）
+    try:
+        import base64
+        # 尝试解码，检查是否为有效Base64
+        base64.b64decode(api_key)
+        return True
+    except:
+        return False
+
+def validate_secret_key_format(secret_key: str) -> bool:
+    """验证密钥格式"""
+    if not secret_key or len(secret_key) < SECRET_KEY_MIN_LENGTH:
+        return False
+    # 检查是否包含特殊字符和数字
+    import re
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', secret_key):
+        return False
+    if not re.search(r'\d', secret_key):
+        return False
+    return True
+
+def validate_passphrase_format(passphrase: str) -> bool:
+    """验证密码短语格式"""
+    if not passphrase or len(passphrase) < PASSPHRASE_MIN_LENGTH:
+        return False
+    return True
+
+def check_key_blacklist(api_key: str) -> bool:
+    """检查密钥是否在黑名单中"""
+    return api_key in BLACKLISTED_KEYS
+
+def update_key_usage(api_key: str) -> bool:
+    """更新密钥使用频率并检查是否超限"""
+    current_time = time.time()
+    
+    if api_key not in _key_usage:
+        _key_usage[api_key] = {
+            'minute_count': 0,
+            'hour_count': 0,
+            'last_used': current_time,
+            'minute_window_start': current_time,
+            'hour_window_start': current_time
+        }
+    
+    usage = _key_usage[api_key]
+    
+    # 检查分钟窗口
+    if current_time - usage['minute_window_start'] > 60:
+        usage['minute_count'] = 0
+        usage['minute_window_start'] = current_time
+    
+    # 检查小时窗口
+    if current_time - usage['hour_window_start'] > 3600:
+        usage['hour_count'] = 0
+        usage['hour_window_start'] = current_time
+    
+    # 更新计数
+    usage['minute_count'] += 1
+    usage['hour_count'] += 1
+    usage['last_used'] = current_time
+    
+    # 检查是否超限
+    if usage['minute_count'] > KEY_USAGE_LIMIT['per_minute']:
+        return False
+    if usage['hour_count'] > KEY_USAGE_LIMIT['per_hour']:
+        return False
+    
+    return True
+
+def validate_api_credentials(api_key: str, secret_key: str, passphrase: str) -> None:
+    """全面验证API凭证安全性"""
+    # 检查密钥是否在黑名单中
+    if check_key_blacklist(api_key):
+        raise APIKeySecurityError("API密钥已被禁用", 403)
+    
+    # 验证密钥格式
+    if not validate_api_key_format(api_key):
+        raise APIKeySecurityError("API密钥格式无效", 400)
+    
+    if not validate_secret_key_format(secret_key):
+        raise APIKeySecurityError("密钥格式无效", 400)
+    
+    if not validate_passphrase_format(passphrase):
+        raise APIKeySecurityError("密码短语格式无效", 400)
+    
+    # 检查使用频率
+    if not update_key_usage(api_key):
+        raise APIKeySecurityError("API密钥使用频率超限", 429)
+
+def add_to_blacklist(api_key: str) -> None:
+    """将密钥添加到黑名单"""
+    BLACKLISTED_KEYS.add(api_key)
+    # 生产环境应该持久化到数据库或Redis
+    print(f"警告: API密钥 {api_key[:10]}... 已被加入黑名单")
+
+def rotate_api_key_if_needed(api_key: str) -> bool:
+    """检查是否需要轮换密钥（基于使用时间）"""
+    if api_key not in _key_usage:
+        return False
+    
+    usage = _key_usage[api_key]
+    days_since_creation = (time.time() - usage.get('created_at', time.time())) / (24 * 3600)
+    
+    if days_since_creation > MAX_API_KEY_AGE_DAYS:
+        print(f"警告: API密钥 {api_key[:10]}... 已使用 {days_since_creation:.1f} 天，建议轮换")
+        return True
+    
+    return False
+
 def generate_okx_signature(timestamp: str, method: str, endpoint: str, body: str, secret_key: str) -> str:
     """生成 OKX V5 签名"""
     message = timestamp + method.upper() + endpoint
@@ -346,6 +482,13 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
         
         if request.keyMode == "inline" and not all([request.apiKey, request.secretKey, request.passphrase]):
             raise HTTPException(status_code=400, detail={"code": "MISSING_CREDENTIALS", "msg": "inline 模式下需要提供完整的 API 密钥信息"})
+        
+        # 验证API密钥安全性
+        if request.keyMode == "inline":
+            try:
+                validate_api_credentials(request.apiKey, request.secretKey, request.passphrase)
+            except APIKeySecurityError as e:
+                raise HTTPException(status_code=e.status_code, detail={"code": "API_KEY_SECURITY_ERROR", "msg": e.message})
         
         # 调用 OKX API 获取订单信息
         order_result = await call_okx_api(
