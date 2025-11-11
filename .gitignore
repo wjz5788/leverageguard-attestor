@@ -1,30 +1,118 @@
+# Dependencies
+node_modules/
+*/node_modules/
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+*/dist/
+*/build/
+*.tgz
+*.tar.gz
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+logs/
+*.logs
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+data/
+
 # Python
 __pycache__/
 *.py[cod]
-*.egg-info/
-.python-version
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
 
-# Node / Frontend
-node_modules/
-dist/
-build/
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
-# OS / Editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
+# Cache
+.cache/
+.parcel-cache/
 
-# Environment / Secrets
-.env
-.env.*
-env/*.env
-env/*.local
-env/*.secret
-*.key
-*.pem
+# Test files
+*.test.js
+*.test.ts
 
-# Archives / Outputs
-*.log
-*.tmp
-*.swp
+# Documentation
+_site/
+.sass-cache/
+.jekyll-metadata
+
+# Package files
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# Generated documentation
+docs/_build/
+
+# Hardhat
+cache/
+artifacts/
+
+# TypeScript
+*.tsbuildinfo
+
+# Vite
+.vite/
+
+# ESLint cache
+.eslintcache
+
+# Stylelint cache
+.stylelintcache
+
+# Prettier cache
+.prettiercache
+
+# 辅助知识页面 - 不提交到GitHub
+辅助知识页面/

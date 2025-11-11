@@ -1,0 +1,17 @@
+{
+  "name": "@liqpass/abi",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Single source of truth for LiqPass contract ABIs and addresses.",
+  "files": [
+    "CheckoutUSDC.min.json",
+    "addresses.json",
+    "README.md"
+  ],
+  "exports": {
+    "./checkoutUSDC": "./CheckoutUSDC.min.json",
+    "./addresses": "./addresses.json"
+  }
+}
+
