@@ -1,0 +1,20 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "LiqPass Backend API", "version": "1.0.0" },
+  "paths": {
+    "/api/v1/health": { "get": { "summary": "Health", "responses": { "200": {"description": "OK"} } } },
+    "/api/v1/health/ready": { "get": { "summary": "Ready", "responses": { "200": {"description": "OK"} } } },
+    "/api/v1/pricing/quote": {
+      "post": {
+        "summary": "Get quote",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": {"type":"object","properties": {"principal":{"type":"number"},"leverage":{"type":"number"},"durationHours":{"type":"integer"},"skuId":{"type":"integer"},"wallet":{"type":"string"}}, "required": ["principal","leverage","wallet"] } } } },
+        "responses": { "200": {"description": "OK"}, "400": {"description": "Invalid"} }
+      }
+    },
+    "/api/v1/orders": {
+      "post": { "summary": "Create order", "responses": { "201": {"description": "Created"}, "200": {"description": "Exists"}, "400": {"description": "Invalid"} } },
+      "get": { "summary": "List orders", "responses": { "200": {"description": "OK"} } }
+    }
+  }
+}
+

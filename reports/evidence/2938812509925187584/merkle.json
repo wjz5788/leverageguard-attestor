@@ -1,0 +1,29 @@
+{
+  "files": [
+    {
+      "file": "bills.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "file": "error.json",
+      "sha256": "323c92493f27ca52cc85d2c8e3cb4ed15f9eb5a90d9d1e7aed17db17e1483b63"
+    },
+    {
+      "file": "fills.json",
+      "sha256": "9b758f539d4e02276f1656ef0999dd81953aca0b3b3e66a61a9e14b71cd0f905"
+    },
+    {
+      "file": "instrument.json",
+      "sha256": "bec1c6e50ecc2cbd48c0786e8f3c2f56529e2da12d7a23198cdf007218e92034"
+    },
+    {
+      "file": "meta.json",
+      "sha256": "fca61088781e2f7264507a7b534ce8abcd16fd17213a73922c3a9eed07d7fb91"
+    },
+    {
+      "file": "order.json",
+      "sha256": "dd0864fc0e3e59c53499e6c0b889fa03385ff0d4c444bb020abcdb18b673e480"
+    }
+  ],
+  "merkleRoot": "0x14a6b669b2b5a9bdc3d7189e2187be752f728c4e06b27a67bb976207ef810e0a"
+}
