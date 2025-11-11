@@ -28,7 +28,11 @@ function transformPremiumUSDC(value: JsonValue): JsonValue {
     const record = value as Record<string, JsonValue>;
 
     if (Object.prototype.hasOwnProperty.call(record, 'premiumUSDC')) {
-      if (!Object.prototype.hasOwnProperty.call(record, 'premiumUSDC_6d')) {
+      // 只有当 premiumUSDC_6d 不存在或为空时才进行转换
+      if (!Object.prototype.hasOwnProperty.call(record, 'premiumUSDC_6d') || 
+          record.premiumUSDC_6d === null || 
+          record.premiumUSDC_6d === undefined ||
+          record.premiumUSDC_6d === '') {
         const normalized = tryNormalizePremiumUSDC(record.premiumUSDC);
         if (normalized !== undefined) {
           record.premiumUSDC_6d = normalized;
