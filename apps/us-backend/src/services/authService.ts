@@ -3,22 +3,15 @@ import { v4 as uuid } from 'uuid';
 import { getAddress, verifyMessage } from 'ethers';
 import { randomBytes } from 'crypto';
 
-export type LoginType = 'email' | 'wallet';
-
-export interface EmailLoginPayload {
-  type: 'email';
-  email: string;
-  password: string;
-}
+export type LoginType = 'wallet';
 
 export interface WalletLoginPayload {
-  type: 'wallet';
   walletAddress: string;
   signature: string;
   nonce: string;
 }
 
-export type LoginPayload = EmailLoginPayload | WalletLoginPayload;
+export type LoginPayload = WalletLoginPayload;
 
 export interface UserProfile {
   id: string;
@@ -92,34 +85,29 @@ export default class AuthService {
     this.db = dbManager.getDatabase();
   }
 
-  async verifyLogin(payload: LoginPayload, context: LoginContext = {}): Promise<LoginResult> {
-    let processed: LoginPayload = payload;
+  async verifyLogin(payload: WalletLoginPayload, context: LoginContext = {}): Promise<LoginResult> {
     let userId: string | null = null;
 
     try {
-      if (payload.type === 'email') {
-        this.assertEmailPayload(payload);
-      } else {
-        this.assertWalletPayload(payload);
-        const normalizedWallet = await this.validateWalletLogin(payload);
-        processed = { ...payload, walletAddress: normalizedWallet };
-      }
+      this.assertWalletPayload(payload);
+      const normalizedWallet = await this.validateWalletLogin(payload);
+      const processed: WalletLoginPayload = { ...payload, walletAddress: normalizedWallet };
 
-      userId = this.resolveUserId(processed);
-      const profile = await this.ensureProfile(userId, processed);
-      const session = this.createSession(userId, processed.type);
+      userId = this.resolveWalletUserId(processed.walletAddress);
+      const profile = await this.ensureProfile(userId, processed.walletAddress);
+      const session = this.createSession(userId);
 
       const nowIso = new Date().toISOString();
       const persistedProfile: UserProfile = {
         ...profile,
         id: userId,
-        walletAddress: processed.type === 'wallet' ? processed.walletAddress : profile.walletAddress,
+        walletAddress: processed.walletAddress,
         lastLoginAt: nowIso
       };
 
       await this.saveSession(session);
       await this.updateProfile(userId, { lastLoginAt: nowIso, walletAddress: persistedProfile.walletAddress });
-      await this.recordAuthLog(userId, processed.type, true, null, context);
+      await this.recordAuthLog(userId, 'wallet', true, null, context);
 
       return {
         token: session.token,
@@ -127,7 +115,7 @@ export default class AuthService {
         profile: persistedProfile
       };
     } catch (error) {
-      if (userId && processed.type === 'wallet') {
+      if (userId) {
         await this.recordAuthLog(userId, 'wallet', false, (error as Error).message, context);
       }
       throw error;
@@ -143,6 +131,15 @@ export default class AuthService {
         return null;
       }
 
+      if (session.loginType !== 'wallet') {
+        console.warn('Invalid session login type detected, forcing logout', {
+          loginType: session.loginType,
+          token: session.token
+        });
+        await this.logout(token);
+        return null;
+      }
+
       if (new Date(session.expiresAt).getTime() <= Date.now()) {
         await this.logout(token);
         return null;
@@ -152,7 +149,7 @@ export default class AuthService {
 
       return {
         ...session,
-        profile: profile || this.createDefaultProfile(session.userId, decoded.type)
+        profile: profile || this.createDefaultProfile(session.userId)
       };
     } catch (error) {
       return null;
@@ -272,20 +269,6 @@ export default class AuthService {
     return merged;
   }
 
-  private assertEmailPayload(payload: EmailLoginPayload) {
-    if (!payload.email || !payload.password) {
-      throw new AuthError('INVALID_CREDENTIALS', 'Email and password are required.');
-    }
-
-    if (!payload.email.includes('@')) {
-      throw new AuthError('INVALID_EMAIL', 'A valid email address is required.');
-    }
-
-    if (payload.password.length < 6) {
-      throw new AuthError('INVALID_CREDENTIALS', 'Password must be at least 6 characters long.');
-    }
-  }
-
   private assertWalletPayload(payload: WalletLoginPayload) {
     if (!payload.walletAddress || !payload.signature || !payload.nonce) {
       throw new AuthError('INVALID_CHALLENGE', 'Wallet address, signature, and nonce are required.');
@@ -336,12 +319,8 @@ export default class AuthService {
     return normalizedWallet;
   }
 
-  private resolveUserId(payload: LoginPayload): string {
-    if (payload.type === 'email') {
-      return `email:${payload.email.toLowerCase()}`;
-    }
-
-    return `wallet:${payload.walletAddress.toLowerCase()}`;
+  private resolveWalletUserId(walletAddress: string): string {
+    return `wallet:${walletAddress.toLowerCase()}`;
   }
 
   private async markChallengeConsumed(nonce: string): Promise<void> {
@@ -400,15 +379,16 @@ export default class AuthService {
     return typeof nonce === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(nonce);
   }
 
-  private async ensureProfile(userId: string, payload: LoginPayload): Promise<UserProfile> {
+  private async ensureProfile(userId: string, walletAddress: string): Promise<UserProfile> {
     // 检查用户是否已存在
     const existingUser = await this.db.get('SELECT * FROM users WHERE id = ?', [userId]) as any;
-    
+
     if (existingUser) {
+      const wallet = existingUser.wallet_address ?? walletAddress ?? null;
       return {
         id: existingUser.id,
         email: existingUser.email,
-        walletAddress: existingUser.wallet_address,
+        walletAddress: wallet,
         displayName: existingUser.display_name,
         avatarUrl: existingUser.avatar_url,
         language: existingUser.language,
@@ -421,27 +401,23 @@ export default class AuthService {
 
     // 创建新用户
     const nowIso = new Date().toISOString();
-    const email = payload.type === 'email' ? payload.email : null;
-    const walletAddress = payload.type === 'wallet' ? payload.walletAddress : null;
-
     await this.db.run(
       'INSERT INTO users (id, email, wallet_address, created_at, last_login_at) VALUES (?, ?, ?, ?, ?)',
-      [userId, email, walletAddress, nowIso, nowIso]
+      [userId, null, walletAddress, nowIso, nowIso]
     );
 
     return {
       id: userId,
-      email,
       walletAddress,
       createdAt: nowIso,
       lastLoginAt: nowIso
     };
   }
 
-  private createDefaultProfile(userId: string, loginType?: LoginType): UserProfile {
+  private createDefaultProfile(userId: string): UserProfile {
     return {
       id: userId,
-      displayName: loginType === 'wallet' ? this.maskWallet(userId.replace('wallet:', '')) : undefined,
+      displayName: this.maskWallet(userId.replace('wallet:', '')),
       avatarUrl: null,
       language: 'en',
       timezone: 'UTC',
@@ -462,12 +438,12 @@ export default class AuthService {
     return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
   }
 
-  private createSession(userId: string, loginType: LoginType): AuthSession {
+  private createSession(userId: string): AuthSession {
     const issuedAt = new Date();
     const expiresAt = new Date(issuedAt.getTime() + this.sessionDurationMs);
     const jwtPayload = {
       sub: userId,
-      type: loginType,
+      type: 'wallet' as const,
       jti: uuid()
     };
 
@@ -481,7 +457,7 @@ export default class AuthService {
       userId,
       issuedAt: issuedAt.toISOString(),
       expiresAt: expiresAt.toISOString(),
-      loginType
+      loginType: 'wallet'
     };
   }
 
