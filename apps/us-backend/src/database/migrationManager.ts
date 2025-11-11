@@ -81,6 +81,7 @@ export class MigrationManager {
       '010_idempotency_store.sql',
       '010_persist_memory_tables.sql',
       '011_wallet_login_challenges.sql',
+      '012_api_key_secret_fragment.sql',
       '202412120000__create_migrations_tracker.sql'
     ];
 

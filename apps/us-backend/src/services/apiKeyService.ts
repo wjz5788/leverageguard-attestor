@@ -55,14 +55,15 @@ export default class ApiKeyService {
     if (existing) {
       // 更新现有记录
       const updateSql = `
-        UPDATE api_keys 
-        SET api_key_id = ?, api_key_enc = ?, secret_enc = ?, passphrase_enc = ?, 
+        UPDATE api_keys
+        SET api_key_id = ?, key_id = ?, api_key_enc = ?, secret_enc = ?, passphrase_enc = ?,
             status = 'new', updated_at = ?
         WHERE user_id = ? AND exchange = ?
       `;
       
       return new Promise((resolve, reject) => {
         this.db.run(updateSql, [
+          apiKeyId,
           apiKeyId,
           encrypted.api_key_enc,
           encrypted.secret_enc,
@@ -92,9 +93,9 @@ export default class ApiKeyService {
       // 创建新记录
       const insertSql = `
         INSERT INTO api_keys (
-          id, user_id, exchange, api_key_id, api_key_enc, secret_enc, passphrase_enc, 
+          id, user_id, exchange, api_key_id, key_id, api_key_enc, secret_enc, passphrase_enc,
           status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
       const id = uuidv4();
@@ -104,6 +105,7 @@ export default class ApiKeyService {
           id,
           userId,
           request.exchange,
+          apiKeyId,
           apiKeyId,
           encrypted.api_key_enc,
           encrypted.secret_enc,
