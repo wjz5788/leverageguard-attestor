@@ -1,0 +1,38 @@
+{
+  "name": "liqpass-checkout-contracts",
+  "version": "1.0.0",
+  "description": "LiqPass Checkout USDC Smart Contracts for Base Network",
+  "main": "index.js",
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "deploy:base": "npx hardhat run deploy.js --network base",
+    "deploy:sepolia": "npx hardhat run deploy.js --network baseSepolia",
+    "deploy:local": "npx hardhat run deploy.js --network localhost",
+    "verify:base": "npx hardhat verify --network base",
+    "verify:sepolia": "npx hardhat verify --network baseSepolia",
+    "test": "npx hardhat test",
+    "test:coverage": "npx hardhat coverage",
+    "clean": "npx hardhat clean",
+    "node": "npx hardhat node"
+  },
+  "keywords": [
+    "solidity",
+    "ethereum",
+    "smart-contracts",
+    "base",
+    "usdc",
+    "defi"
+  ],
+  "author": "LiqPass Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.0",
+    "hardhat": "^2.19.0",
+    "hardhat-gas-reporter": "^1.0.9",
+    "solidity-coverage": "^0.8.5"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.9.3"
+  }
+}

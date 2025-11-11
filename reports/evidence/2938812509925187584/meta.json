@@ -1,0 +1,11 @@
+{
+  "ordId": "2938812509925187584",
+  "instId": "BTC-USDT-SWAP",
+  "instType": "SWAP",
+  "beginMs": 1760084937858,
+  "endMs": 1760086737858,
+  "generatedAt": "2025-10-18T05:04:14.800Z",
+  "tool": "LeverageGuard-Local/1.1",
+  "paperTrading": false,
+  "notes": "Share merkle.json and summary.json/csv; keep raw JSONs private."
+}
