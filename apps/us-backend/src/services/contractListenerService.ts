@@ -16,6 +16,10 @@ export class ContractListenerService {
   private lastHealthCheck: number = Date.now();
   private orderService?: OrderService;
   private confirmations: number;
+  private lastBlockNumber: number = 0;
+  private reorganizationDepth: number = 12; // 重组深度阈值
+  private reorganizationCheckInterval: number = 60000; // 重组检查间隔（1分钟）
+  private reorganizationCheckTimer?: NodeJS.Timeout;
 
   constructor(orderService?: OrderService) {
     // 从环境变量获取配置
@@ -61,6 +65,9 @@ export class ContractListenerService {
     }
 
     console.log("🚀 启动PremiumPaid事件监听...");
+
+    // 启动重组检测
+    this.startReorganizationDetection();
 
     // 回放最近未确认窗口内的事件，避免重启丢失
     try {
@@ -404,6 +411,221 @@ export class ContractListenerService {
   }
 
   /**
+   * 启动重组检测
+   */
+  private startReorganizationDetection(): void {
+    this.reorganizationCheckTimer = setInterval(async () => {
+      try {
+        await this.checkForReorganization();
+      } catch (error) {
+        console.error("❌ 重组检测失败:", error);
+      }
+    }, this.reorganizationCheckInterval);
+  }
+
+  /**
+   * 检查区块链重组
+   */
+  private async checkForReorganization(): Promise<void> {
+    try {
+      const currentBlockNumber = await this.provider.getBlockNumber();
+      
+      if (this.lastBlockNumber === 0) {
+        this.lastBlockNumber = currentBlockNumber;
+        return;
+      }
+
+      // 检测到重组（区块号回退）
+      if (currentBlockNumber < this.lastBlockNumber) {
+        const depth = this.lastBlockNumber - currentBlockNumber;
+        console.warn(`⚠️  检测到区块链重组: 深度=${depth} 区块`);
+        
+        if (depth <= this.reorganizationDepth) {
+          await this.handleReorganization(depth);
+        } else {
+          console.error(`❌ 重组深度过大 (${depth} > ${this.reorganizationDepth})，需要手动干预`);
+          await this.alertService.sendSystemErrorAlert(
+            new Error(`检测到深度重组: ${depth} 区块`),
+            "区块链重组深度过大"
+          );
+        }
+      }
+      
+      this.lastBlockNumber = currentBlockNumber;
+    } catch (error) {
+      console.error("❌ 重组检测失败:", error);
+    }
+  }
+
+  /**
+   * 处理区块链重组
+   */
+  private async handleReorganization(depth: number): Promise<void> {
+    console.log(`🔄 处理区块链重组: 深度=${depth} 区块`);
+    
+    try {
+      // 1. 暂停事件监听
+      this.contract.removeAllListeners("PremiumPaid");
+      
+      // 2. 回滚受影响的事件
+      await this.rollbackAffectedEvents(depth);
+      
+      // 3. 重新启动监听器
+      await this.restartListeningAfterReorganization();
+      
+      console.log("✅ 重组处理完成");
+      
+      // 发送重组通知
+      await this.alertService.sendSystemAlert({
+        level: "warning",
+        title: "区块链重组处理完成",
+        message: `成功处理了深度为 ${depth} 区块的区块链重组`,
+        timestamp: new Date()
+      });
+      
+    } catch (error) {
+      console.error("❌ 重组处理失败:", error);
+      
+      await this.alertService.sendSystemErrorAlert(
+        error as Error,
+        "区块链重组处理失败"
+      );
+    }
+  }
+
+  /**
+   * 回滚受影响的事件
+   */
+  private async rollbackAffectedEvents(depth: number): Promise<void> {
+    const rollbackBlock = this.lastBlockNumber - depth;
+    
+    console.log(`⏪ 回滚从区块 ${rollbackBlock} 开始的事件...`);
+    
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        `DELETE FROM contract_events 
+         WHERE block_number >= ? AND status = 'processed'`,
+        [rollbackBlock],
+        function(this: any, err: Error | null) {
+          if (err) {
+            reject(err);
+            return;
+          }
+          
+          console.log(`✅ 已回滚 ${this.changes} 个受影响事件`);
+          resolve();
+        }
+      );
+    });
+  }
+
+  /**
+   * 重组后重新启动监听器
+   */
+  private async restartListeningAfterReorganization(): Promise<void> {
+    console.log("🔄 重组后重新启动监听器...");
+    
+    // 重置最后处理的区块号
+    await this.setLastProcessedBlock(this.lastBlockNumber - this.reorganizationDepth);
+    
+    // 重新回放事件
+    await this.replayFromCheckpoint();
+    
+    // 重新监听事件
+    this.contract.on("PremiumPaid", async (...args) => {
+      // 使用现有的处理逻辑
+      try {
+        const ev = args[args.length - 1] as EventLog;
+        const eventArgs = ev.args as any;
+        const orderId = eventArgs.orderId ?? eventArgs[0];
+        const buyer = eventArgs.buyer ?? eventArgs[1];
+        const amount = eventArgs.amount ?? eventArgs[2];
+        const quoteHash = eventArgs.quoteHash ?? eventArgs[3];
+        const token = eventArgs.token ?? eventArgs[4];
+        const treasury = eventArgs.treasury ?? eventArgs[5];
+        const chainId = eventArgs.chainId ?? eventArgs[6];
+        const timestamp = eventArgs.timestamp ?? eventArgs[7];
+
+        const orderIdHex = orderId?.toString?.() ?? '';
+        const buyerAddr = buyer?.toString?.() ?? '';
+        const amountStr = amount?.toString?.() ?? '0';
+        const ts = Number(timestamp);
+        const isoTimestamp = Number.isFinite(ts) ? new Date(ts * 1000).toISOString() : new Date().toISOString();
+        const tokenAddr = token?.toString?.() ?? '';
+        const treasuryAddr = treasury?.toString?.() ?? '';
+        const chainIdStr = chainId?.toString?.();
+
+        console.log("🎯 监听到PremiumPaid事件:", {
+          transactionHash: ev.transactionHash,
+          logIndex: ev.index,
+          orderId: orderIdHex,
+          buyer: buyerAddr,
+          amount: amountStr,
+          quoteHash,
+          token: tokenAddr,
+          treasury: treasuryAddr,
+          chainId: chainIdStr,
+          timestamp: isoTimestamp
+        });
+
+        try {
+          await this.validateEvent(ev, orderIdHex, buyerAddr, amount, quoteHash, tokenAddr, treasuryAddr, chainId);
+          await this.updateOrderStatus(ev, orderIdHex, buyerAddr, amount, quoteHash, tokenAddr, treasuryAddr, timestamp);
+
+          await this.alertService.sendContractEventAlert({
+            eventName: "PremiumPaid",
+            transactionHash: ev.transactionHash,
+            blockNumber: ev.blockNumber,
+            logIndex: ev.index,
+            orderId: orderIdHex,
+            amount: amountStr,
+            payer: buyerAddr,
+            token: tokenAddr,
+            treasury: treasuryAddr,
+            chainId: chainIdStr
+          });
+
+          console.log("✅ 事件处理完成");
+        } catch (error) {
+          console.error("❌ 事件处理失败:", error);
+
+          await this.alertService.sendSystemErrorAlert(
+            error as Error,
+            `处理PremiumPaid事件失败: ${ev.transactionHash}`
+          );
+        }
+      } catch (outerError) {
+        console.error("❌ 事件监听器外层错误:", outerError);
+      }
+    });
+  }
+
+  /**
+   * 停止重组检测
+   */
+  private stopReorganizationDetection(): void {
+    if (this.reorganizationCheckTimer) {
+      clearInterval(this.reorganizationCheckTimer);
+      this.reorganizationCheckTimer = undefined;
+    }
+  }
+
+  /**
+   * 停止事件监听
+   */
+  async stopListening(): Promise<void> {
+    if (!this.isListening) {
+      console.log("⚠️  事件监听器未在运行");
+      return;
+    }
+
+    this.stopReorganizationDetection();
+    this.contract.removeAllListeners("PremiumPaid");
+    this.isListening = false;
+    console.log("🛑 PremiumPaid事件监听器已停止");
+  }
+
+  /**
    * 健康检查
    */
   async healthCheck(): Promise<{ healthy: boolean; error?: string }> {
@@ -413,5 +635,20 @@ export class ContractListenerService {
     } catch (error) {
       return { healthy: false, error: (error as Error).message };
     }
+  }
+
+  /**
+   * 获取重组检测状态
+   */
+  getReorganizationStatus(): { 
+    isDetecting: boolean; 
+    lastBlockNumber: number; 
+    reorganizationDepth: number 
+  } {
+    return {
+      isDetecting: !!this.reorganizationCheckTimer,
+      lastBlockNumber: this.lastBlockNumber,
+      reorganizationDepth: this.reorganizationDepth
+    };
   }
 }
