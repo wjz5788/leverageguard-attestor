@@ -53,6 +53,7 @@ export default class OrderService {
     };
 
     this.quoteTtlSeconds = options.quoteTtlSeconds ?? 60;
+
     this.skus = this.seedSkus();
   }
 
