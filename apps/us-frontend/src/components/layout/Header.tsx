@@ -7,7 +7,6 @@ import { truncateAddress } from '../../utils';
 interface HeaderProps {
   lang: "zh" | "en";
   setLang: (lang: "zh" | "en") => void;
-  onDisconnect: () => void;
 }
 
 // 点击外部关闭菜单的Hook
@@ -127,8 +126,8 @@ function AccountMenu({ address, onDisconnect }: { address: string; onDisconnect:
   );
 }
 
-export const Header: React.FC<HeaderProps> = ({ lang, setLang, onDisconnect }) => {
-  const { address, busy, connectWallet, switchToBase } = useWallet();
+export const Header: React.FC<HeaderProps> = ({ lang, setLang }) => {
+  const { address, busy, connectWallet, switchToBase, disconnectWallet } = useWallet();
 
   return (
     <header className="sticky top-0 z-20 border-b border-stone-200 bg-[#FFF7ED]/70 backdrop-blur">
@@ -189,7 +188,7 @@ export const Header: React.FC<HeaderProps> = ({ lang, setLang, onDisconnect }) =
             </button>
 
             {/* 账户菜单 */}
-            <AccountMenu address={address} onDisconnect={onDisconnect} />
+            <AccountMenu address={address} onDisconnect={() => disconnectWallet?.()} />
           </div>
         </div>
       </div>

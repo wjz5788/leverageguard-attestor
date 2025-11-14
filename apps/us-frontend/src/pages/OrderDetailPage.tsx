@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useWallet } from '../contexts/WalletContext';
 import { OrderCardData } from "../types/order";
+import { getExplorerTxUrl } from "../lib/explorer";
 
 // 工具函数
 const toMs = (t: number | string): number => {
@@ -29,13 +31,8 @@ const num = (n: number, p = 2) => {
   return n.toLocaleString("en-US", { minimumFractionDigits: p, maximumFractionDigits: p });
 };
 
-const openChainTx = (chain: string, tx: string) => {
-  let url = "";
-  if (/^0x[0-9a-fA-F]{64}$/.test(tx)) {
-    if (chain === "Base") url = `https://basescan.org/tx/${tx}`;
-  }
-  if (!url) url = `https://basescan.org/tx/${tx}`;
-  window.open(url, "_blank");
+const getTxUrl = (chain: string, tx: string) => {
+  return getExplorerTxUrl({ chainId: null, txHash: (tx || "").trim() });
 };
 
 // 模拟订单详情数据
@@ -69,6 +66,7 @@ interface OrderDetailPageProps {
 export const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ t, apiBase = "" }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { address } = useWallet();
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -82,23 +80,38 @@ export const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ t, apiBase = "
     setError("");
     
     try {
-      const ORDER_DETAIL_URL = apiBase ? `${apiBase.replace(/\/$/, "")}/orders/${id}` : `/api/v1/orders/${id}`;
-      const res = await fetch(ORDER_DETAIL_URL, { method: "GET" });
-      
-      if (!res.ok) {
-        throw new Error(`${res.status} ${res.statusText}`);
+      const base = apiBase ? apiBase.replace(/\/$/, "") : '';
+      let orderData: any = null;
+      if (address) {
+        const MY_URL = base ? `${base}/orders/my?address=${address}` : `/api/v1/orders/my?address=${address}`;
+        const myRes = await fetch(MY_URL, { method: 'GET' });
+        if (myRes.ok) {
+          const myData = await myRes.json();
+          const list: any[] = Array.isArray(myData?.orders) ? myData.orders : [];
+          orderData = list.find((o: any) => String(o.id) === String(id)) || null;
+        }
+      }
+
+      if (!orderData) {
+        const DETAIL_URL = base ? `${base}/orders/${id}` : `/api/v1/orders/${id}`;
+        const res = await fetch(DETAIL_URL, { method: 'GET' });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const data = await res.json();
+        orderData = data.order || data;
       }
       
-      const data = await res.json();
-      const orderData = data.order || data;
-      
+      const premium6d = Number(orderData.premiumUSDC6d || orderData.premium_usdc_6d || 0);
+      const payout6d = Number(orderData.payoutUSDC6d || orderData.payout_usdc_6d || 0);
+      const premiumPaidNum = premium6d > 0 ? premium6d / 1_000_000 : Number(orderData.premiumPaid || orderData.premiumUSDC || orderData.premium || 0);
+      const payoutMaxNum = payout6d > 0 ? payout6d / 1_000_000 : Number(orderData.payoutMax || orderData.payoutUSDC || 0);
+
       const normalized: OrderCardData = {
         id: orderData.id || id,
         title: orderData.title || "24h 爆仓保",
         principal: Number(orderData.principal || 0),
         leverage: Number(orderData.leverage || 0),
-        premiumPaid: Number(orderData.premiumPaid || orderData.premiumUSDC || orderData.premium || 0),
-        payoutMax: Number(orderData.payoutMax || orderData.payoutUSDC || 0),
+        premiumPaid: premiumPaidNum,
+        payoutMax: payoutMaxNum,
         status: String(orderData.status || "active"),
         coverageStartTs: orderData.coverageStartTs || orderData.coverage_start_ts || orderData.createdAt,
         coverageEndTs: orderData.coverageEndTs || orderData.coverage_end_ts || orderData.createdAt,
@@ -106,7 +119,7 @@ export const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ t, apiBase = "
         orderRef: orderData.orderRef || orderData.order_ref || "",
         exchangeAccountId: orderData.exchangeAccountId || orderData.exchange_account_id || "",
         chain: orderData.chain || "Base",
-        txHash: orderData.paymentTx || orderData.txHash || orderData.tx_hash || "",
+        txHash: String(orderData.paymentTx || orderData.txHash || orderData.tx_hash || "").trim(),
         orderDigest: orderData.orderDigest || orderData.order_digest || "",
         skuId: orderData.skuId || orderData.sku_id || "SKU_24H_FIXED",
       };
@@ -123,7 +136,7 @@ export const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ t, apiBase = "
 
   useEffect(() => {
     fetchOrderDetail();
-  }, [id, apiBase]);
+  }, [id, apiBase, address]);
 
   if (loading) {
     return (
@@ -260,12 +273,22 @@ export const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ t, apiBase = "
 
               {/* 操作按钮 */}
               <div className="flex gap-3">
-                <button 
-                  className="px-4 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
-                  onClick={() => openChainTx(order.chain, order.txHash)}
-                >
-                  查看链上交易
-                </button>
+                {(() => {
+                  const url = getTxUrl(order.chain, order.txHash);
+                  return (
+                    <button
+                      className="px-4 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
+                      disabled={!url}
+                      onClick={() => {
+                        if (!url) return;
+                        console.log("跳转链上交易：", { orderId: order.id, txHash: order.txHash, url });
+                        window.open(url, "_blank", "noopener,noreferrer");
+                      }}
+                    >
+                      {url ? "查看链上交易" : "暂无交易"}
+                    </button>
+                  );
+                })()}
                 <button 
                   className={`px-4 py-2 rounded-lg border transition-colors ${
                     claimEnabled 
@@ -358,13 +381,23 @@ export const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ t, apiBase = "
             <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
               <h3 className="text-lg font-semibold mb-4">快速操作</h3>
               <div className="space-y-3">
-                <button 
-                  className="w-full px-4 py-2 text-left rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
-                  onClick={() => openChainTx(order.chain, order.txHash)}
-                >
-                  <div className="font-medium">查看链上交易</div>
-                  <div className="text-sm text-gray-500">在区块浏览器中查看</div>
-                </button>
+                {(() => {
+                  const url = getTxUrl(order.chain, order.txHash);
+                  return (
+                    <button
+                      className="w-full px-4 py-2 text-left rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+                      disabled={!url}
+                      onClick={() => {
+                        if (!url) return;
+                        console.log("跳转链上交易：", { orderId: order.id, txHash: order.txHash, url });
+                        window.open(url, "_blank", "noopener,noreferrer");
+                      }}
+                    >
+                      <div className="font-medium">{url ? "查看链上交易" : "暂无交易"}</div>
+                      <div className="text-sm text-gray-500">在区块浏览器中查看</div>
+                    </button>
+                  );
+                })()}
                 <button 
                   className={`w-full px-4 py-2 text-left rounded-lg transition-colors ${
                     claimEnabled 

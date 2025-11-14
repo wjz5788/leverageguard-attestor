@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
+import { getExplorerTxUrl } from "../lib/explorer";
 
 interface ClaimsPageProps {
   t: (key: string) => string;
@@ -33,29 +34,26 @@ const saveClaims = (rows: ClaimRecord[]) => {
   localStorage.setItem('liqpass:claims', JSON.stringify(rows));
 };
 
-// 模拟API调用
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-async function apiClaimsPrepare(orderId: string): Promise<{ claimToken: string }> {
-  await sleep(300);
-  return { claimToken: `ct_${Math.random().toString(36).slice(2)}` };
+async function apiClaimsPrepare(orderId: string): Promise<{ claimToken: string; expiresAt?: string }> {
+  const res = await fetch('/api/v1/claims/prepare', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId }),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  const data = await res.json();
+  return { claimToken: data.claimToken, expiresAt: data.expiresAt };
 }
 
 async function apiClaimsVerify(orderId: string, orderRef: string, claimToken: string) {
-  await sleep(600);
-  const now = new Date();
-  return {
-    eligible: true,
-    payout: 48.5,
-    currency: 'USDC',
-    evidence: {
-      type: 'LIQUIDATION',
-      time: new Date(now.getTime() - 3 * 60 * 1000).toISOString(),
-      pair: 'BTC-USDT-PERP',
-    },
-    claimId: `clm_${Math.random().toString(36).slice(2, 8)}`,
-    expiresAt: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
-  };
+  const res = await fetch('/api/v1/claims/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId, orderRef, claimToken }),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  const data = await res.json();
+  return data;
 }
 
 async function walletSendClaimPayout(): Promise<string> {
@@ -71,6 +69,41 @@ export const ClaimsPage: React.FC<ClaimsPageProps> = ({ t }) => {
   const isNewClaim = location.pathname.includes('/new');
   const queryParams = new URLSearchParams(location.search);
   const orderId = queryParams.get('orderId') || 'ord_demo_001';
+
+  const [preparing, setPreparing] = useState(false);
+  const [prepareError, setPrepareError] = useState<string>('');
+
+  useEffect(() => {
+    if (!isNewClaim) return;
+    const oid = (orderId || '').trim();
+    if (!oid) {
+      setPrepareError('缺少订单ID');
+      return;
+    }
+    setPreparing(true);
+    fetch('/api/v1/claims/prepare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ orderId: oid }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.json();
+      })
+      .then((data) => {
+        const cid = data?.claimId || data?.claim?.id;
+        if (cid) {
+          navigate(`/claims/${cid}`);
+          return;
+        }
+        setPrepareError('未返回 claimId');
+      })
+      .catch((err) => {
+        setPrepareError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => setPreparing(false));
+  }, [isNewClaim, orderId, navigate]);
 
   if (!address) {
     return (
@@ -128,7 +161,15 @@ export const ClaimsPage: React.FC<ClaimsPageProps> = ({ t }) => {
         {!isNewClaim ? (
           <ClaimsList />
         ) : (
-          <NewClaimView orderId={orderId} />
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-lg font-semibold mb-2">正在创建赔付请求</h2>
+            {prepareError ? (
+              <div className="text-sm text-red-700">{prepareError}</div>
+            ) : (
+              <div className="text-sm text-gray-600">调用接口 /api/v1/claims/prepare 后自动跳转到详情页</div>
+            )}
+            {preparing && <div className="text-sm text-amber-800 mt-2">准备中...</div>}
+          </div>
         )}
       </div>
     </div>
@@ -138,6 +179,10 @@ export const ClaimsPage: React.FC<ClaimsPageProps> = ({ t }) => {
 // 赔付列表组件
 function ClaimsList() {
   const [claims, setClaims] = useState<ClaimRecord[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [ordRefInputs, setOrdRefInputs] = useState<Record<string, string>>({});
+  const [verifyingMap, setVerifyingMap] = useState<Record<string, boolean>>({});
+  const [verifyMap, setVerifyMap] = useState<Record<string, any>>({});
   
   useEffect(() => {
     setClaims(loadClaims());
@@ -193,55 +238,97 @@ function ClaimsList() {
           </div>
         ) : (
           <div className="space-y-4">
-            {claims.map((claim) => (
-              <div key={claim.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
+            {claims.map((claim) => {
+              const isExpanded = expandedId === claim.id;
+              const ordInput = ordRefInputs[claim.id] || '';
+              const verifying = verifyingMap[claim.id] || false;
+              const vres = verifyMap[claim.id];
+              const onToggle = () => setExpandedId(isExpanded ? null : claim.id);
+              const onInput = (v: string) => setOrdRefInputs(prev => ({ ...prev, [claim.id]: v }));
+              const onVerify = async () => {
+                if (!ordInput.trim()) return;
+                setVerifyingMap(prev => ({ ...prev, [claim.id]: true }));
+                try {
+                  const { claimToken } = await apiClaimsPrepare(claim.orderId);
+                  const result = await apiClaimsVerify(claim.orderId, ordInput.trim(), claimToken);
+                  setVerifyMap(prev => ({ ...prev, [claim.id]: result }));
+                  const next = loadClaims().map(r => r.id === claim.id ? { ...r, status: result.eligible ? 'approved' : 'rejected', payout: { amount: result.payout || r.payout.amount, currency: result.currency || r.payout.currency }, evidence: result.evidence } : r);
+                  saveClaims(next);
+                  setClaims(next);
+                } finally {
+                  setVerifyingMap(prev => ({ ...prev, [claim.id]: false }));
+                }
+              };
+              const onPayout = async () => {
+                if (!vres || !vres.eligible) return;
+                const txHash = await walletSendClaimPayout();
+                const next = loadClaims().map(r => r.id === claim.id ? { ...r, status: 'paid', txHash } : r);
+                saveClaims(next);
+                setClaims(next);
+              };
+              const url = getExplorerTxUrl({ chainId: null, txHash: String(claim.txHash || '').trim() });
+              return (
+                <div key={claim.id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">{claim.payout.amount} {claim.payout.currency}</div>
+                        <div className="text-sm text-gray-500">ClaimID: {claim.id}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-medium text-gray-900">{claim.payout.amount} {claim.payout.currency}</div>
-                      <div className="text-sm text-gray-500">ClaimID: {claim.id}</div>
-                    </div>
+                    {getStatusBadge(claim.status)}
                   </div>
-                  {getStatusBadge(claim.status)}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div><span className="text-gray-500">订单ID:</span><span className="ml-2 font-medium">{claim.orderId}</span></div>
+                    <div><span className="text-gray-500">申请时间:</span><span className="ml-2 font-medium">{formatTime(claim.createdAt)}</span></div>
+                    <div><span className="text-gray-500">证据类型:</span><span className="ml-2 font-medium">{claim.evidence?.type || '-'}</span></div>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button onClick={onToggle} className="px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50">{isExpanded ? '收起' : '验证订单'}</button>
+                    {url ? (
+                      <a href={url} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50">查看链上</a>
+                    ) : null}
+                  </div>
+                  {isExpanded && (
+                    <div className="mt-3 p-3 border border-gray-100 rounded-lg">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600">交易所订单号</label>
+                          <input value={ordInput} onChange={e => onInput(e.target.value)} className="w-full rounded border border-gray-300 px-3 py-2 text-sm" placeholder="请输入交易所订单号" />
+                        </div>
+                        <div className="flex items-end">
+                          <button onClick={onVerify} disabled={verifying} className="w-full px-3 py-2 rounded-lg bg-red-600 text-white disabled:opacity-50">{verifying ? '验证中...' : '验证'}</button>
+                        </div>
+                      </div>
+                      {vres && (
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm">赔付金额：{vres.payout} {vres.currency}</div>
+                            <span className={`px-2 py-1 rounded-full text-xs ${vres.eligible ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{vres.eligible ? '可赔付' : '不可赔'}</span>
+                          </div>
+                          {vres.evidence && (
+                            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm bg-gray-50 rounded p-2">
+                              <div className="flex justify-between"><span className="text-gray-600">类型</span><span className="font-medium">{vres.evidence.type}</span></div>
+                              <div className="flex justify-between"><span className="text-gray-600">交易对</span><span className="font-medium">{vres.evidence.pair}</span></div>
+                            </div>
+                          )}
+                          {vres.eligible && (
+                            <div className="mt-3">
+                              <button onClick={onPayout} className="px-3 py-2 rounded-lg bg-red-600 text-white">赔付（你付gas）</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-500">订单ID:</span>
-                    <span className="ml-2 font-medium">{claim.orderId}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">申请时间:</span>
-                    <span className="ml-2 font-medium">{formatTime(claim.createdAt)}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">证据类型:</span>
-                    <span className="ml-2 font-medium">{claim.evidence?.type || '-'}</span>
-                  </div>
-                </div>
-
-                {claim.txHash && (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-500">链上交易:</span>
-                      <a 
-                        className="text-sm text-blue-600 hover:text-blue-800 underline" 
-                        href={`https://basescan.org/tx/${claim.txHash}`} 
-                        target="_blank" 
-                        rel="noreferrer"
-                      >
-                        查看交易详情
-                      </a>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -272,12 +359,29 @@ function NewClaimView({ orderId }: { orderId: string }) {
     exchangeAccountId: 'ex_acc_7af2',
   };
 
+  React.useEffect(() => {
+    if (!orderData.orderId) return;
+    const rows = loadClaims();
+    const exists = rows.some(r => r.orderId === orderData.orderId);
+    if (!exists) {
+      const initRow: ClaimRecord = {
+        id: `init_${orderData.orderId}`,
+        orderId: orderData.orderId,
+        payout: { amount: 0, currency: 'USDC' },
+        status: 'in_review',
+        createdAt: new Date().toISOString(),
+      };
+      rows.push(initRow);
+      saveClaims(rows);
+    }
+  }, [orderData.orderId]);
+
   const handleVerify = async () => {
     if (!orderRef.trim()) {
       alert('请输入交易所订单号');
       return;
     }
-    
+
     setVerifying(true);
     try {
       const { claimToken } = await apiClaimsPrepare(orderData.orderId);

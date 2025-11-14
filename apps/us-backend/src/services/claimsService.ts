@@ -9,6 +9,8 @@ export class ClaimsError extends Error {
 }
 
 import OrderService from './orderService.js';
+import dbManager from '../database/db.js';
+import { evidenceStorage } from '../utils/evidenceStorage.js';
 
 export interface ClaimsServiceOptions {
   maxEvidenceFiles?: number;
@@ -21,6 +23,7 @@ export default class ClaimsService {
   private readonly payouts = new Map<string, any>();
   private readonly userClaims = new Map<string, string[]>(); // userId -> claimIds
   private readonly orderClaims = new Map<string, string[]>(); // orderId -> claimIds
+  private readonly claimTokens = new Map<string, string>(); // claimToken -> claimId
   
   private readonly options: ClaimsServiceOptions;
   private readonly orderService: OrderService;
@@ -214,7 +217,7 @@ export default class ClaimsService {
   /**
    * 准备理赔申请（前端需要的接口）
    */
-  prepareClaim(orderId: string, userId: string): { claimToken: string } {
+  prepareClaim(orderId: string, userId: string): { claimToken: string; claimId: string } {
     // 检查订单是否存在
     const order = this.orderService.getOrder(orderId);
     if (!order) {
@@ -236,13 +239,31 @@ export default class ClaimsService {
       throw new ClaimsError('ACTIVE_CLAIM_EXISTS', '该订单已有活跃的赔付申请');
     }
 
-    // 生成理赔令牌（30分钟有效）
+    const now = new Date().toISOString();
+    const claimId = `claim_${uuid()}`;
+    const claim: ClaimRecord = {
+      id: claimId,
+      orderId,
+      userId,
+      walletAddress: order.wallet,
+      claimType: 'liquidation',
+      status: 'pending',
+      amountUSDC: 0,
+      description: 'Prepared claim',
+      evidenceFiles: [],
+      submittedAt: now,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    this.claims.set(claimId, claim);
+    this.updateUserClaimsIndex(userId, claimId);
+    this.updateOrderClaimsIndex(orderId, claimId);
+
     const claimToken = `ct_${uuid()}`;
-    
-    // 这里可以存储令牌到临时存储，实际项目中应该使用Redis等
-    // 暂时返回令牌
-    
-    return { claimToken };
+    this.claimTokens.set(claimToken, claimId);
+
+    return { claimToken, claimId };
   }
 
   /**
@@ -259,8 +280,8 @@ export default class ClaimsService {
     };
     claimId: string;
     expiresAt: string;
+    evidenceId?: string;
   } {
-    // 验证令牌有效性（简化实现）
     if (!claimToken.startsWith('ct_')) {
       throw new ClaimsError('INVALID_TOKEN', '无效的理赔令牌');
     }
@@ -281,24 +302,133 @@ export default class ClaimsService {
       throw new ClaimsError('ORDER_REF_MISMATCH', '订单引用不匹配');
     }
 
-    // 模拟理赔资格检查
+    // 根据最近一次交易所验证结果判断是否强平
+    const db = dbManager.getDatabase();
+    const row = db.get(
+      `SELECT * FROM verify_results WHERE exchange = ? AND ord_id = ? ORDER BY verified_at DESC LIMIT 1`,
+      'okx',
+      orderRef
+    );
+
+    let eligible = false;
+    let pair = '';
+    let eventTime = new Date().toISOString();
+    try {
+      const normalized = row?.normalized_json ? JSON.parse(row.normalized_json) : null;
+      const position = normalized?.position || normalized?.normalized?.position || null;
+      const liquidated = Boolean(position?.liquidated);
+      eligible = liquidated;
+      pair = normalized?.order?.pair || normalized?.meta?.instId || '';
+      eventTime = position?.liquidatedAt || new Date().toISOString();
+    } catch {}
+
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 30 * 60 * 1000).toISOString(); // 30分钟有效
-    
-    // 这里应该有实际的理赔资格检查逻辑
-    // 暂时返回模拟数据
+    const expiresAt = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
+
+    const claimIdFromToken = this.claimTokens.get(claimToken);
+    const evidenceId = evidenceStorage.generateEvidenceId();
+    const evidencePayload = {
+      request: { orderId, orderRef, claimToken, userId },
+      result: { eligible, payout: eligible ? 48.5 : 0, currency: 'USDC' },
+      evidence: { type: eligible ? 'LIQUIDATION' : 'NONE', time: eventTime, pair: pair || 'UNKNOWN' },
+      raw: row || null,
+      meta: { source: 'okx', verifiedAt: new Date().toISOString() }
+    };
+    evidenceStorage.saveEvidence(evidenceId, evidencePayload);
+    const db = dbManager.getDatabase();
+    const evtId = `evt_${uuid()}`;
+    const eventType = eligible ? 'verify_pass' : 'verify_fail';
+    const metaJson = JSON.stringify({ orderRef, pair: pair || 'UNKNOWN', time: eventTime });
+    db.run(
+      'INSERT INTO audit_events (id, event_type, order_id, claim_id, evidence_id, amount_usdc, meta_json) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      evtId,
+      eventType,
+      orderId,
+      (claimIdFromToken || `clm_${uuid()}`),
+      evidenceId,
+      eligible ? 48.5 : 0,
+      metaJson
+    );
+
     return {
-      eligible: true,
-      payout: 48.5, // 模拟赔付金额
+      eligible,
+      payout: eligible ? 48.5 : 0,
       currency: 'USDC',
       evidence: {
-        type: 'LIQUIDATION',
-        time: new Date(now.getTime() - 3 * 60 * 1000).toISOString(), // 3分钟前
-        pair: 'BTC-USDT-PERP'
+        type: eligible ? 'LIQUIDATION' : 'NONE',
+        time: eventTime,
+        pair: pair || 'UNKNOWN'
       },
-      claimId: `clm_${uuid()}`,
-      expiresAt
+      claimId: claimIdFromToken || `clm_${uuid()}`,
+      expiresAt,
+      evidenceId
     };
+  }
+
+  toClaimDetail(claimId: string): any {
+    const claim = this.getClaim(claimId);
+    if (!claim) return undefined;
+    const order = this.orderService.getOrder(claim.orderId);
+    const premium6d = Number(order?.premiumUSDC6d ?? 0);
+    const payout6d = Number(order?.payoutUSDC6d ?? 0);
+    const premiumPaid = premium6d > 0 ? premium6d / 1_000_000 : 0;
+    const payoutCap = payout6d > 0 ? payout6d / 1_000_000 : 0;
+    const createdAt = claim.createdAt;
+    const coverageStart = createdAt;
+    const coverageEnd = createdAt;
+    const status: 'PENDING_VERIFY' | 'WAITING_PAYOUT' | 'PAID' = claim.status === 'paid' ? 'PAID' : 'PENDING_VERIFY';
+    return {
+      id: claim.id,
+      orderId: claim.orderId,
+      title: '24h 爆仓保',
+      principal: Number(order?.principal ?? 0),
+      principalCurrency: 'USDT',
+      leverage: Number(order?.leverage ?? 0),
+      premiumPaid,
+      payoutCap,
+      payoutCurrency: 'USDC',
+      coverageStart,
+      coverageEnd,
+      createdAt,
+      accountRef: null,
+      status,
+      orderRef: order?.orderRef || null,
+      exchange: order?.exchange || null,
+      symbol: order?.pair || null,
+      side: null,
+      size: null,
+      liquidationTime: null,
+      isLiquidated: null,
+      pnl: null,
+      evidenceId: null,
+      payoutSuggest: null,
+      payoutEligibleAt: null,
+    };
+  }
+
+  toVerifiedClaimDetail(orderId: string, claimId: string, orderRef: string, verify: { eligible: boolean; payout: number; currency: string; evidence: { type: string; time: string; pair: string }; expiresAt?: string; evidenceId?: string }): any {
+    const order = this.orderService.getOrder(orderId);
+    const base = this.toClaimDetail(claimId) || { id: claimId, orderId };
+    const status: 'PENDING_VERIFY' | 'WAITING_PAYOUT' | 'PAID' = verify.eligible ? 'WAITING_PAYOUT' : 'PENDING_VERIFY';
+    return {
+      ...base,
+      orderRef: orderRef || base.orderRef || null,
+      exchange: order?.exchange || 'OKX',
+      symbol: verify.evidence?.pair || order?.pair || null,
+      liquidationTime: verify.evidence?.time || null,
+      isLiquidated: Boolean(verify.eligible),
+      payoutSuggest: Number(verify.payout || 0),
+      payoutEligibleAt: verify.expiresAt || null,
+      evidenceId: verify.evidenceId || null,
+      status,
+    };
+  }
+
+  getTokenByClaimId(claimId: string): string | undefined {
+    for (const [token, cid] of this.claimTokens.entries()) {
+      if (cid === claimId) return token;
+    }
+    return undefined;
   }
 
   /**

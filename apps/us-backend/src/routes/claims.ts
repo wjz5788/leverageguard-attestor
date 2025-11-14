@@ -120,10 +120,11 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
         });
       }
 
-      return res.json({
-        ok: true,
-        claim
-      });
+      const detail = (claimsService as any).toClaimDetail(claimId);
+      if (!detail) {
+        return res.status(404).json({ ok: false, code: 'CLAIM_NOT_FOUND', message: '赔付申请不存在' });
+      }
+      return res.json(detail);
     } catch (error) {
       console.error('获取赔付申请详情错误:', error);
       return res.status(500).json({
@@ -367,13 +368,13 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
 
   // 验证理赔申请 - 前端需要的接口
   router.post('/claims/verify', claimAuth, async (req: AuthenticatedRequest, res) => {
-    const { orderId, orderRef, claimToken } = req.body;
-    
-    if (!orderId || !orderRef || !claimToken) {
+    const { orderId, orderRef, claimToken, claimId } = req.body as any;
+
+    if (!orderRef || (!orderId && !claimId)) {
       return res.status(400).json({
         ok: false,
         code: 'MISSING_PARAMETERS',
-        message: '订单ID、订单引用和理赔令牌不能为空'
+        message: '缺少必要参数'
       });
     }
 
@@ -388,13 +389,25 @@ export default function claimsRoutes(claimsService: ClaimsService, authService: 
           message: '用户认证信息缺失'
         });
       }
+      let resolvedOrderId = orderId;
+      let resolvedToken = claimToken;
 
-      const result = await claimsService.verifyClaim(orderId, orderRef, claimToken, userId);
-      
-      return res.json({
-        ok: true,
-        ...result
-      });
+      if (claimId && (!resolvedOrderId || !resolvedToken)) {
+        const claim = await claimsService.getClaim(claimId);
+        if (!claim) {
+          return res.status(404).json({ ok: false, code: 'CLAIM_NOT_FOUND', message: '赔付申请不存在' });
+        }
+        resolvedOrderId = resolvedOrderId || claim.orderId;
+        resolvedToken = resolvedToken || claimsService.getTokenByClaimId(claimId);
+      }
+
+      if (!resolvedOrderId || !resolvedToken) {
+        return res.status(400).json({ ok: false, code: 'MISSING_PARAMETERS', message: '订单ID或理赔令牌缺失' });
+      }
+
+      const result = await claimsService.verifyClaim(resolvedOrderId, orderRef, resolvedToken, userId);
+      const detail = (claimsService as any).toVerifiedClaimDetail(resolvedOrderId, claimId || result.claimId, orderRef, result);
+      return res.json(detail);
     } catch (error) {
       if (error instanceof ClaimsError) {
         return res.status(error.httpStatus).json({

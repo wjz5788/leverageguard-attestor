@@ -14,7 +14,7 @@ export default defineConfig({
     // 使用Vite默认HMR配置，不移除任何默认设置
     proxy: {
       '/api': {
-        target: import.meta.env?.VITE_API_BASE || 'http://localhost:3002',
+        target: import.meta.env?.VITE_API_BASE || 'http://localhost:3006',
         changeOrigin: true,
         secure: false,
       },

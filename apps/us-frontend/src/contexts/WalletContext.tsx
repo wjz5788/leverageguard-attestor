@@ -23,7 +23,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
   // 钱包事件监听
   useEffect(() => {
-    const { ethereum } = window as any;
+    const w = window as any;
+    const ethereum = Array.isArray(w?.ethereum?.providers)
+      ? w.ethereum.providers.find((p: any) => p?.isMetaMask || p?.isBraveWallet || p?.request)
+      : w?.ethereum;
     if (!ethereum) return;
 
     const handleAccounts = (accounts: string[]) => {
@@ -52,7 +55,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
   const connectWallet = useCallback(async () => {
     setMessage("");
-    const { ethereum } = window as any;
+    const w = window as any;
+    const ethereum = Array.isArray(w?.ethereum?.providers)
+      ? w.ethereum.providers.find((p: any) => p?.isMetaMask || p?.isBraveWallet || p?.request)
+      : w?.ethereum;
     if (!ethereum) {
       setMessage("未检测到钱包。请安装 MetaMask 或使用兼容钱包。");
       return;
@@ -74,7 +80,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const switchToBase = useCallback(async (testnet = false) => {
     setMessage("");
     const target = testnet ? BASE_SEPOLIA : BASE_MAINNET;
-    const { ethereum } = window as any;
+    const w = window as any;
+    const ethereum = Array.isArray(w?.ethereum?.providers)
+      ? w.ethereum.providers.find((p: any) => p?.isMetaMask || p?.isBraveWallet || p?.request)
+      : w?.ethereum;
     if (!ethereum) {
       setMessage("未检测到钱包。请安装 MetaMask 或使用兼容钱包。");
       return;
@@ -106,6 +115,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
   }, []);
 
+  const disconnectWallet = useCallback(() => {
+    setAddress("");
+    setChainId("");
+    setMessage("");
+  }, []);
+
   const value: WalletState = {
     address,
     chainId,
@@ -114,7 +129,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     message,
     setMessage,
     connectWallet,
-    switchToBase
+    switchToBase,
+    disconnectWallet,
   };
 
   return (

@@ -1,18 +1,29 @@
 // 服务器启动文件
 import dotenv from 'dotenv';
+import path from 'path';
 import app from './app.js';
 import { EnvValidator } from './utils/envValidator.js';
 
 // 加载环境变量
-dotenv.config();
+const env = process.env.NODE_ENV || 'development';
+if (env === 'production') {
+  dotenv.config({ path: path.resolve('.env.production') });
+} else {
+  dotenv.config();
+}
 
 // 启动前校验环境变量
-try {
-  console.log('🔍 校验支付环境变量配置...');
-  EnvValidator.validatePaymentConfig();
-} catch (error) {
-  console.error('❌ 启动失败:', error instanceof Error ? error.message : String(error));
-  process.exit(1);
+const skipValidation = process.env.DISABLE_PAYMENT_ENV_VALIDATION === 'true';
+if (!skipValidation) {
+  try {
+    console.log('🔍 校验支付环境变量配置...');
+    EnvValidator.validatePaymentConfig();
+  } catch (error) {
+    console.error('❌ 启动失败:', error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+} else {
+  console.log('⚠️ 跳过支付环境变量校验');
 }
 
 const PORT: number = Number(process.env.PORT) || 3002;

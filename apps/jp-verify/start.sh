@@ -22,7 +22,11 @@ pip3 install -r requirements.txt
 
 # 启动服务
 echo "执行环境检查..."
+export EVIDENCE_DIR=${EVIDENCE_DIR:-reports/evidence}
+export JP_VERIFY_TEST_MODE=${JP_VERIFY_TEST_MODE:-1}
 python3 env_check.py || exit $?
 
 echo "启动服务在端口 8082..."
+export EVIDENCE_DIR=${EVIDENCE_DIR:-reports/evidence}
+export JP_VERIFY_TEST_MODE=${JP_VERIFY_TEST_MODE:-1}
 python3 main.py

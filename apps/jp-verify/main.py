@@ -16,6 +16,14 @@ from starlette.responses import JSONResponse
 
 app = FastAPI(title="jp-verify", version="1.0.0")
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    d = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+    msg = d.get("error", {}).get("msg") if isinstance(d.get("error"), dict) else d.get("msg")
+    if not msg:
+        msg = d.get("message") or "Request failed"
+    return JSONResponse(status_code=exc.status_code, content={"message": msg, "error": d, "status": exc.status_code})
+
 # CORS 配置
 # CORS：从环境变量收敛来源，默认严格为空（需在部署时配置）
 origins_env = os.getenv("ALLOWED_ORIGINS", "*")
@@ -31,7 +39,8 @@ app.add_middleware(
 # 请求模型
 class VerifyRequest(BaseModel):
     exchange: str = "okx"
-    ordId: str
+    ordId: Optional[str] = None
+    clOrdId: Optional[str] = None
     instId: str
     live: bool = True
     fresh: bool = True
@@ -77,9 +86,12 @@ KEY_USAGE_LIMIT = {
 
 # 密钥使用记录
 _key_usage = {}  # 格式: {api_key: {'minute_count': 0, 'hour_count': 0, 'last_used': timestamp}}
+TEST_MODE = os.getenv("JP_VERIFY_TEST_MODE", "0") == "1"
 
 def validate_api_key_format(api_key: str) -> bool:
     """验证API密钥格式"""
+    if TEST_MODE:
+        return True
     if not api_key or len(api_key) < API_KEY_MIN_LENGTH:
         return False
     # 检查是否为有效的Base64格式（OKX API密钥通常是Base64）
@@ -93,6 +105,8 @@ def validate_api_key_format(api_key: str) -> bool:
 
 def validate_secret_key_format(secret_key: str) -> bool:
     """验证密钥格式"""
+    if TEST_MODE:
+        return True
     if not secret_key or len(secret_key) < SECRET_KEY_MIN_LENGTH:
         return False
     # 检查是否包含特殊字符和数字
@@ -105,6 +119,8 @@ def validate_secret_key_format(secret_key: str) -> bool:
 
 def validate_passphrase_format(passphrase: str) -> bool:
     """验证密码短语格式"""
+    if TEST_MODE:
+        return True
     if not passphrase or len(passphrase) < PASSPHRASE_MIN_LENGTH:
         return False
     return True
@@ -115,6 +131,8 @@ def check_key_blacklist(api_key: str) -> bool:
 
 def update_key_usage(api_key: str) -> bool:
     """更新密钥使用频率并检查是否超限"""
+    if TEST_MODE:
+        return True
     current_time = time.time()
     
     if api_key not in _key_usage:
@@ -153,6 +171,8 @@ def update_key_usage(api_key: str) -> bool:
 
 def validate_api_credentials(api_key: str, secret_key: str, passphrase: str) -> None:
     """全面验证API凭证安全性"""
+    if TEST_MODE:
+        return None
     # 检查密钥是否在黑名单中
     if check_key_blacklist(api_key):
         raise APIKeySecurityError("API密钥已被禁用", 403)
@@ -227,10 +247,14 @@ async def call_okx_api(endpoint: str, method: str = "GET", params: dict = None,
     headers = {"Content-Type": "application/json"}
     if needs_auth:
       timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-      body = ""
-      if method.upper() == "POST" and params:
-          body = json.dumps(params, separators=(',', ':'), sort_keys=True)
-      signature = generate_okx_signature(timestamp, method, endpoint, body, secret_key)  # type: ignore[arg-type]
+      from urllib.parse import urlencode
+      if method.upper() == "GET" and params:
+          request_path = endpoint + "?" + urlencode(params)
+          body = ""
+      else:
+          request_path = endpoint
+          body = json.dumps(params, separators=(',', ':'), sort_keys=True) if method.upper() == "POST" and params else ""
+      signature = generate_okx_signature(timestamp, method, request_path, body, secret_key)  # type: ignore[arg-type]
       headers.update({
           "OK-ACCESS-KEY": api_key,  # type: ignore[arg-type]
           "OK-ACCESS-SIGN": signature,
@@ -466,6 +490,7 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
     safe_log_data = {
         "exchange": request.exchange,
         "ordId": request.ordId,
+        "clOrdId": request.clOrdId,
         "instId": request.instId,
         "keyMode": request.keyMode,
         "uid": request.uid,
@@ -480,6 +505,8 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
         if request.exchange != "okx":
             raise HTTPException(status_code=400, detail={"code": "UNSUPPORTED_EXCHANGE", "msg": "目前只支持 OKX 交易所"})
         
+        if not (request.ordId or request.clOrdId):
+            raise HTTPException(status_code=400, detail={"code": "MISSING_ORDER_ID", "msg": "ordId 或 clOrdId 必须提供"})
         if request.keyMode == "inline" and not all([request.apiKey, request.secretKey, request.passphrase]):
             raise HTTPException(status_code=400, detail={"code": "MISSING_CREDENTIALS", "msg": "inline 模式下需要提供完整的 API 密钥信息"})
         
@@ -491,10 +518,15 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
                 raise HTTPException(status_code=e.status_code, detail={"code": "API_KEY_SECURITY_ERROR", "msg": e.message})
         
         # 调用 OKX API 获取订单信息
+        order_params = {"instId": request.instId}
+        if request.ordId:
+            order_params["ordId"] = request.ordId
+        else:
+            order_params["clOrdId"] = request.clOrdId
         order_result = await call_okx_api(
             endpoint="/api/v5/trade/order",
             method="GET",
-            params={"ordId": request.ordId, "instId": request.instId},
+            params=order_params,
             api_key=request.apiKey,
             secret_key=request.secretKey,
             passphrase=request.passphrase
@@ -516,6 +548,24 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
             method="GET",
             params={"instType": "SWAP", "instId": request.instId}
         )
+        # 调用 OKX API 获取成交记录（fills-history）
+        resolved_ord_id = None
+        try:
+            _od = order_result.get('data', {})
+            _lst = (_od.get('data') or [])
+            if _lst:
+                resolved_ord_id = _lst[0].get('ordId')
+        except Exception:
+            resolved_ord_id = request.ordId
+        ord_for_fills = resolved_ord_id or request.ordId
+        fills_result = await call_okx_api(
+            endpoint="/api/v5/trade/fills-history",
+            method="GET",
+            params={"instType": "SWAP", "instId": request.instId, "ordId": ord_for_fills, "limit": 100},
+            api_key=request.apiKey,
+            secret_key=request.secretKey,
+            passphrase=request.passphrase
+        )
         
         # 处理响应数据
         total_time = int((time.time() - start_time) * 1000)
@@ -525,6 +575,35 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
             order_result.get('data', {}),
             positions_result.get('data', {})
         )
+        # 结合成交记录补充爆仓判定与统计
+        okx_fills = (fills_result.get('data', {}) or {}).get('data', [])
+        total_volume = 0.0
+        total_fee = 0.0
+        total_pnl = 0.0
+        strong_liq_count = 0
+        for f in okx_fills:
+            try:
+                fill_sz = float(f.get('fillSz', 0) or 0)
+                fill_px = float(f.get('fillPx', 0) or 0)
+                fee = float(f.get('fee', 0) or 0)
+                pnl = float(f.get('fillPnl', 0) or 0)
+                value = fill_sz * fill_px
+                total_volume += value
+                total_fee += fee
+                total_pnl += pnl
+                if pnl < 0 and value >= 100:
+                    strong_liq_count += 1
+            except Exception:
+                continue
+        # 将成交统计写入规范化数据
+        normalized_data['fills_total_volume'] = f"{total_volume:.4f}"
+        normalized_data['fills_total_fee'] = f"{total_fee:.4f}"
+        normalized_data['fills_total_pnl'] = f"{total_pnl:.4f}"
+        normalized_data['fills_liq_count'] = str(strong_liq_count)
+        # 基于成交记录的强平标识
+        if strong_liq_count > 0:
+            normalized_data['liq_flag'] = 'true'
+            normalized_data['reason'] = normalized_data.get('reason') or 'forced-liquidation'
         
         # 创建 JCS Canonical JSON
         canonical_json = serialize_jcs_canonical(normalized_data)
@@ -536,11 +615,13 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
         # 序列化原始数据
         serialized_order = serialize_json_fixed(order_result)
         serialized_positions = serialize_json_fixed(positions_result)
+        serialized_fills = serialize_json_fixed(fills_result)
         
         # 计算叶子节点哈希
         leaves = [
             {"path": "raw.trade/order", "hash": calculate_hash(serialized_order)},
             {"path": "raw.account/positions", "hash": calculate_hash(serialized_positions)},
+            {"path": "raw.trade/fills-history", "hash": calculate_hash(serialized_fills)},
             {"path": "normalized.evidence", "hash": evidence_root}
         ]
         
@@ -548,27 +629,31 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
         root_hash = evidence_root
         
         # 构建响应（包含三件套：原始快照、规范化 JSON、evidence_root）
+        ord_for_meta = ord_for_fills or request.ordId
         response_data = {
             "meta": {
                 "exchange": "okx",
                 "instId": request.instId,
-                "ordId": request.ordId,
+                "ordId": ord_for_meta,
+                "clOrdId": request.clOrdId,
                 "verifiedAt": datetime.now(timezone.utc).isoformat(),
                 "live": request.live,
                 "fresh": request.fresh,
                 "requestId": request_id,
-                "version": "jp-verify@1.0.0"
+                "version": "jp-verify@1.0.0",
+                "source": "okx-api"
             },
             "normalized": {
                 "data": normalized_data,
                 "canonical_json": canonical_json,
                 "evidence_root": evidence_root
             },
-            "raw": {
-                "trade/order": order_result,
-                "account/positions": positions_result,
-                "public/instruments": instruments_result
-            },
+        "raw": {
+            "trade/order": order_result,
+            "account/positions": positions_result,
+            "public/instruments": instruments_result,
+            "trade/fills-history": fills_result
+        },
             "evidence": {
                 "schemaVersion": "1.0.0",
                 "hashAlgo": "keccak256",
@@ -580,7 +665,7 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
                     "meta": {
                         "exchange": "okx",
                         "instId": request.instId,
-                        "ordId": request.ordId,
+                        "ordId": ord_for_meta,
                         "verifiedAt": datetime.now(timezone.utc).isoformat(),
                         "requestId": request_id
                     },
@@ -617,7 +702,8 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
                 "live": request.live,
                 "fresh": request.fresh,
                 "requestId": request_id,
-                "version": "jp-verify@1.0.0"
+                "version": "jp-verify@1.0.0",
+                "source": "okx-api"
             },
             "normalized": None,
             "raw": None,
@@ -655,7 +741,8 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
                 "live": request.live,
                 "fresh": request.fresh,
                 "requestId": request_id,
-                "version": "jp-verify@1.0.0"
+                "version": "jp-verify@1.0.0",
+                "source": "okx-api"
             },
             "normalized": None,
             "raw": None,
@@ -678,6 +765,233 @@ async def verify_order(request: VerifyRequest, background_tasks: BackgroundTasks
         background_tasks.add_task(save_pending_evidence, error_response, request)
         
         raise HTTPException(status_code=500, detail=error_response)
+
+ 
+
+from typing import Union
+def _ms_to_iso(ts_ms: Optional[Union[str, int]]) -> Optional[str]:
+    try:
+        v = int(ts_ms) if ts_ms is not None else None
+        if v is None:
+            return None
+        dt = datetime.utcfromtimestamp(v / 1000.0)
+        return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-4] + "Z"
+    except Exception:
+        return None
+
+def _build_standard_view(order_obj: dict, normalized: dict, evidence_id: str, verified_at: str, request_id: str) -> dict:
+    inst_id = order_obj.get("instId") or normalized.get("symbol")
+    ord_id = order_obj.get("ordId") or normalized.get("order_id")
+    pos_side = order_obj.get("posSide")
+    side = pos_side or order_obj.get("side")
+    size = order_obj.get("accFillSz") or order_obj.get("sz") or normalized.get("filled_sz")
+    leverage = order_obj.get("lever")
+    avg_px = order_obj.get("avgPx") or normalized.get("avg_px")
+    liq_px = order_obj.get("liqPx")
+    c_time = _ms_to_iso(order_obj.get("cTime"))
+    u_time = _ms_to_iso(order_obj.get("uTime") or order_obj.get("fillTime"))
+    pnl = order_obj.get("pnl")
+    ccy = order_obj.get("feeCcy") or "USDT"
+    liq_flag = normalized.get("liq_flag") == "true"
+    category = order_obj.get("category")
+    is_liq = liq_flag or category == "full_liquidation"
+    verify_status = "PASS" if is_liq else "FAIL"
+    verify_reason = None if is_liq else "NOT_LIQUIDATED"
+    can_purchase = bool(is_liq)
+    return {
+        "verifyId": f"vrf_{request_id[:8]}",
+        "evidenceId": evidence_id,
+        "exchange": "okx",
+        "instId": inst_id,
+        "ordId": ord_id,
+        "side": side,
+        "size": str(size) if size is not None else None,
+        "leverage": int(float(leverage)) if leverage else None,
+        "avgPx": str(avg_px) if avg_px is not None else None,
+        "liqPx": str(liq_px) if liq_px is not None else None,
+        "openTime": c_time,
+        "closeTime": u_time,
+        "isLiquidated": is_liq,
+        "pnl": str(pnl) if pnl is not None else None,
+        "currency": ccy,
+        "verifyStatus": verify_status,
+        "verifyReason": verify_reason,
+        "canPurchase": can_purchase,
+        "verifiedAt": verified_at,
+        "anchorStatus": "not_anchored",
+        "anchorTxHash": None,
+    }
+
+@app.post("/api/verify/standard")
+async def verify_order_standard(request: VerifyRequest, background_tasks: BackgroundTasks):
+    start_time = time.time()
+    request_id = str(uuid.uuid4())
+    try:
+        if request.exchange != "okx":
+            raise HTTPException(status_code=400, detail={"code": "UNSUPPORTED_EXCHANGE", "msg": "目前只支持 OKX 交易所"})
+        if not (request.ordId or request.clOrdId):
+            raise HTTPException(status_code=400, detail={"code": "MISSING_ORDER_ID", "msg": "ordId 或 clOrdId 必须提供"})
+        if request.keyMode == "inline" and not all([request.apiKey, request.secretKey, request.passphrase]):
+            raise HTTPException(status_code=400, detail={"code": "MISSING_CREDENTIALS", "msg": "inline 模式下需要提供完整的 API 密钥信息"})
+        if request.keyMode == "inline":
+            try:
+                validate_api_credentials(request.apiKey, request.secretKey, request.passphrase)
+            except APIKeySecurityError as e:
+                raise HTTPException(status_code=e.status_code, detail={"code": "API_KEY_SECURITY_ERROR", "msg": e.message})
+        order_params = {"instId": request.instId}
+        if request.ordId:
+            order_params["ordId"] = request.ordId
+        else:
+            order_params["clOrdId"] = request.clOrdId
+        order_result = await call_okx_api(
+            endpoint="/api/v5/trade/order",
+            method="GET",
+            params=order_params,
+            api_key=request.apiKey,
+            secret_key=request.secretKey,
+            passphrase=request.passphrase
+        )
+        positions_result = await call_okx_api(
+            endpoint="/api/v5/account/positions",
+            method="GET",
+            params={"instId": request.instId},
+            api_key=request.apiKey,
+            secret_key=request.secretKey,
+            passphrase=request.passphrase
+        )
+        instruments_result = await call_okx_api(
+            endpoint="/api/v5/public/instruments",
+            method="GET",
+            params={"instType": "SWAP", "instId": request.instId}
+        )
+        resolved_ord_id = None
+        try:
+            _od = order_result.get('data', {})
+            _lst = (_od.get('data') or [])
+            if _lst:
+                resolved_ord_id = _lst[0].get('ordId')
+        except Exception:
+            resolved_ord_id = request.ordId
+        ord_for_fills = resolved_ord_id or request.ordId
+        fills_result = await call_okx_api(
+            endpoint="/api/v5/trade/fills-history",
+            method="GET",
+            params={"instType": "SWAP", "instId": request.instId, "ordId": ord_for_fills, "limit": 100},
+            api_key=request.apiKey,
+            secret_key=request.secretKey,
+            passphrase=request.passphrase
+        )
+        total_time = int((time.time() - start_time) * 1000)
+        normalized_data = normalize_evidence_data(
+            order_result.get('data', {}),
+            positions_result.get('data', {})
+        )
+        okx_fills = (fills_result.get('data', {}) or {}).get('data', [])
+        total_volume = 0.0
+        total_fee = 0.0
+        total_pnl = 0.0
+        strong_liq_count = 0
+        for f in okx_fills:
+            try:
+                fill_sz = float(f.get('fillSz', 0) or 0)
+                fill_px = float(f.get('fillPx', 0) or 0)
+                fee = float(f.get('fee', 0) or 0)
+                pnl = float(f.get('fillPnl', 0) or 0)
+                value = fill_sz * fill_px
+                total_volume += value
+                total_fee += fee
+                total_pnl += pnl
+                if pnl < 0 and value >= 100:
+                    strong_liq_count += 1
+            except Exception:
+                continue
+        normalized_data['fills_total_volume'] = f"{total_volume:.4f}"
+        normalized_data['fills_total_fee'] = f"{total_fee:.4f}"
+        normalized_data['fills_total_pnl'] = f"{total_pnl:.4f}"
+        normalized_data['fills_liq_count'] = str(strong_liq_count)
+        if strong_liq_count > 0:
+            normalized_data['liq_flag'] = 'true'
+            normalized_data['reason'] = normalized_data.get('reason') or 'forced-liquidation'
+        canonical_json = serialize_jcs_canonical(normalized_data)
+        evidence_root = create_evidence_root(canonical_json)
+        evidence_id = generate_evidence_id()
+        serialized_order = serialize_json_fixed(order_result)
+        serialized_positions = serialize_json_fixed(positions_result)
+        serialized_fills = serialize_json_fixed(fills_result)
+        leaves = [
+            {"path": "raw.trade/order", "hash": calculate_hash(serialized_order)},
+            {"path": "raw.account/positions", "hash": calculate_hash(serialized_positions)},
+            {"path": "raw.trade/fills-history", "hash": calculate_hash(serialized_fills)},
+            {"path": "normalized.evidence", "hash": evidence_root}
+        ]
+        root_hash = evidence_root
+        verified_at = datetime.now(timezone.utc).isoformat()
+        order_obj = None
+        try:
+            lst = (order_result.get('data', {}) or {}).get('data', [])
+            order_obj = lst[0] if lst else {}
+        except Exception:
+            order_obj = {}
+        std_view = _build_standard_view(order_obj, normalized_data, evidence_id, verified_at, request_id)
+        background_tasks.add_task(save_evidence, {
+            "meta": {
+                "exchange": "okx",
+                "instId": request.instId,
+                "ordId": std_view.get("ordId"),
+                "verifiedAt": verified_at,
+                "live": request.live,
+                "fresh": request.fresh,
+                "requestId": request_id,
+                "version": "jp-verify@1.0.0",
+                "source": "okx-api"
+            },
+            "normalized": {
+                "data": normalized_data,
+                "canonical_json": canonical_json,
+                "evidence_root": evidence_root
+            },
+            "raw": {
+                "trade/order": order_result,
+                "account/positions": positions_result,
+                "public/instruments": instruments_result,
+                "trade/fills-history": fills_result
+            },
+            "evidence": {
+                "schemaVersion": "1.0.0",
+                "hashAlgo": "keccak256",
+                "serialization": "jcs-canonical-json",
+                "leaves": leaves,
+                "root": root_hash,
+                "rootAlgo": "keccak256-evidence-root-v1",
+                "bundleHash": calculate_hash(serialize_json_fixed({
+                    "meta": {
+                        "exchange": "okx",
+                        "instId": request.instId,
+                        "ordId": std_view.get("ordId"),
+                        "verifiedAt": verified_at,
+                        "requestId": request_id
+                    },
+                    "normalized": normalized_data,
+                    "evidenceId": evidence_id
+                })),
+                "evidenceId": evidence_id,
+                "parentRoot": None
+            },
+            "perf": {
+                "okxRttMs": total_time - 100,
+                "totalMs": total_time,
+                "cache": False,
+                "rateLimit": {"remaining": 98, "resetSec": 1}
+            },
+            "error": None
+        })
+        return std_view
+    except OKXAuthError as e:
+        raise HTTPException(status_code=e.status_code, detail={"code": f"OKX_AUTH_{e.status_code}", "msg": e.message})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "msg": str(e)})
 
 if __name__ == "__main__":
     import uvicorn

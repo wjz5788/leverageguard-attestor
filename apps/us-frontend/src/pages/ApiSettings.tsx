@@ -131,6 +131,27 @@ type VerifyResponse = {
   detail?: string;
   message?: string;
   error?: string;
+  verifyId?: string;
+  evidenceId?: string;
+  exchange?: string;
+  instId?: string;
+  ordId?: string;
+  side?: string;
+  size?: string;
+  leverage?: number;
+  avgPx?: string;
+  liqPx?: string;
+  openTime?: string;
+  closeTime?: string;
+  isLiquidated?: boolean;
+  pnl?: string;
+  currency?: string;
+  verifyStatus?: 'PASS' | 'FAIL';
+  verifyReason?: string | null;
+  canPurchase?: boolean;
+  verifiedAt?: string;
+  anchorStatus?: string;
+  anchorTxHash?: string | null;
 };
 
 // 交易所字段定义
@@ -238,21 +259,13 @@ function StatusBadge({ status, lastVerifiedAt, pendingConfirm, verifying }: {
     if (verifying) {
       return { text: '🔄 验证中…', cls: 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse' };
     }
-    if (status === 'verified' && pendingConfirm) {
-      return { text: '🟡 待确认 · 核对回显后点击"确认无误"', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+    if (status === 'verified' && !pendingConfirm) {
+      return { text: '🟢 绿点 · 已确认', cls: 'bg-green-50 text-green-700 border-green-200' };
     }
-    
-    const map = {
-      verified: { text: `✅ 已验证${lastVerifiedAt ? ` · ${formatTime(lastVerifiedAt)}` : ''}`, cls: 'bg-green-50 text-green-700 border-green-200' },
-      failed: { text: '❌ 未通过 · 点击查看原因', cls: 'bg-red-50 text-red-700 border-red-200' },
-      unverified: { text: '⏳ 待验证 · 请先验证', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-      verifying: { text: '🔄 验证中…', cls: 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse' },
-      disabled: { text: '⛔ 已禁用', cls: 'bg-zinc-50 text-zinc-600 border-zinc-200' },
-      deleted: { text: '🗑 已删除', cls: 'bg-zinc-50 text-zinc-600 border-zinc-200' },
-      draft: { text: '草稿', cls: 'bg-zinc-50 text-zinc-600 border-zinc-200' },
-    };
-    
-    return map[status] || map.unverified;
+    if (status === 'verified' && pendingConfirm) {
+      return { text: '🟡 黄点 · 待确认', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+    }
+    return { text: '⚪ 灰点 · 未验证', cls: 'bg-zinc-50 text-zinc-600 border-zinc-200' };
   };
 
   const config = getBadgeConfig();
@@ -342,6 +355,8 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
   const [resultData, setResultData] = useState<VerifyResponse | null>(null);
   const [resultError, setResultError] = useState<string | null>(null);
   const [verifyingMap, setVerifyingMap] = useState<Record<string, boolean>>({});
+  const [currentAccountId, setCurrentAccountId] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   
   // 抽屉状态
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -450,7 +465,26 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
   const saveForm = async () => {
     try {
       if (!editingId) {
-        // 创建新账户
+        // 调用后端保存API密钥
+        const payload = {
+          exchange: form.exchange.toLowerCase(),
+          api_key: form.apiKey,
+          secret: form.apiSecret || form.apiKey, // 兼容表单字段，优先使用 apiSecret
+          passphrase: form.passphrase,
+        };
+        const res = await fetch('/api/v1/api-keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const errObj = (data && typeof data.error === 'object') ? data.error : null;
+          const reason = (data.detail || data.message || errObj?.message || (typeof data.error === 'string' ? data.error : '') || '保存失败');
+          throw new Error(reason);
+        }
+
+        // 创建新账户（前端展示用）
         const newAccount: ExchangeAccount = {
           id: 'eacc_' + Date.now(),
           exchange: form.exchange,
@@ -459,33 +493,66 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
           lastVerifiedAt: null,
           caps: { orders: false, fills: false, positions: false, liquidations: false },
           account: {},
-          masked: { 
+          masked: {
             apiKeyLast4: `${form.apiKey.slice(0, 4)}...${form.apiKey.slice(-4)}`,
-            secretKeyLast4: `${form.secretKey.slice(0, 4)}...${form.secretKey.slice(-4)}`,
-            passphraseLast4: form.passphrase ? `${form.passphrase.slice(0, 4)}...${form.passphrase.slice(-4)}` : undefined
+            secretKeyLast4: `${(form.apiSecret || '').slice(0, 4)}...${(form.apiSecret || '').slice(-4)}`,
+            passphraseLast4: form.passphrase ? `${form.passphrase.slice(0, 4)}...${form.passphrase.slice(-4)}` : undefined,
           },
           environment: form.environment,
         };
-        
+
         setAccounts(prev => [newAccount, ...prev]);
-        setToast('已创建，待验证');
+        setToast('已保存API密钥，待验证');
         setAccountForms(prev => ({
           ...prev,
           [newAccount.id]: createInitialVerifyForm(),
         }));
       } else {
-        // 更新现有账户
-        setAccounts(prev => prev.map(acc => 
-          acc.id === editingId 
+        // 更新现有账户：若填写了密钥，则更新后端；否则仅保存标签/环境
+        const wantsUpdateKeys = !!(form.apiKey?.trim() || form.apiSecret?.trim() || form.passphrase?.trim());
+        if (wantsUpdateKeys) {
+          const payload = {
+            exchange: form.exchange.toLowerCase(),
+            api_key: form.apiKey,
+            secret: form.apiSecret || form.apiKey,
+            passphrase: form.passphrase,
+          };
+          const res = await fetch('/api/v1/api-keys', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': localStorage.getItem('api_key') || '' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            if (res.status === 401 && import.meta.env.DEV) {
+              const devRes = await fetch('http://localhost:3003/api/v1/api-keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-API-Key': localStorage.getItem('api_key') || '' },
+                body: JSON.stringify(payload),
+              });
+              const devData = await devRes.json().catch(() => ({}));
+              if (!devRes.ok) {
+                throw new Error(devData?.error?.message || '保存失败');
+              }
+            } else {
+              const errObj = (data && typeof data.error === 'object') ? data.error : null;
+              const reason = (data.detail || data.message || errObj?.message || (typeof data.error === 'string' ? data.error : '') || '保存失败');
+              throw new Error(reason);
+            }
+          }
+        }
+
+        setAccounts(prev => prev.map(acc =>
+          acc.id === editingId
             ? { ...acc, label: form.label, environment: form.environment }
             : acc
         ));
-        setToast('已保存');
+        setToast('已保存设置');
       }
       
       setDrawerOpen(false);
     } catch (error) {
-      setToast('保存失败');
+      setToast(error instanceof Error ? error.message : '保存失败');
     }
   };
 
@@ -494,26 +561,31 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
     if (!confirm('确认删除？将清空密钥并标记为已删除')) return;
     
     try {
-      // 调用后端删除API
-      const response = await fetch(`/api/api-keys/${id}`, {
+      // 调用后端删除API（按交易所删除）
+      const exchange = accounts.find(acc => acc.id === id)?.exchange.toLowerCase() || '';
+      const response = await fetch(`/api/v1/api-keys/${exchange}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': localStorage.getItem('api_key') || '' },
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || '删除失败');
+        if (response.status === 401 && import.meta.env.DEV) {
+          const devRes = await fetch(`http://localhost:3003/api/v1/api-keys/${exchange}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': localStorage.getItem('api_key') || '' },
+          });
+          const devData = await devRes.json().catch(() => ({}));
+          if (!devRes.ok) {
+            throw new Error(devData?.error?.message || '删除失败');
+          }
+        } else {
+          throw new Error(errorData.error?.message || '删除失败');
+        }
       }
 
-      // 后端删除成功后，更新前端状态
-      setAccounts(prev => prev.map(acc => 
-        acc.id === id 
-          ? { ...acc, status: 'deleted' as const }
-          : acc
-      ));
+      // 后端删除成功后，移除卡片
+      setAccounts(prev => prev.filter(acc => acc.id !== id));
       setAccountForms(prev => {
         const next = { ...prev };
         delete next[id];
@@ -531,10 +603,12 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
     setResultData(null);
     setResultError(null);
     setResultOpen(true);
+    setCurrentAccountId(accountId);
     setVerifyingMap(prev => ({ ...prev, [accountId]: true }));
 
     try {
-      const res = await fetch('/api/verify', {
+      const path = `/api/v1/verify/okx/standard`;
+      const res = await fetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -544,16 +618,68 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
       const data: VerifyResponse = maybeJson && typeof maybeJson === 'object' ? maybeJson : {};
 
       if (!res.ok) {
-        const reason = (data?.detail || data?.message || data?.error || '') as string;
+        const errObj = (data && typeof (data as any).error === 'object') ? (data as any).error : null;
+        const reason = (
+          (data as any)?.detail ||
+          (data as any)?.message ||
+          (errObj?.msg || errObj?.message) ||
+          (typeof (data as any)?.error === 'string' ? (data as any).error : '') ||
+          ''
+        ) as string;
+        // 401 未登录时，开发模式下尝试直接调用 jp-verify 微服务
+        if (res.status === 401 && import.meta.env.DEV) {
+          const jpRes = await fetch('http://127.0.0.1:8082/api/verify/standard', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              exchange: 'okx',
+              ordId: payload.ordId,
+              instId: payload.instId,
+              live: payload.live ?? true,
+              fresh: payload.fresh ?? true,
+              noCache: payload.noCache ?? true,
+              keyMode: payload.keyMode ?? 'inline',
+              apiKey: payload.apiKey,
+              secretKey: payload.secretKey,
+              passphrase: payload.passphrase,
+              uid: payload.uid,
+            }),
+          });
+          const jpData = await jpRes.json().catch(() => ({}));
+          if (!jpRes.ok) {
+            const jpErrObj = (jpData && typeof jpData.error === 'object') ? jpData.error : null;
+            const jpReason = (
+              (jpData as any)?.detail ||
+              (jpData as any)?.message ||
+              (jpErrObj?.msg || jpErrObj?.message) ||
+              (typeof (jpData as any)?.error === 'string' ? (jpData as any).error : '') ||
+              ''
+            ) as string;
+            throw new Error(jpReason || `HTTP ${jpRes.status}`);
+          }
+          // 使用 jp-verify 的响应数据作为结果
+          const jpResult: VerifyResponse = jpData as any;
+          setAccounts(prev => prev.map(acc =>
+            acc.id === accountId
+              ? {
+                  ...acc,
+                  status: (jpResult.verifyStatus === 'PASS' ? 'verified' : 'failed'),
+                  lastVerifiedAt: new Date().toISOString(),
+                  lastVerifyResult: jpResult as unknown as any,
+                  userConfirmedEcho: false,
+                }
+              : acc
+          ));
+          setResultData(jpResult);
+          setToast(jpResult.verifyStatus === 'PASS' ? '已生成标准视图，待确认' : '验证未通过');
+          return;
+        }
         throw new Error(reason || `HTTP ${res.status}`);
       }
 
       // 统一状态处理逻辑
-      const statusHint = String((data as any)?.status || (data as any)?.meta?.status || '').toLowerCase();
-      const normalizedStatus: ExchangeAccount['status'] = statusHint.includes('fail')
-        ? 'failed'
-        : 'verified';
-      const verifiedAt = (data as any)?.meta?.verifiedAt || (data as any)?.verifiedAt || new Date().toISOString();
+      const normalizedStatus: ExchangeAccount['status'] = (data as any)?.verifyStatus === 'FAIL' ? 'failed' : 'verified';
+      const verifiedAt = (data as any)?.verifiedAt || new Date().toISOString();
 
       setAccounts(prev => prev.map(acc =>
         acc.id === accountId
@@ -568,7 +694,7 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
       ));
 
       setResultData(data);
-      setToast(normalizedStatus === 'verified' ? '已生成回显，待确认' : '验证结果已返回');
+      setToast(normalizedStatus === 'verified' ? '已生成标准视图，待确认' : '验证结果已返回');
     } catch (error: any) {
       const message = error?.message || '验证失败';
       setAccounts(prev => prev.map(acc =>
@@ -758,44 +884,95 @@ export const ApiSettings: React.FC<{ t: (key: string) => string }> = ({ t }) => 
                 </div>
               )}
 
-              {resultData && (
-                <div className="space-y-3">
-                  <Section title="meta" data={resultData.meta} />
-                  <Section title="normalized" data={resultData.normalized} />
-                  <Section title="raw" data={resultData.raw} />
-                  <Section title="evidence" data={resultData.evidence} />
-                  <Section title="perf" data={resultData.perf} />
-                  {!resultData.meta && !resultData.normalized && !resultData.raw && !resultData.evidence && (
-                    <details className="rounded-md border p-3" open>
-                      <summary className="cursor-pointer font-medium">response</summary>
-                      <pre className="mt-2 text-sm overflow-auto max-h-72">
-                        {JSON.stringify(resultData, null, 2)}
-                      </pre>
-                    </details>
+      {resultData && (
+        <div className="space-y-3">
+          {resultData.verifyId ? (
+            <div className="space-y-2">
+              <div className="rounded-xl border border-amber-200 bg-white p-3 text-sm text-zinc-900">
+                <div> {String(resultData.exchange || '').toUpperCase() || '—'} · {resultData.instId || '—'} · 订单 {resultData.ordId || '—'} </div>
+                <div> {(String(resultData.side || '').toLowerCase() === 'long' ? '多' : (String(resultData.side || '').toLowerCase() === 'short' ? '空' : (resultData.side || '—')))}单 · 数量 {resultData.size || '—'} · 杠杆 {typeof resultData.leverage === 'number' ? `${resultData.leverage}x` : '—'} · 开仓价 {resultData.avgPx || '—'} · 强平价 {resultData.liqPx || '—'} </div>
+                <div> 开始 {fmtTime(resultData.openTime)} · 结束 {fmtTime(resultData.closeTime)} · 清算：{resultData.isLiquidated ? '是' : '否'} · PnL：{resultData.pnl || '—'} {resultData.currency || ''} </div>
+                <div className="mt-1 text-zinc-700">
+                  {resultData.verifyStatus === 'PASS' && resultData.canPurchase ? (
+                    <> 验证结果：通过 · 允许购买：是 · 证据：{resultData.evidenceId || '—'} · 验证时间：{fmtTime(resultData.verifiedAt)} </>
+                  ) : (
+                    <> 验证结果：不通过 · 允许购买：否 · 原因：{resultData.verifyReason || '—'} </>
+                  )}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  {resultData.verifyStatus === 'PASS' && resultData.canPurchase ? (
+                    <Button
+                      kind="primary"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/v1/verify/confirm', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              evidenceId: resultData.evidenceId,
+                              ordId: resultData.ordId,
+                              instId: resultData.instId,
+                            }),
+                          });
+                          const data = await res.json().catch(() => ({}));
+                          if (!res.ok) throw new Error((data as any)?.error?.msg || '确认失败');
+                          setAccounts(prev => prev.map(acc => (currentAccountId && acc.id === currentAccountId) ? { ...acc, userConfirmedEcho: true } : acc));
+                          setToast('已确认无误');
+                          setResultOpen(false);
+                          setConfirmError(null);
+                        } catch (e: any) {
+                          setConfirmError(e?.message || '确认失败');
+                          if (import.meta.env.DEV) {
+                            try {
+                              const res2 = await fetch('http://localhost:3003/api/v1/verify/confirm', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  evidenceId: resultData.evidenceId,
+                                  ordId: resultData.ordId,
+                                  instId: resultData.instId,
+                                }),
+                              });
+                              const d2 = await res2.json().catch(() => ({}));
+                              if (res2.ok) {
+                                setAccounts(prev => prev.map(acc => (currentAccountId && acc.id === currentAccountId) ? { ...acc, userConfirmedEcho: true } : acc));
+                                setToast('已确认无误');
+                                setResultOpen(false);
+                                setConfirmError(null);
+                              }
+                            } catch {}
+                          }
+                        }
+                      }}
+                    >确认无误</Button>
+                  ) : null}
+                  <Button kind="ghost" onClick={() => setResultOpen(false)}>关闭</Button>
+                </div>
+                {confirmError && (
+                  <div className="mt-2 rounded-xl border border-red-200 bg-red-50 p-2 text-xs text-red-700">{confirmError}</div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+                      <Section title="meta" data={resultData.meta} />
+                      <Section title="normalized" data={resultData.normalized} />
+                      <Section title="raw" data={resultData.raw} />
+                      <Section title="evidence" data={resultData.evidence} />
+                      <Section title="perf" data={resultData.perf} />
+                      {!resultData.meta && !resultData.normalized && !resultData.raw && !resultData.evidence && (
+                        <details className="rounded-md border p-3" open>
+                          <summary className="cursor-pointer font-medium">response</summary>
+                          <pre className="mt-2 text-sm overflow-auto max-h-72">{JSON.stringify(resultData, null, 2)}</pre>
+                        </details>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
 
               <div className="flex gap-2 pt-2">
-                {resultData && (
-                  <Button
-                    kind="ghost"
-                    onClick={() => {
-                      const blob = new Blob([JSON.stringify(resultData, null, 2)], { type: 'application/json' });
-                      const url = URL.createObjectURL(blob);
-                      const anchor = document.createElement('a');
-                      anchor.href = url;
-                      anchor.download = 'verify-result.json';
-                      anchor.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                  >
-                    下载 JSON
-                  </Button>
-                )}
-                <Button kind="primary" onClick={() => setResultOpen(false)}>
-                  关闭
-                </Button>
+                <Button kind="primary" onClick={() => setResultOpen(false)}>关闭</Button>
               </div>
             </div>
           </div>
@@ -1018,16 +1195,8 @@ const AccountCard = ({
             </div>
           )}
 
-          {pendingConfirm && (
-            <div className="pt-2">
-              <Button onClick={onConfirmEcho} kind="primary" className="w-full">
-                ✅ 确认无误
-              </Button>
-              <div className="text-xs text-zinc-500 mt-1 text-center">核对回显信息后点击确认</div>
-            </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
       {isFailed && last?.reasons && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">

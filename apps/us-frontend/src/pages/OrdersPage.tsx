@@ -109,8 +109,24 @@ const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
 
   const claimEnabled = status === "active" && !isExpiredUi;
 
-  const onClaimClick = (o: OrderCardData) => {
-    // 跳转到理赔页面，携带orderId参数
+  const onClaimClick = async (o: OrderCardData) => {
+    try {
+      const res = await fetch('/api/v1/claims/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ orderId: o.id })
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const cid = data?.claimId || data?.claim?.id;
+      if (cid) {
+        navigate(`/claims/${cid}`);
+        return;
+      }
+    } catch (e) {
+      console.warn('prepare claim failed:', e);
+    }
     navigate(`/claims/new?orderId=${o.id}`);
   };
 

@@ -50,8 +50,14 @@ export const PRODUCTS = [
 ] as const;
 
 // Base主网智能合约配置
-export const CHECKOUT_USDC_ADDRESS = import.meta.env.VITE_CHECKOUT_USDC_ADDRESS || "0xc423c34b57730ba87fb74b99180663913a345d68";
-export const BASE_USDC_ADDRESS = import.meta.env.VITE_BASE_USDC_ADDRESS || "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+export const CHECKOUT_CONTRACT_ADDRESS =
+  import.meta.env.VITE_CHECKOUT_CONTRACT_ADDRESS ||
+  import.meta.env.VITE_CHECKOUT_USDC_ADDRESS || // 兼容旧字段
+  "0xc423c34b57730ba87fb74b99180663913a345d68";
+export const BASE_USDC_ADDRESS =
+  import.meta.env.VITE_BASE_USDC_ADDRESS ||
+  import.meta.env.VITE_CHECKOUT_USDC_ADDRESS || // 兼容旧字段写法
+  "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 export const TREASURY_ADDRESS = import.meta.env.VITE_TREASURY_ADDRESS || "0xaa1f4df6fc3ad033cc71d561689189d11ab54f4b";
 export const BASE_RPC = import.meta.env.VITE_BASE_RPC || "https://mainnet.base.org";
 

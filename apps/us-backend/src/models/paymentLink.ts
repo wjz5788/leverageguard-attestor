@@ -1,4 +1,4 @@
-import type { StatusState } from './status';
+export type PaymentLinkStatus = 'pending' | 'paid' | 'expired';
 
 /**
  * Represents a payment link created by a user.
@@ -11,7 +11,9 @@ export interface PaymentLink {
   amount: number;
   duration: number;
   url: string;
-  status: StatusState;
+  status: PaymentLinkStatus;
+  orderId?: string | null;
+  expiresAt: string;
   createdAt: string;
   updatedAt: string;
 }

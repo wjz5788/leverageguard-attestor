@@ -68,6 +68,7 @@ export interface CreateOrderInput {
   wallet: string;
   paymentMethod: string;
   idempotencyKey: string;
+  premiumUSDC6d: number;
   paymentProofId?: string;
   orderRef?: string;
   exchange: string;
@@ -171,9 +172,30 @@ export class OrderServiceDb {
 
     const computed = this.computeQuote(sku, principal, leverage);
     const expiresAt = new Date(Date.now() + sku.pricing.quoteTtlSeconds * 1000).toISOString();
+    const id = `ipm_${uuid()}`;
+    const insertStmt = this.db.prepare(
+      `INSERT INTO quotes (
+        id, user_id, product_id, principal_usdc, leverage,
+        premium_usdc, payout_usdc, fee_rate, params_json, expires_at,
+        consumed, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+    );
+    insertStmt.run(
+      id,
+      'user-id-placeholder',
+      skuId,
+      Math.round(computed.principal * 1_000_000),
+      Math.round(computed.leverage),
+      computed.premiumUSDC6d,
+      computed.payoutUSDC6d,
+      computed.feeRatio,
+      JSON.stringify({ principal, leverage }),
+      expiresAt,
+      new Date().toISOString()
+    );
 
     return {
-      id: `qt_${uuid()}`,
+      id: id,
       skuId,
       principal: computed.principal,
       leverage: computed.leverage,

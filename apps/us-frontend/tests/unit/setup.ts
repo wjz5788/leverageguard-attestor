@@ -1,11 +1,14 @@
-import '@testing-library/jest-dom';
+import React from 'react';
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi, beforeAll } from 'vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
+import { afterEach, vi, beforeAll, expect } from 'vitest';
+
+expect.extend(matchers);
 
 // 添加React JSX支持
 beforeAll(() => {
   // 确保React环境正确设置
-  global.React = require('react');
+  (globalThis as any).React = React;
 });
 
 // Mock window.matchMedia

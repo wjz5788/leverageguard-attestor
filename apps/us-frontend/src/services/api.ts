@@ -223,7 +223,7 @@ class ApiService {
         // 特定状态码的友好错误消息
         switch (response.status) {
           case 400:
-            errorMessage = data?.message || '请求参数错误，请检查输入';
+            errorMessage = '请求参数错误，请检查输入';
             break;
           case 401:
             errorMessage = '身份验证已过期，请重新登录';

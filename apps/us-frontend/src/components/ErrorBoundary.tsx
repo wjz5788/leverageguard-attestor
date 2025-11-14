@@ -25,7 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
       hasError: false,
       error: null,
       errorInfo: null,
-      errorId: this.generateErrorId(),
+      errorId: ErrorBoundary.generateErrorId(),
     };
   }
 
@@ -33,7 +33,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return {
       hasError: true,
       error,
-      errorId: this.generateErrorId(),
+      errorId: ErrorBoundary.generateErrorId(),
     };
   }
 
