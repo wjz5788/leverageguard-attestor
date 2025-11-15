@@ -10,6 +10,8 @@ import apiKeysRoutes from './apiKeys.js';
 import claimsRoutes from './claims.js';
 import ClaimsService from '../services/claimsService.js';
 import AuthService from '../services/authService.js';
+import authRoutes from './auth.js';
+import { createAuthMiddleware } from '../middleware/authMiddleware.js';
 
 export interface RouteDependencies {
   orderService: OrderService;
@@ -24,8 +26,12 @@ export default function registerRoutes(app: express.Application, deps: RouteDepe
   app.use('/api/v1/verify', okxVerifyRoutes);
   app.use('/api/v1/api-keys', apiKeysRoutes);
 
-  // 赔付管理相关路由（与API管理校验共享同一验证后端）
+  // 认证服务与路由
   const authService = new AuthService();
+  const requireAuth = createAuthMiddleware(authService);
+  app.use('/api/v1/auth', authRoutes(authService, requireAuth));
+
+  // 赔付管理相关路由（共享同一认证后端）
   const claimsService = new ClaimsService(orderService);
   app.use('/api/v1', claimsRoutes(claimsService, authService));
 }

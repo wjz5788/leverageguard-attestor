@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import { getExplorerTxUrl } from "../lib/explorer";
+import { authFetch } from '../lib/authFetch';
+import { getAuthToken, loginWithWallet } from '../lib/auth';
 
 interface ClaimsPageProps {
   t: (key: string) => string;
@@ -35,7 +37,7 @@ const saveClaims = (rows: ClaimRecord[]) => {
 };
 
 async function apiClaimsPrepare(orderId: string): Promise<{ claimToken: string; expiresAt?: string }> {
-  const res = await fetch('/api/v1/claims/prepare', {
+  const res = await authFetch('/api/v1/claims/prepare', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orderId }),
@@ -46,7 +48,7 @@ async function apiClaimsPrepare(orderId: string): Promise<{ claimToken: string; 
 }
 
 async function apiClaimsVerify(orderId: string, orderRef: string, claimToken: string) {
-  const res = await fetch('/api/v1/claims/verify', {
+  const res = await authFetch('/api/v1/claims/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orderId, orderRef, claimToken }),
@@ -57,7 +59,7 @@ async function apiClaimsVerify(orderId: string, orderRef: string, claimToken: st
 }
 
 async function walletSendClaimPayout(): Promise<string> {
-  await sleep(1000);
+  await new Promise(resolve => setTimeout(resolve, 1000));
   return '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random()*16).toString(16)).join('');
 }
 
@@ -81,28 +83,30 @@ export const ClaimsPage: React.FC<ClaimsPageProps> = ({ t }) => {
       return;
     }
     setPreparing(true);
-    fetch('/api/v1/claims/prepare', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ orderId: oid }),
-    })
-      .then((res) => {
+    (async () => {
+      try {
+        if (!getAuthToken()) {
+          await loginWithWallet();
+        }
+        const res = await authFetch('/api/v1/claims/prepare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: oid }),
+        });
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        return res.json();
-      })
-      .then((data) => {
+        const data = await res.json();
         const cid = data?.claimId || data?.claim?.id;
         if (cid) {
           navigate(`/claims/${cid}`);
           return;
         }
         setPrepareError('未返回 claimId');
-      })
-      .catch((err) => {
+      } catch (err) {
         setPrepareError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => setPreparing(false));
+      } finally {
+        setPreparing(false);
+      }
+    })();
   }, [isNewClaim, orderId, navigate]);
 
   if (!address) {
@@ -252,7 +256,7 @@ function ClaimsList() {
                   const { claimToken } = await apiClaimsPrepare(claim.orderId);
                   const result = await apiClaimsVerify(claim.orderId, ordInput.trim(), claimToken);
                   setVerifyMap(prev => ({ ...prev, [claim.id]: result }));
-                  const next = loadClaims().map(r => r.id === claim.id ? { ...r, status: result.eligible ? 'approved' : 'rejected', payout: { amount: result.payout || r.payout.amount, currency: result.currency || r.payout.currency }, evidence: result.evidence } : r);
+                  const next = loadClaims().map(r => r.id === claim.id ? { ...r, status: result.eligible ? ('approved' as const) : ('rejected' as const), payout: { amount: result.payout || r.payout.amount, currency: result.currency || r.payout.currency }, evidence: result.evidence } : r);
                   saveClaims(next);
                   setClaims(next);
                 } finally {
@@ -262,7 +266,7 @@ function ClaimsList() {
               const onPayout = async () => {
                 if (!vres || !vres.eligible) return;
                 const txHash = await walletSendClaimPayout();
-                const next = loadClaims().map(r => r.id === claim.id ? { ...r, status: 'paid', txHash } : r);
+                const next = loadClaims().map(r => r.id === claim.id ? { ...r, status: 'paid' as const, txHash } : r);
                 saveClaims(next);
                 setClaims(next);
               };
@@ -401,7 +405,7 @@ function NewClaimView({ orderId }: { orderId: string }) {
     try {
       const txHash = await walletSendClaimPayout();
       
-      // 保存赔付记录
+      // 保存赔付记录到本地存储
       const newClaim: ClaimRecord = {
         id: verifyResult.claimId,
         orderId: orderData.orderId,
@@ -415,6 +419,24 @@ function NewClaimView({ orderId }: { orderId: string }) {
       const claims = loadClaims();
       claims.push(newClaim);
       saveClaims(claims);
+      
+      // 同时创建理赔记录到后端
+      try {
+        await authFetch('/api/v1/claims', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            orderId: orderData.orderId,
+            claimType: 'liquidation',
+            amountUSDC: verifyResult.payout,
+            description: `用户发起赔付申请，交易所订单号: ${orderRef}`,
+            evidenceFiles: verifyResult.evidence ? [verifyResult.evidence] : []
+          }),
+        });
+      } catch (backendError) {
+        console.error('创建后端理赔记录失败:', backendError);
+        // 不阻塞前端流程，继续执行
+      }
       
       // 跳转回列表
       navigate('/claims');

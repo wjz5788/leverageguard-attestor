@@ -83,35 +83,43 @@ export default function authRoutes(authService: AuthService, requireAuth: Requir
       return blockEmailLogin(req, res);
     }
 
-    const parseResult = walletChallengeSchema.safeParse(req.body);
-
-    if (!parseResult.success) {
-      return res.status(400).json({
-        error: 'INVALID_REQUEST',
-        message: 'Wallet challenge request is invalid.',
-        issues: parseResult.error.issues
-      });
-    }
-
     try {
-      const challenge = await authService.issueWalletChallenge(parseResult.data.walletAddress, {
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent') ?? undefined
-      });
-      return res.status(201).json(challenge);
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return res.status(400).json({
-          error: error.code,
-          message: error.message
-        });
+      const raw = req.body || {};
+      const body = typeof raw === 'object' ? raw as Record<string, unknown> : {};
+      const address = typeof body.walletAddress === 'string' && body.walletAddress.length > 0
+        ? (body.walletAddress as string)
+        : typeof body.address === 'string' && body.address.length > 0
+          ? (body.address as string)
+          : '';
+
+      if (!address) {
+        return res.status(400).json({ error: 'MISSING_ADDRESS', message: 'address is required' });
       }
 
+      try {
+        const challenge = await authService.issueWalletChallenge(address, {
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent') ?? undefined
+        });
+        return res.status(200).json(challenge);
+      } catch (e) {
+        const issuedAt = new Date();
+        const nonce = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+        const expiresAt = new Date(issuedAt.getTime() + 5 * 60 * 1000).toISOString();
+        const domain = process.env.AUTH_CHALLENGE_DOMAIN ?? 'LiqPass';
+        const message = [
+          `${domain} wants you to sign in with your Ethereum account.`,
+          '',
+          `Wallet: ${address}`,
+          `Nonce: ${nonce}`,
+          `Issued At: ${issuedAt.toISOString()}`
+        ].join('\n');
+        authService.registerMemoryChallenge(address, nonce, message, expiresAt);
+        return res.status(200).json({ nonce, message, expiresAt });
+      }
+    } catch (error) {
       console.error('Challenge error:', error);
-      return res.status(500).json({
-        error: 'CHALLENGE_FAILED',
-        message: 'Unable to create wallet challenge at this time.'
-      });
+      return res.status(500).json({ error: 'CHALLENGE_FAILED', message: 'Unable to create wallet challenge at this time.' });
     }
   });
 

@@ -335,7 +335,6 @@ export default class ClaimsService {
       meta: { source: 'okx', verifiedAt: new Date().toISOString() }
     };
     evidenceStorage.saveEvidence(evidenceId, evidencePayload);
-    const db = dbManager.getDatabase();
     const evtId = `evt_${uuid()}`;
     const eventType = eligible ? 'verify_pass' : 'verify_fail';
     const metaJson = JSON.stringify({ orderRef, pair: pair || 'UNKNOWN', time: eventTime });

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useWallet } from "../contexts/WalletContext";
+import { authFetch } from "../lib/authFetch";
+import { getAuthToken, loginWithWallet } from "../lib/auth";
 
 type ClaimStatus = "PENDING" | "VERIFIED" | "PAID";
 
@@ -27,10 +29,9 @@ function formatCountdown(seconds: number) {
 }
 
 async function prepareClaim(orderId: string) {
-  const res = await fetch("/api/v1/claims/prepare", {
+  const res = await authFetch("/api/v1/claims/prepare", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify({ orderId }),
   });
   if (!res.ok) throw new Error(`准备失败: ${res.status}`);
@@ -38,10 +39,9 @@ async function prepareClaim(orderId: string) {
 }
 
 async function verifyClaim(orderId: string, orderRef: string, claimToken: string) {
-  const res = await fetch("/api/v1/claims/verify", {
+  const res = await authFetch("/api/v1/claims/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify({ orderId, orderRef, claimToken }),
   });
   if (!res.ok) throw new Error(`验证失败: ${res.status}`);
@@ -53,6 +53,20 @@ export default function ClaimsManage() {
   const [orders, setOrders] = useState<ClaimOrder[]>([]);
   const [tick, setTick] = useState(0);
 
+  // 获取理赔记录
+  const fetchClaims = async () => {
+    if (!address) return;
+    try {
+      const res = await fetch(`/api/v1/claims`, { method: "GET" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data?.claims) ? data.claims : [];
+    } catch (error) {
+      console.error('获取理赔记录失败:', error);
+      return [];
+    }
+  };
+
   useEffect(() => {
     const timer = setInterval(() => setTick((v) => v + 1), 1000);
     return () => clearInterval(timer);
@@ -62,13 +76,18 @@ export default function ClaimsManage() {
     const load = async () => {
       if (!address) return;
       try {
-        const url = `/api/v1/orders/my?address=${address}`;
-        const res = await fetch(url, { method: "GET" });
-        if (!res.ok) throw new Error(`${res.status}`);
-        const data = await res.json();
-        const list: any[] = Array.isArray(data?.orders) ? data.orders : Array.isArray(data) ? data : [];
+        // 同时获取订单和理赔记录
+        const [ordersRes, claims] = await Promise.all([
+          fetch(`/api/v1/orders/my?address=${address}`, { method: "GET" }),
+          fetchClaims()
+        ]);
+        
+        if (!ordersRes.ok) throw new Error(`${ordersRes.status}`);
+        const ordersData = await ordersRes.json();
+        const ordersList: any[] = Array.isArray(ordersData?.orders) ? ordersData.orders : Array.isArray(ordersData) ? ordersData : [];
+        
         const now = Date.now();
-        const mapped: ClaimOrder[] = list.map((r: any, i: number) => {
+        const mapped: ClaimOrder[] = ordersList.map((r: any, i: number) => {
           const created = r.createdAt ?? r.created_at ?? new Date().toISOString();
           const startTs = r.coverageStartTs ?? r.coverage_start_ts ?? created;
           const endTs = r.coverageEndTs ?? r.coverage_end_ts ?? created;
@@ -76,7 +95,29 @@ export default function ClaimsManage() {
           const remain = Math.max(0, Math.floor((endMs - now) / 1000));
           const premium6d = Number(r.premiumUSDC6d ?? r.premium_usdc_6d ?? 0);
           const payout6d = Number(r.payoutUSDC6d ?? r.payout_usdc_6d ?? 0);
-          const status: ClaimStatus = r.status === "VERIFIED" || r.status === "PAID" ? r.status : "PENDING";
+          
+          // 查找对应的理赔记录
+          const claim = claims.find((c: any) => c.orderId === (r.id || r.orderId));
+          
+          // 更精确的状态映射逻辑
+          let status: ClaimStatus = "PENDING";
+          if (claim) {
+            // 如果存在理赔记录，使用理赔记录的状态
+            if (claim.status === "paid" || claim.status === "PAID") {
+              status = "PAID";
+            } else if (claim.status === "verified" || claim.status === "VERIFIED" || claim.status === "approved") {
+              status = "VERIFIED";
+            } else if (claim.status === "rejected") {
+              status = "PENDING"; // 被拒绝的理赔仍然显示为PENDING
+            }
+          } else if (r.status === "claimed_paid") {
+            status = "PAID";
+          } else if (r.status === "claimed_pending" || r.status === "VERIFIED") {
+            status = "VERIFIED";
+          } else if (r.status === "claimed_denied") {
+            status = "PENDING";
+          }
+          
           return {
             id: r.id ?? r.orderId ?? `${Date.now()}-${i}`,
             productName: r.title ?? "24h 爆仓保",
@@ -86,7 +127,7 @@ export default function ClaimsManage() {
             payoutMaxUsd: payout6d > 0 ? payout6d / 1_000_000 : Number(r.payoutMax ?? r.payoutUSDC ?? 0),
             purchaseTime: new Date(created).toISOString().replace("T", " ").slice(0, 19),
             orderRef: r.orderRef ?? r.order_ref ?? "",
-            latestAccount: r.exchangeAccountId ?? r.exchange_account_id ?? "-",
+            latestAccount: claim?.exchangeAccountId ?? r.exchangeAccountId ?? r.exchange_account_id ?? "-",
             remainingSeconds: remain,
             status: status,
             orderId: r.id ?? r.orderId ?? `${Date.now()}-${i}`,
@@ -94,6 +135,7 @@ export default function ClaimsManage() {
         });
         setOrders(mapped);
       } catch (e) {
+        console.error('加载理赔管理数据失败:', e);
         setOrders([]);
       }
     };
@@ -102,6 +144,9 @@ export default function ClaimsManage() {
 
   const handleVerify = async (order: ClaimOrder) => {
     try {
+      if (!getAuthToken()) {
+        await loginWithWallet();
+      }
       const prep = await prepareClaim(order.orderId);
       const data = await verifyClaim(order.orderId, order.orderRef, prep.claimToken);
       alert(`订单号 ${order.orderRef}\n爆仓结果：${data.isLiquidated ? "已爆仓" : "未爆仓"}\n证据ID：${data.evidenceId || "-"}`);

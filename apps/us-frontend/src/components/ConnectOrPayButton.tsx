@@ -3,16 +3,16 @@ import { connectAndEnsureBase, WalletConnectionResult } from '../lib/wallet';
 import { useAuth, loginWithWallet } from '../lib/auth';
 
 export interface ConnectOrPayButtonProps {
-  onPay: (params: WalletConnectionResult) =\u003e Promise\u003cvoid\u003e;
+  onPay: (params: WalletConnectionResult) => Promise<void>;
   disabled?: boolean;
   disabledText?: string;
 }
 
-export const ConnectOrPayButton: React.FC\u003cConnectOrPayButtonProps\u003e = ({ onPay, disabled = false, disabledText }) =\u003e {
+export const ConnectOrPayButton: React.FC<ConnectOrPayButtonProps> = ({ onPay, disabled = false, disabledText }) => {
   const { isLoggedIn } = useAuth();
   const [loading, setLoading] = useState(false);
 
-  const handleLoginClick = useCallback(async () =\u003e {
+  const handleLoginClick = useCallback(async () => {
     try {
       setLoading(true);
       await loginWithWallet();
@@ -24,7 +24,7 @@ export const ConnectOrPayButton: React.FC\u003cConnectOrPayButtonProps\u003e = (
     }
   }, []);
 
-  const handlePayClick = useCallback(async () =\u003e {
+  const handlePayClick = useCallback(async () => {
     try {
       setLoading(true);
       const walletConnection = await connectAndEnsureBase();
@@ -40,7 +40,7 @@ export const ConnectOrPayButton: React.FC\u003cConnectOrPayButtonProps\u003e = (
   const handleClick = disabled ? undefined : (isLoggedIn ? handlePayClick : handleLoginClick);
 
   return (
-    \u003cbutton
+    <button
       type="button"
       onClick={handleClick}
       disabled={loading || disabled}
@@ -51,8 +51,8 @@ export const ConnectOrPayButton: React.FC\u003cConnectOrPayButtonProps\u003e = (
         cursor: (loading || disabled) ? 'not-allowed' : 'pointer',
         fontWeight: 600,
       }}
-    \u003e
+    >
       {loading ? 'Processing...' : buttonText}
-    \u003c/button\u003e
+    </button>
   );
 };

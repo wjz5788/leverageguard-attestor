@@ -1,4 +1,3 @@
-// apps/us-frontend/src/lib/auth.ts
 import { useEffect, useState } from 'react';
 import { connectAndEnsureBase } from './payPolicy';
 
@@ -21,95 +20,67 @@ export function clearAuth() {
   window.localStorage.removeItem(AUTH_ADDRESS_KEY);
 }
 
-type SiweStartResponse = {
-  message: string;   // 要签名的 SIWE 文本
+type WalletNonceResponse = {
+  message: string;
   nonce: string;
-  chainId?: number;
+  expiresAt: string;
 };
 
-type SiweVerifyResponse = {
+type WalletVerifyResponse = {
   token?: string;
-  accessToken?: string;
-  address?: string;
+  session?: { id: string; issuedAt: string; expiresAt: string; loginType: string };
+  profile?: any;
 };
 
-async function startSiwe(address: string, chainId: number): Promise\u003cSiweStartResponse\u003e {
-  const resp = await fetch('/api/v1/auth/siwe/start', {
+async function requestWalletNonce(walletAddress: string): Promise<WalletNonceResponse> {
+  console.log('[requestWalletNonce] address =', walletAddress);
+  const resp = await fetch('/api/v1/auth/wallet/nonce', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address, chainId }),
+    body: JSON.stringify({ walletAddress }),
     credentials: 'include',
   });
-
   if (!resp.ok) {
-    const text = await resp.text().catch(() =\u003e '');
-    throw new Error(`SIWE start failed: ${resp.status} ${text}`);
+    const text = await resp.text().catch(() => '');
+    throw new Error(`nonce failed: ${resp.status} ${text}`);
   }
-
-  const data = (await resp.json()) as SiweStartResponse;
+  const data = (await resp.json()) as WalletNonceResponse;
   if (!data.message || !data.nonce) {
-    throw new Error('SIWE start response missing message/nonce');
+    throw new Error('nonce response invalid');
   }
+  console.log('[requestWalletNonce] got nonce', data.nonce);
   return data;
 }
 
-async function verifySiwe(
-  address: string,
-  chainId: number,
-  message: string,
-  nonce: string,
-  signature: string,
-): Promise\u003cSiweVerifyResponse\u003e {
-  const resp = await fetch('/api/v1/auth/siwe/verify', {
+async function verifyWalletLogin(payload: { walletAddress: string; signature: string; nonce: string }): Promise<WalletVerifyResponse> {
+  const resp = await fetch('/api/v1/auth/wallet/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      address,
-      chainId,
-      message,
-      nonce,
-      signature,
-    }),
+    body: JSON.stringify(payload),
     credentials: 'include',
   });
-
   if (!resp.ok) {
-    const text = await resp.text().catch(() =\u003e '');
-    throw new Error(`SIWE verify failed: ${resp.status} ${text}`);
+    const text = await resp.text().catch(() => '');
+    throw new Error(`login failed: ${resp.status} ${text}`);
   }
-
-  const data = (await resp.json()) as SiweVerifyResponse;
-  return data;
+  return (await resp.json()) as WalletVerifyResponse;
 }
 
-/**
- * 主流程：连接钱包 → SIWE start → 签名 → SIWE verify → 保存 token
- */
-export async function loginWithWallet(): Promise\u003c{ address: string; token: string }\u003e {
-  // 1. 先确保钱包已连接并在 Base 链上
+export async function loginWithWallet(): Promise<{ address: string; token: string }> {
+  console.log('[loginWithWallet] start');
   const { signer, address } = await connectAndEnsureBase();
-  const chainId = await signer.getChainId();
-
-  // 2. 向后端要 SIWE message + nonce
-  const { message, nonce } = await startSiwe(address, chainId);
-
-  // 3. 用钱包签名
+  console.log('[loginWithWallet] got address', address);
+  const { message, nonce } = await requestWalletNonce(address);
   const signature = await signer.signMessage(message);
-
-  // 4. 把签名发到后端验证，拿 token
-  const verifyResp = await verifySiwe(address, chainId, message, nonce, signature);
-  const token = verifyResp.token ?? verifyResp.accessToken;
-
+  const verifyResp = await verifyWalletLogin({ walletAddress: address, signature, nonce });
+  const token = verifyResp.token;
   if (!token) {
-    throw new Error('SIWE verify success but no token in response');
+    throw new Error('login success but no token');
   }
-
-  // 5. 存在 localStorage，给 authFetch 用
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(AUTH_TOKEN_KEY, token);
     window.localStorage.setItem(AUTH_ADDRESS_KEY, address);
   }
-
   return { address, token };
 }
 
@@ -117,23 +88,19 @@ export function logoutWallet() {
   clearAuth();
 }
 
-/**
- * 小辅助 hook：方便组件里显示“是否已登录 / 地址”
- */
 export function useAuth() {
-  const [address, setAddress] = useState\u003cstring | null\u003e(() =\u003e getAuthAddress());
-  const [token, setToken] = useState\u003cstring | null\u003e(() =\u003e getAuthToken());
+  const [address, setAddress] = useState<string | null>(() => getAuthAddress());
+  const [token, setToken] = useState<string | null>(() => getAuthToken());
 
-  useEffect(() =\u003e {
-    const handler = () =\u003e {
+  useEffect(() => {
+    const handler = () => {
       setAddress(getAuthAddress());
       setToken(getAuthToken());
     };
-
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', handler);
     }
-    return () =\u003e {
+    return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('storage', handler);
       }

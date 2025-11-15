@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { OrderCardData, PolicyStatus, ChainName } from "../types/order";
 import { getExplorerTxUrl } from "../lib/explorer";
 import { PolicyStatusTag } from "../components/PolicyStatusTag";
+import { getAuthToken, loginWithWallet } from "../lib/auth";
+import { authFetch } from "../lib/authFetch";
 
 // =============================
 // 工具函数
@@ -111,10 +113,12 @@ const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
 
   const onClaimClick = async (o: OrderCardData) => {
     try {
-      const res = await fetch('/api/v1/claims/prepare', {
+      if (!getAuthToken()) {
+        await loginWithWallet();
+      }
+      const res = await authFetch('/api/v1/claims/prepare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ orderId: o.id })
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -264,7 +268,12 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
 
   // 拉取列表
   const refresh = async () => {
-    setLoading(true); 
+    if (!walletAddr) {
+      console.log('[OrdersPage] walletAddress empty, skip /orders/my');
+      setRows([]);
+      return;
+    }
+    setLoading(true);
     setError("");
     try {
       const res = await fetch(ORDERS_URL, { method: "GET" });
@@ -332,9 +341,9 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
     }
   };
 
-  useEffect(() => { 
-    refresh(); 
-  }, [apiBase]);
+  useEffect(() => {
+    refresh();
+  }, [apiBase, walletAddr]);
 
   const total = rows.length;
 
