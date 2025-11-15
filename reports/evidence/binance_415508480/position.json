@@ -1,0 +1,20 @@
+{
+  "symbol": "HEMIUSDT",
+  "positionAmt": "0",
+  "entryPrice": "0.0",
+  "breakEvenPrice": "0.0",
+  "markPrice": "0.06131000",
+  "unRealizedProfit": "0.00000000",
+  "liquidationPrice": "0",
+  "leverage": "5",
+  "maxNotionalValue": "125000",
+  "marginType": "cross",
+  "isolatedMargin": "0.00000000",
+  "isAutoAddMargin": "false",
+  "positionSide": "BOTH",
+  "notional": "0",
+  "isolatedWallet": "0",
+  "updateTime": 1758619539663,
+  "isolated": false,
+  "adlQuantile": 0
+}

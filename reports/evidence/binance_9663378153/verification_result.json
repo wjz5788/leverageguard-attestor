@@ -1,0 +1,22 @@
+{
+  "order_id": "9663378153",
+  "symbol": "FETUSDT",
+  "timestamp": "2025-10-18T06:27:50.508431",
+  "order_info": {
+    "order_type": "LIMIT",
+    "side": "SELL",
+    "status": "FILLED",
+    "price": "0.5670000",
+    "orig_qty": "1014",
+    "executed_qty": "1014",
+    "time": "2025-09-28T04:31:50.987000"
+  },
+  "is_liquidation_order": "unknown",
+  "liquidation_risk": {
+    "risk_level": "无持仓",
+    "message": "FETUSDT当前无持仓"
+  },
+  "theoretical_liquidation_price": null,
+  "trade_count": 1,
+  "liquidation_orders_count": 0
+}
