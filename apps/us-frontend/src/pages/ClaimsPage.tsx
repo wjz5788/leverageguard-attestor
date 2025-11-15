@@ -187,12 +187,12 @@ function ClaimsList() {
             </div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">暂无赔付申请</h3>
             <p className="text-gray-500 mb-4">您还没有任何赔付申请记录</p>
-            <Link 
-              to="/account/claims/new"
-              className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              发起新的赔付申请
-            </Link>
+              <Link 
+                to="/claims/new"
+                className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                发起新的赔付申请
+              </Link>
           </div>
         ) : (
           <div className="space-y-4">

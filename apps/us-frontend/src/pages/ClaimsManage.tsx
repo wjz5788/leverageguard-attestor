@@ -107,84 +107,119 @@ export default function ClaimsManagePage() {
     }
   };
 
+  const refresh = () => setOrders(readLocalOrders());
+
   return (
-    <div className="claims-page">
-      <div className="claims-header">
-        <div className="claims-title-wrap">
-          <div className="claims-status-dot" />
-          <h1 className="claims-title">理赔管理</h1>
-          <span className="claims-sub">共 {orders.length} 笔</span>
+    <div className="min-h-screen bg-[#FFF7ED] text-[#3F2E20]">
+      <div className="sticky top-16 z-10 bg-[#FFF7EDF2] border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-xl bg-yellow-400 border border-gray-100" />
+            <div className="font-semibold">赔付管理</div>
+            <div className="text-sm text-gray-500">倒序 · 共 {orders.length} 笔</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={refresh}
+              className="px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
+            >
+              刷新
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="claims-list">
+      <div className="max-w-7xl mx-auto px-4 py-6 grid gap-3">
         {orders.map((order) => (
-          <div key={order.id} className="claim-card">
-            <div className="claim-row claim-row-main">
-              <div className="claim-product">{order.productName}</div>
-              <div className="claim-tags">
-                <span className="pill pill-primary">Principal ${order.principalUsd.toFixed(2)}</span>
-                <span className="pill pill-sub">Leverage {order.leverage}</span>
-                <span className="pill pill-sub">Premium ${order.premiumUsd.toFixed(2)}</span>
-                <span className="pill pill-sub">Payout Max ${order.payoutMaxUsd.toFixed(2)}</span>
+          <div key={order.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="font-semibold">{order.productName}</div>
+                <div className="flex gap-2 flex-wrap text-sm">
+                  <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
+                    <span className="text-slate-500">Principal</span>
+                    <span className="text-slate-900">${order.principalUsd.toFixed(2)}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
+                    <span className="text-slate-500">Leverage</span>
+                    <span className="text-slate-900">{order.leverage}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
+                    <span className="text-slate-500">Premium</span>
+                    <span className="text-slate-900">${order.premiumUsd.toFixed(2)}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
+                    <span className="text-slate-500">Payout Max</span>
+                    <span className="text-slate-900">${order.payoutMaxUsd.toFixed(2)}</span>
+                  </span>
+                </div>
               </div>
-              <div className="claim-status-wrap">
+              <div className="flex items-center gap-2">
                 {order.status === "PENDING" && (
-                  <span className="status-pill status-active">待验证 · T-{formatCountdown(order.remainingSeconds)}</span>
+                  <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    待验证 · T-{formatCountdown(order.remainingSeconds)}
+                  </span>
                 )}
                 {order.status === "VERIFIED" && (
-                  <span className="status-pill status-wait-pay">待放款 · T-{formatCountdown(order.remainingSeconds)}</span>
+                  <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    待放款 · T-{formatCountdown(order.remainingSeconds)}
+                  </span>
                 )}
                 {order.status === "PAID" && (
-                  <span className="status-pill status-done">已赔付</span>
+                  <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700">已赔付</span>
                 )}
               </div>
             </div>
 
-            <div className="claim-row claim-row-info">
-              <span className="claim-info">购买时间 {order.purchaseTime}</span>
-              <span className="claim-info">订单号 {order.orderRef || "-"}</span>
-              <span className="claim-info">最近验单账号 {order.latestAccount || "-"}</span>
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-2 text-sm text-gray-600">
+              <div className="flex gap-2">
+                <span className="text-gray-500">购买时间</span>
+                <span>{order.purchaseTime}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-gray-500">订单号</span>
+                <span className="font-mono">{order.orderRef || "-"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-gray-500">最近验单账号</span>
+                <span className="font-mono">{order.latestAccount || "-"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-gray-500">倒计时</span>
+                <span> T-{formatCountdown(order.remainingSeconds)}</span>
+              </div>
             </div>
 
-            <div className="claim-row claim-row-actions">
-              <button className="btn btn-outline" onClick={() => handleVerify(order)} disabled={order.status === "PAID"}>验证</button>
-              <button className="btn btn-primary" onClick={() => handleMarkPaid(order)} disabled={order.status !== "VERIFIED"}>标记已赔付</button>
-              <button className="btn btn-ghost">详情</button>
+            <div className="mt-3 flex gap-2 flex-wrap">
+              <button
+                className="px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
+                onClick={() => handleVerify(order)}
+                disabled={order.status === "PAID"}
+              >
+                验证
+              </button>
+              <button
+                className={`px-3 py-2 rounded-lg border transition-colors ${
+                  order.status === "VERIFIED"
+                    ? "bg-white border-gray-200 hover:bg-gray-50 text-gray-900"
+                    : "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                }`}
+                onClick={() => handleMarkPaid(order)}
+                disabled={order.status !== "VERIFIED"}
+              >
+                标记已赔付
+              </button>
+              <button className="px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
+                详情
+              </button>
             </div>
           </div>
         ))}
-      </div>
 
-      <style>{`
-        .claims-page { padding: 24px 32px; background: #fffaf1; min-height: 100vh; }
-        .claims-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-        .claims-title-wrap { display: flex; align-items: center; gap: 8px; }
-        .claims-status-dot { width: 16px; height: 16px; border-radius: 999px; background: #ffd54f; }
-        .claims-title { margin: 0; font-size: 20px; font-weight: 600; }
-        .claims-sub { font-size: 14px; color: #999; }
-        .claims-list { display: flex; flex-direction: column; gap: 16px; }
-        .claim-card { background: #ffffff; border-radius: 16px; padding: 16px 20px 12px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04); }
-        .claim-row { display: flex; align-items: center; }
-        .claim-row-main { justify-content: space-between; gap: 16px; }
-        .claim-product { font-size: 18px; font-weight: 600; white-space: nowrap; }
-        .claim-tags { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; padding-left: 16px; }
-        .pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 13px; white-space: nowrap; }
-        .pill-primary { background: #13315c; color: #fff; }
-        .pill-sub { background: #f2f4f7; color: #4b5563; }
-        .claim-status-wrap { white-space: nowrap; }
-        .status-pill { border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 500; }
-        .status-active { background: #e5f9e7; color: #15803d; }
-        .status-wait-pay { background: #e0f2fe; color: #0369a1; }
-        .status-done { background: #e5e7eb; color: #4b5563; }
-        .claim-row-info { margin-top: 8px; font-size: 13px; color: #6b7280; justify-content: flex-start; gap: 24px; }
-        .claim-row-actions { margin-top: 12px; justify-content: flex-start; gap: 12px; }
-        .btn { border-radius: 999px; padding: 6px 14px; font-size: 14px; cursor: pointer; border: none; }
-        .btn-primary { background: #13315c; color: #fff; }
-        .btn-outline { background: #ffffff; border: 1px solid #d1d5db; color: #374151; }
-        .btn-ghost { background: transparent; color: #6b7280; }
-        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-      `}</style>
+        {orders.length === 0 && (
+          <div className="p-6 bg-white border border-gray-200 rounded-xl text-gray-500 text-center">暂无记录</div>
+        )}
+      </div>
     </div>
   );
 }

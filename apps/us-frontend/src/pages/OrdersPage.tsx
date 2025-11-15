@@ -42,6 +42,12 @@ const getTxUrl = (chain: ChainName, tx: string) => {
   return getExplorerTxUrl({ chainId: null, txHash: (tx || "").trim() });
 };
 
+const shortRef = (ref: string) => {
+  const s = String(ref || "");
+  if (!s) return "-";
+  return s.length > 12 ? s.slice(0, 4) + "…" + s.slice(-4) : s;
+};
+
 // 取消演示数据：仅展示后端返回的真实记录或本地购买记录
 
 // =============================
@@ -136,8 +142,26 @@ const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
       <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-2 text-sm text-gray-600">
         <Field label="购买时间" value={fmtDate(createdAt)} />
         <Field label="覆盖窗口" value={`${fmtDate(coverageStartTs)} → ${fmtDate(coverageEndTs)}`} />
-        <Field label="订单号" value={orderRef?.slice(-8)} mono />
-        <Field label="最近校验账号" value={exchangeAccountId || "-"} mono />
+        <Field
+          label="保单号"
+          value={(
+            <span title={data.id}>
+              {shortRef(data.id)}
+              <button
+                className="ml-2 px-1 rounded border border-gray-200 bg-white hover:bg-gray-50 text-xs text-gray-600"
+                onClick={() => {
+                  const v = data.id;
+                  if (!v) return;
+                  navigator.clipboard.writeText(String(v)).catch(() => {});
+                }}
+              >
+                复制
+              </button>
+            </span>
+          )}
+          mono
+        />
+        <Field label="交易所账户" value={exchangeAccountId || "-"} mono />
       </div>
 
       {/* 动作 */}
@@ -268,7 +292,7 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
       setRows(merged);
     } catch (e: any) {
       console.warn("/orders failed:", e?.message || e);
-      setError("订单服务不可用，仅展示本地购买记录");
+      setError("");
       try {
         const raw = localStorage.getItem("lp_local_orders") || "[]";
         const arr = JSON.parse(raw);
@@ -292,7 +316,7 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
   return (
     <div className="min-h-screen bg-[#FFF7ED] text-[#3F2E20]">
       {/* 顶部条 */}
-      <div className="sticky top-0 z-40 bg-[#FFF7EDF2] border-b border-gray-200">
+      <div className="sticky top-16 z-10 bg-[#FFF7EDF2] border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-xl bg-yellow-400 border border-gray-100" />

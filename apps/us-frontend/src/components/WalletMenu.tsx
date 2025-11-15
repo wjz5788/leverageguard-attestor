@@ -1,169 +1,113 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { truncateAddress } from '../utils';
+import { ACCOUNT_MENU_ITEMS } from '../constants';
 
-interface WalletMenuProps {
-  address?: string;
-  onLogout?: () => void;
+function useOnClickOutside(ref: React.RefObject<HTMLElement>, handler: () => void) {
+  useEffect(() => {
+    function listener(event: MouseEvent) {
+      if (!ref.current || ref.current.contains(event.target as Node)) return;
+      handler();
+    }
+    document.addEventListener('mousedown', listener);
+    return () => document.removeEventListener('mousedown', listener);
+  }, [ref, handler]);
 }
 
-const shortenAddress = (addr?: string) => {
-  if (!addr) return '未连接钱包';
-  if (addr.length <= 10) return addr;
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-};
+export function WalletMenu({ address, onLogout }: { address?: string; onLogout?: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
-export const WalletMenu: React.FC<WalletMenuProps> = ({ address, onLogout }) => {
-  const [open, setOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const navigate = useNavigate();
+  useOnClickOutside(ref, () => setIsOpen(false));
 
-  const badgeText = useMemo(() => shortenAddress(address), [address]);
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, []);
 
-  const toggleOpen = () => {
-    setOpen((prev) => {
-      const next = !prev;
-      if (next && typeof window !== 'undefined' && buttonRef.current) {
-        const rect = buttonRef.current.getBoundingClientRect();
-        setMenuPos({
-          top: rect.bottom + 8, // 下移一点
-          right: window.innerWidth - rect.right, // 右对齐钱包按钮
-        });
-      }
-      return next;
-    });
+  const displayText = address ? truncateAddress(address) : '个人';
+
+  const getMenuPosition = () => {
+    if (!buttonRef.current) return { right: 0, top: 0 };
+    const buttonRect = buttonRef.current.getBoundingClientRect();
+    return { right: window.innerWidth - buttonRect.right, top: buttonRect.bottom + 8 };
   };
 
-  const go = (path: string) => {
-    navigate(path);
-    setOpen(false);
-  };
-
-  const logout = () => {
-    setOpen(false);
-    onLogout?.();
-  };
-
-  const itemBase: React.CSSProperties = {
-    width: '100%',
-    padding: '8px 14px',
-    fontSize: 14,
-    textAlign: 'left',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    color: '#111827',
-  };
+  const position = getMenuPosition();
 
   return (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-      }}
-    >
-      {/* 钱包 chip 按钮 */}
+    <div ref={ref} className="relative">
       <button
         ref={buttonRef}
-        type="button"
-        onClick={toggleOpen}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 12px',
-          borderRadius: 999,
-          border: '1px solid #e5e7eb',
-          background: '#fff7ed',
-          cursor: 'pointer',
-        }}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen(!isOpen)}
+        className="inline-flex items-center gap-2 rounded-full border border-stone-300 bg-white px-2.5 py-1 text-xs hover:bg-stone-50 transition-colors"
       >
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: '999px',
-            background: '#fb923c',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 13,
-            fontWeight: 600,
-            color: '#fff',
-          }}
-        >
-          {address ? (address.slice(2, 4) + address.slice(4, 5)).toUpperCase() : '??'}
-        </div>
-        <span style={{ fontSize: 14, fontWeight: 500, color: '#111827' }}>
-          {badgeText}
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-600 text-white text-[10px] font-medium">
+          {address ? address.slice(2, 4).toUpperCase() : 'ME'}
         </span>
-        <span style={{ fontSize: 10, color: '#6b7280' }}>▾</span>
+        <span className="text-stone-800">{displayText}</span>
+        <svg width="10" height="10" viewBox="0 0 20 20" aria-hidden className="opacity-60">
+          <path d="M5 7l5 6 5-6H5z" fill="currentColor" />
+        </svg>
       </button>
 
-      {/* 下拉菜单：用 fixed 悬浮在整个页面之上，不再受下面那条“刷新”横条影响 */}
-      {open && menuPos && (
+      {isOpen && (
         <div
-          style={{
-            position: 'fixed',
-            top: menuPos.top,
-            right: menuPos.right,
-            minWidth: 180,
-            padding: '6px 0',
-            borderRadius: 16,
-            background: '#ffffff',
-            boxShadow: '0 18px 45px rgba(15,23,42,0.18)',
-            border: '1px solid #f3f4f6',
-            zIndex: 999999, // 顶层
-          }}
+          className="fixed w-56 z-[9999] pointer-events-auto"
+          style={{ position: 'fixed', right: position.right, top: position.top }}
         >
-          <button
-            type="button"
-            style={itemBase}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            onClick={() => go('/orders')}
-          >
-            订单管理
-          </button>
-          <button
-            type="button"
-            style={itemBase}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            onClick={() => go('/claims')}
-          >
-            赔付管理
-          </button>
-          <button
-            type="button"
-            style={itemBase}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            onClick={() => go('/api-settings')}
-          >
-            API 设置
-          </button>
+          <div aria-hidden className="absolute right-6 -top-2 h-0 w-0 border-l-8 border-r-8 border-b-8 border-transparent border-b-stone-200 z-[10000]"></div>
+          <div aria-hidden className="absolute right-6 -top-[7px] h-0 w-0 border-l-7 border-r-7 border-b-7 border-transparent border-b-white z-[10000]"></div>
 
-          <div
-            style={{
-              height: 1,
-              margin: '6px 0',
-              background: '#f3f4f6',
-            }}
-          />
-
-          <button
-            type="button"
-            style={{ ...itemBase, color: '#b91c1c' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#fef2f2')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            onClick={logout}
-          >
-            退出
-          </button>
+          <div className="relative rounded-xl border border-stone-200 bg-white p-1 shadow-lg pointer-events-auto">
+            {address ? (
+              <>
+                {ACCOUNT_MENU_ITEMS.map(item => (
+                  <Link
+                    key={item.label}
+                    to={item.to}
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-stone-800 hover:bg-stone-50 transition-colors"
+                  >
+                    <span>•</span>
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+                <button
+                  onClick={() => {
+                    onLogout?.();
+                    setIsOpen(false);
+                  }}
+                  className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50 transition-colors"
+                >
+                  退出
+                </button>
+              </>
+            ) : (
+              <div className="px-3 py-4 text-center">
+                <div className="text-amber-600 mb-2">
+                  <svg className="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <p className="text-sm text-stone-600 mb-3">请先连接钱包以访问账户功能</p>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm"
+                >
+                  关闭
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
-};
-
+}

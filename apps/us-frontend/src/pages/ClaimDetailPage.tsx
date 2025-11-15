@@ -167,7 +167,7 @@ export default function ClaimDetailPage() {
 
   return (
     <div className="min-h-screen bg-[#FFF7ED] text-[#3F2E20]">
-      <div className="sticky top-0 z-40 bg-[#FFF7EDF2] border-b border-gray-200">
+      <div className="sticky top-16 z-10 bg-[#FFF7EDF2] border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-xl bg-yellow-300 border border-gray-100" />

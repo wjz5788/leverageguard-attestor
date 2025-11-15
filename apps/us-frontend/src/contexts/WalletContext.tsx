@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { WalletState } from '../types';
 import { BASE_MAINNET, BASE_SEPOLIA } from '../constants';
+import { loginWithWallet } from '../lib/auth';
 
 const WalletContext = createContext<WalletState | null>(null);
 
@@ -66,10 +67,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
     try {
       setBusy(true);
-      const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-      setAddress(accounts?.[0] || "");
-      const currentChainId = await ethereum.request({ method: "eth_chainId" });
-      setChainId(currentChainId || "");
+      const { address } = await loginWithWallet();
+      setAddress(address || "");
+      setChainId(BASE_MAINNET.chainId);
     } catch (error: any) {
       setMessage(error?.message || String(error));
     } finally {

@@ -19,7 +19,6 @@ import TransparencyPage from './pages/TransparencyPage';
 import { Help } from './pages/Help';
 import ClaimsManage from './pages/ClaimsManage';
 import { ClaimsPage } from './pages/ClaimsPage';
-import OrderVerifier from './pages/OrderVerifier';
 import OrderDetailPage from './pages/OrderDetailPage';
 import { zh } from './i18n/zh';
 import ClaimDetailPage from './pages/ClaimDetailPage';
@@ -44,7 +43,6 @@ function App() {
                   <Route path="/success" element={<Success t={zh} />} />
                   <Route path="/profile" element={<ProfilePage t={zh} />} />
                   <Route path="/settings/api" element={<ApiSettings t={zh} />} />
-                  <Route path="/verify" element={<OrderVerifier />} />
                   <Route path="/orders" element={<OrdersPage t={zh} />} />
                   <Route path="/orders/:id" element={<OrderDetailPage t={zh} />} />
                   <Route path="/account/orders" element={<Navigate to="/orders" replace />} />
@@ -57,7 +55,6 @@ function App() {
                   <Route path="/products" element={<Products t={zh} />} />
                   <Route path="/transparency" element={<TransparencyPage />} />
                   <Route path="/help" element={<Help t={zh} />} />
-                  <Route path="/verify/order" element={<OrderVerifier />} />
                 </Routes>
               </main>
               

@@ -49,7 +49,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ t }) => {
           <p className="text-gray-600 text-sm mb-4">查看您的所有订单，管理保单状态，发起理赔申请。</p>
           {address ? (
             <Link 
-              to="/account/orders" 
+              to="/orders" 
               className="inline-flex items-center px-4 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 border border-blue-700 transition-colors text-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               查看订单
@@ -118,7 +118,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ t }) => {
           <p className="text-gray-600 text-sm mb-4">查看赔付申请状态，管理理赔流程，跟踪赔付进度。</p>
           {address ? (
             <Link 
-              to="/account/claims" 
+              to="/claims" 
               className="inline-flex items-center px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 border border-red-700 transition-colors text-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
             >
               管理赔付

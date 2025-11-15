@@ -119,7 +119,7 @@ export const Products: React.FC<ProductsProps> = ({ t }) => {
         });
         localStorage.setItem('lp_local_orders', JSON.stringify(merged));
       } catch {}
-      navigate('/account/orders');
+      navigate('/orders');
     } catch (e: any) {
       push({ title: e?.message || '支付失败' });
     } finally {

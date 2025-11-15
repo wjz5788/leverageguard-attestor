@@ -36,8 +36,8 @@ export const MAIN_NAV = [
 
 // 账户菜单配置
 export const ACCOUNT_MENU_ITEMS = [
-  { label: "订单管理", to: "/account/orders" },
-  { label: "赔付管理", to: "/account/claims" },
+  { label: "订单管理", to: "/orders" },
+  { label: "赔付管理", to: "/claims" },
   { label: "API 设置", to: "/settings/api" },
 ] as const;
 

@@ -204,7 +204,7 @@ export const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ t, apiBase = "
   return (
     <div className="min-h-screen bg-[#FFF7ED] text-[#3F2E20]">
       {/* 顶部条 */}
-      <div className="sticky top-0 z-40 bg-[#FFF7EDF2] border-b border-gray-200">
+      <div className="sticky top-16 z-10 bg-[#FFF7EDF2] border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button 
@@ -308,8 +308,8 @@ export const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ t, apiBase = "
               <h2 className="text-lg font-semibold mb-4">订单信息</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <div className="text-sm text-gray-500 mb-1">订单号</div>
-                  <div className="font-mono text-gray-900">{order.orderRef}</div>
+                  <div className="text-sm text-gray-500 mb-1">保单号</div>
+                  <div className="font-mono text-gray-900">{order.id}</div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-500 mb-1">交易所账户</div>
@@ -326,12 +326,8 @@ export const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ t, apiBase = "
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500 mb-1">链上哈希</div>
+                  <div className="text-sm text-gray-500 mb-1">支付交易（链上哈希）</div>
                   <div className="font-mono text-sm text-gray-900 break-all">{order.txHash}</div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-500 mb-1">订单摘要</div>
-                  <div className="font-mono text-sm text-gray-900 break-all">{order.orderDigest}</div>
                 </div>
               </div>
             </div>
