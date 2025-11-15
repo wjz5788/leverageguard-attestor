@@ -43,7 +43,7 @@ export class MigrationManager {
       CREATE INDEX IF NOT EXISTS idx_schema_migrations_version ON schema_migrations(version);
     `;
     
-    this.db.run(createTableSQL);
+    (this.db as any).exec(createTableSQL);
     console.log('Ensured schema_migrations table exists');
   }
 
@@ -167,8 +167,8 @@ export class MigrationManager {
             // 开始事务
             this.db.run('BEGIN TRANSACTION');
             
-            // 执行迁移SQL
-            this.db.run(migration.sql);
+            // 执行迁移SQL（支持多语句）
+            (this.db as any).exec(migration.sql);
             
             // 记录迁移
             this.recordMigration(migration);
@@ -240,8 +240,8 @@ export class MigrationManager {
             // 开始事务
             this.db.run('BEGIN TRANSACTION');
             
-            // 执行回滚SQL
-            this.db.run(downSql);
+            // 执行回滚SQL（支持多语句）
+            (this.db as any).exec(downSql);
             
             // 移除迁移记录
             this.removeMigrationRecord(migration.version);

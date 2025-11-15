@@ -22,11 +22,11 @@ export interface EnhancedAuthConfig {
  */
 export class EnhancedAuthMiddleware {
   private authService: AuthService;
-  private apiKeyAuth: ApiKeyAuthMiddleware;
+  private apiKeyAuth?: ApiKeyAuthMiddleware;
 
   constructor(authService: AuthService, apiKeyAuth?: ApiKeyAuthMiddleware) {
     this.authService = authService;
-    this.apiKeyAuth = apiKeyAuth || new ApiKeyAuthMiddleware();
+    this.apiKeyAuth = apiKeyAuth;
   }
 
   /**
@@ -120,32 +120,25 @@ export class EnhancedAuthMiddleware {
     keyInfo?: ApiKeyInfo;
   }> {
     try {
-      // 提取API密钥
-      const authHeader = req.headers.authorization;
-      let apiKey: string | null = null;
+      const keyIdHeader = req.headers['x-api-key-id'];
+      const secretHeader = req.headers['x-api-key-secret'];
+      const keyId = Array.isArray(keyIdHeader) ? keyIdHeader[0] : keyIdHeader;
+      const secretFragment = Array.isArray(secretHeader) ? secretHeader[0] : secretHeader;
 
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        apiKey = authHeader.slice(7).trim();
-      } else if (req.headers['x-api-key']) {
-        apiKey = req.headers['x-api-key'] as string;
-      } else if (req.query.apiKey) {
-        apiKey = req.query.apiKey as string;
-      }
-
-      if (!apiKey) {
+      if (!keyId || !secretFragment || !this.apiKeyAuth) {
         return { authenticated: false };
       }
 
-      const keyInfo = this.apiKeyAuth.validateApiKey(apiKey);
-      if (!keyInfo) {
+      const info = await this.apiKeyAuth.validateApiKey(String(keyId), String(secretFragment));
+      if (!info) {
         return { authenticated: false };
       }
 
       return {
         authenticated: true,
-        keyInfo
+        keyInfo: info
       };
-    } catch (error) {
+    } catch {
       return { authenticated: false };
     }
   }

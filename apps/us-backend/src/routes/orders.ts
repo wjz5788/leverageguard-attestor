@@ -4,8 +4,9 @@ import { ethers } from 'ethers';
 import OrderService, { OrderError } from '../services/orderService.js';
 import AuthService from '../services/authService.js';
 import { EnhancedAuthMiddleware } from '../middleware/enhancedAuth.js';
+import { createApiKeyAuthInstance } from '../middleware/apiKeyAuth.js';
 import { appendOrder } from '../database/fileLedger.js';
-import { db } from '../database/db.js';
+import dbManager, { db } from '../database/db.js';
 import { v4 as uuid } from 'uuid';
 // 注：移除对数据库的幂等性快照依赖，改由服务层与文件账本保证一致性
 
@@ -37,7 +38,8 @@ const toFixedString = (value: number, fractionDigits: number) =>
 
 export default function ordersRoutes(orderService: OrderService) {
   const router = express.Router();
-  const enhancedAuth = new EnhancedAuthMiddleware(new AuthService());
+  const apiKeyAuth = createApiKeyAuthInstance(dbManager);
+  const enhancedAuth = new EnhancedAuthMiddleware(new AuthService(), apiKeyAuth);
 
   // 轻量认证：使用 X-API-Key 校验，仅用于创建/查询订单接口；预览匿名
   const requireApiKey = (req: express.Request, res: express.Response, next: express.NextFunction) => {

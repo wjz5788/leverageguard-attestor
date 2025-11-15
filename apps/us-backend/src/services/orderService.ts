@@ -153,6 +153,7 @@ export default class OrderService {
   getOrder(orderId: string): OrderRecord | undefined {
     const o = this.dbService.getOrder(orderId) as any;
     if (!o) return undefined;
+    const tx = this.dbService.getLatestPaymentHash(orderId);
     const mapped: OrderRecord = {
       id: o.id,
       skuId: o.skuId,
@@ -166,7 +167,7 @@ export default class OrderService {
       idempotencyKey: o.idempotencyKey ?? '',
       quoteExpiresAt: o.quoteExpiresAt ?? '',
       paymentMethod: o.paymentMethod as PaymentMethod,
-      paymentTx: o.paymentTx,
+      paymentTx: tx ?? o.paymentTx,
       paymentStatus: o.paymentStatus as any,
       paymentProofId: o.paymentProofId,
       orderRef: o.orderRef,
@@ -198,7 +199,7 @@ export default class OrderService {
       idempotencyKey: o.idempotencyKey ?? '',
       quoteExpiresAt: o.quoteExpiresAt ?? '',
       paymentMethod: o.paymentMethod as PaymentMethod,
-      paymentTx: o.paymentTx,
+      paymentTx: this.dbService.getLatestPaymentHash(o.id) ?? o.paymentTx,
       paymentStatus: o.paymentStatus as any,
       paymentProofId: o.paymentProofId,
       orderRef: o.orderRef,

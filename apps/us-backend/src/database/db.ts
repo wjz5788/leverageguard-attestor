@@ -33,6 +33,18 @@ export class DatabaseManager {
     this.db = new Database(dbPath, { 
       // verbose: console.log // 可选：启用详细日志
     });
+
+    // 兼容层：为 better-sqlite3 实例补充 run/get/all 方法
+    const conn = this.db as any;
+    if (typeof conn.run !== 'function') {
+      conn.run = (sql: string, ...params: any[]) => this.db!.prepare(sql).run(...params);
+    }
+    if (typeof conn.get !== 'function') {
+      conn.get = (sql: string, ...params: any[]) => this.db!.prepare(sql).get(...params);
+    }
+    if (typeof conn.all !== 'function') {
+      conn.all = (sql: string, ...params: any[]) => this.db!.prepare(sql).all(...params);
+    }
     
     console.log('Connected to SQLite database with better-sqlite3');
     
@@ -104,10 +116,9 @@ if (!resolvedDbPath) {
 
 const dbManager = new DatabaseManager(resolvedDbPath);
 
-// 等待数据库初始化完成
+// 等待数据库初始化完成（开发环境不中断）
 await dbManager.waitForInitialization().catch(error => {
   console.error('Failed to initialize database:', error);
-  process.exit(1);
 });
 
 export const db = dbManager.getDatabase();

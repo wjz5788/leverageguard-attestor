@@ -368,6 +368,19 @@ export class OrderServiceDb {
     return rows.map(row => this.mapOrderRecord(row));
   }
 
+  getLatestPaymentHash(orderId: string): string | undefined {
+    const stmt = this.db.prepare(
+      `SELECT tx_hash, confirmed_at, created_at, status
+       FROM payment_proofs
+       WHERE order_id = ?
+       ORDER BY (CASE WHEN confirmed_at IS NOT NULL THEN 1 ELSE 0 END) DESC, created_at DESC
+       LIMIT 1`
+    );
+    const row = stmt.get(orderId) as any;
+    if (!row) return undefined;
+    return String(row.tx_hash || '').trim() || undefined;
+  }
+
   private async resolveByIdempotency(key: string): Promise<OrderRecord | undefined> {
     const stmt = this.db.prepare(`
       SELECT o.* FROM orders o

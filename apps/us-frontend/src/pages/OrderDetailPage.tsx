@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { OrderCardData } from "../types/order";
 import { getExplorerTxUrl } from "../lib/explorer";
+import { authFetchJson } from "../lib/authFetch";
 
 // 时间工具：支持秒/毫秒/ISO 字符串
 const toMs = (t: number | string): number => {
@@ -100,13 +101,74 @@ const OrderDetailPage: React.FC<OrderDetailProps> = () => {
     );
   }
 
-  // 1）优先用前端镜像订单
-  const localOrder = loadLocalOrder(id);
-  const isMock = !localOrder;
-  const order: OrderCardData = localOrder || buildDemoOrder(id);
+  const [order, setOrder] = useState<OrderCardData | null>(null);
+  const [isMock, setIsMock] = useState<boolean>(false);
+
+  useEffect(() => {
+    let aborted = false;
+
+    const mapDetailToCard = (resp: any): OrderCardData => {
+      const o = resp?.order || {};
+      const sku = o?.sku || {};
+      const created = o.createdAt || new Date().toISOString();
+      const windowHours = Number(sku.windowHours ?? 24);
+      const startIso = created;
+      const endIso = new Date(new Date(created).getTime() + windowHours * 3600_000).toISOString();
+      const premium6d = Number(o.premiumUSDC6d ?? 0);
+      const payout6d = Number(o.payoutUSDC6d ?? 0);
+      return {
+        id: o.id ?? id,
+        title: sku.title || "24h 爆仓保",
+        principal: Number(o.principal ?? 0),
+        leverage: Number(o.leverage ?? 0),
+        premiumPaid: premium6d > 0 ? premium6d / 1_000_000 : 0,
+        payoutMax: payout6d > 0 ? payout6d / 1_000_000 : 0,
+        status: String(o.status ?? "active"),
+        coverageStartTs: startIso,
+        coverageEndTs: endIso,
+        createdAt: created,
+        orderRef: String(o.orderRef || ""),
+        exchangeAccountId: o.exchange || "",
+        chain: "Base",
+        txHash: String(o.paymentTx || "").trim(),
+        orderDigest: String(o.orderDigest || ""),
+        skuId: o.skuId || sku.code || "SKU_24H_FIX",
+      };
+    };
+
+    const load = async () => {
+      try {
+        // 后端详情（钱包会话或API Key均可）
+        const resp = await authFetchJson<any>(`/api/v1/orders/${encodeURIComponent(id)}`);
+        const data = Array.isArray(resp?.orders) ? resp.orders[0] : resp;
+        const card = mapDetailToCard(data);
+        if (aborted) return;
+        setOrder(card);
+        setIsMock(false);
+      } catch (e) {
+        // 回退到本地镜像或演示数据
+        const localOrder = loadLocalOrder(id);
+        const fallback = localOrder || buildDemoOrder(id);
+        if (aborted) return;
+        setOrder(fallback);
+        setIsMock(!localOrder);
+      }
+    };
+
+    load();
+    return () => { aborted = true; };
+  }, [id]);
+
+  if (!order) {
+    return (
+      <div className="min-h-screen bg-[#FFF7ED] flex items-center justify-center">
+        <div className="text-center text-sm text-gray-600">加载中...</div>
+      </div>
+    );
+  }
 
   // 状态 & 倒计时（用 coverageEndTs，如果无效就当作现在）
-  const rawEndMs = toMs(order.coverageEndTs || order.coverageEndTs || order.createdAt);
+  const rawEndMs = toMs(order.coverageEndTs || order.createdAt);
   const endMs = Number.isFinite(rawEndMs) ? rawEndMs : Date.now();
   const now = Date.now();
   const remainMs = Math.max(0, endMs - now);

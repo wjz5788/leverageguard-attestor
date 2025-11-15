@@ -270,7 +270,7 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
         coverageEndTs: endTs,
         createdAt: created,
         orderRef: r.orderRef ?? r.order_ref ?? "",
-        exchangeAccountId: r.exchangeAccountId ?? r.exchange_account_id,
+        exchangeAccountId: r.exchangeAccountId ?? r.exchange_account_id ?? r.exchange,
         chain: r.chain ?? "Base",
         txHash: String(r.paymentTx ?? r.txHash ?? r.tx_hash ?? "").trim(),
         orderDigest: r.orderDigest ?? r.order_digest ?? "",
