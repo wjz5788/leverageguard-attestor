@@ -67,47 +67,9 @@ export const ClaimsPage: React.FC<ClaimsPageProps> = ({ t }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { address, connectWallet } = useWallet();
-  
   const isNewClaim = location.pathname.includes('/new');
   const queryParams = new URLSearchParams(location.search);
-  const orderId = queryParams.get('orderId') || 'ord_demo_001';
-
-  const [preparing, setPreparing] = useState(false);
-  const [prepareError, setPrepareError] = useState<string>('');
-
-  useEffect(() => {
-    if (!isNewClaim) return;
-    const oid = (orderId || '').trim();
-    if (!oid) {
-      setPrepareError('缺少订单ID');
-      return;
-    }
-    setPreparing(true);
-    (async () => {
-      try {
-        if (!getAuthToken()) {
-          await loginWithWallet();
-        }
-        const res = await authFetch('/api/v1/claims/prepare', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId: oid }),
-        });
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        const data = await res.json();
-        const cid = data?.claimId || data?.claim?.id;
-        if (cid) {
-          navigate(`/claims/${cid}`);
-          return;
-        }
-        setPrepareError('未返回 claimId');
-      } catch (err) {
-        setPrepareError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setPreparing(false);
-      }
-    })();
-  }, [isNewClaim, orderId, navigate]);
+  const orderId = (queryParams.get('orderId') || '').trim();
 
   if (!address) {
     return (
@@ -165,15 +127,7 @@ export const ClaimsPage: React.FC<ClaimsPageProps> = ({ t }) => {
         {!isNewClaim ? (
           <ClaimsList />
         ) : (
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-lg font-semibold mb-2">正在创建赔付请求</h2>
-            {prepareError ? (
-              <div className="text-sm text-red-700">{prepareError}</div>
-            ) : (
-              <div className="text-sm text-gray-600">调用接口 /api/v1/claims/prepare 后自动跳转到详情页</div>
-            )}
-            {preparing && <div className="text-sm text-amber-800 mt-2">准备中...</div>}
-          </div>
+          <NewClaimView orderId={orderId} />
         )}
       </div>
     </div>
@@ -364,20 +318,6 @@ function NewClaimView({ orderId }: { orderId: string }) {
   };
 
   React.useEffect(() => {
-    if (!orderData.orderId) return;
-    const rows = loadClaims();
-    const exists = rows.some(r => r.orderId === orderData.orderId);
-    if (!exists) {
-      const initRow: ClaimRecord = {
-        id: `init_${orderData.orderId}`,
-        orderId: orderData.orderId,
-        payout: { amount: 0, currency: 'USDC' },
-        status: 'in_review',
-        createdAt: new Date().toISOString(),
-      };
-      rows.push(initRow);
-      saveClaims(rows);
-    }
   }, [orderData.orderId]);
 
   const handleVerify = async () => {

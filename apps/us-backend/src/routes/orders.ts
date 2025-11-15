@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { ethers } from 'ethers';
 import OrderService, { OrderError } from '../services/orderService.js';
 import { appendOrder } from '../database/fileLedger.js';
+import { db } from '../database/db.js';
+import { v4 as uuid } from 'uuid';
 // 注：移除对数据库的幂等性快照依赖，改由服务层与文件账本保证一致性
 
 const previewSchema = z.object({
@@ -63,6 +65,40 @@ export default function ordersRoutes(orderService: OrderService) {
       return res.json({ ok: true, orders: list });
     } catch (error) {
       return res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message: '查询我的订单失败' });
+    }
+  });
+
+  router.get('/claims/my', async (req, res) => {
+    try {
+      const addrRaw = (req.query.address || req.query.wallet || '') as string;
+      const address = addrRaw.toString().toLowerCase();
+      const baseSql = `
+        SELECT
+          c.id               AS claimId,
+          c.status           AS status,
+          c.verify_ref       AS evidenceId,
+          c.reviewed_at      AS verifiedAt,
+          c.payout_at        AS paidAt,
+          c.payout_tx_hash   AS payoutTxHash,
+          o.id               AS orderId,
+          (
+            SELECT substr(external_ref, instr(external_ref, ':') + 1)
+            FROM order_references r
+            WHERE r.order_id = c.order_id
+            ORDER BY r.created_at DESC
+            LIMIT 1
+          )                  AS orderRef,
+          o.premium_usdc     AS premium_usdc_6d,
+          o.created_at       AS orderCreatedAt
+        FROM claims c
+        JOIN orders o ON o.id = c.order_id
+      `;
+      const list = /^0x[a-fA-F0-9]{40}$/.test(address)
+        ? db.all(`${baseSql} WHERE o.wallet_address = ? ORDER BY c.created_at DESC`, address)
+        : db.all(`${baseSql} ORDER BY c.created_at DESC`);
+      return res.json({ ok: true, claims: list });
+    } catch (error) {
+      return res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message: '查询理赔失败' });
     }
   });
 
@@ -289,6 +325,25 @@ export default function ordersRoutes(orderService: OrderService) {
       order.paymentTx = txHash;
       order.updatedAt = new Date().toISOString();
       await appendOrder(order);
+      try {
+        const existing = db.get(`SELECT id FROM claims WHERE order_id = ? LIMIT 1`, order.id);
+        if (!existing) {
+          const refRow = db.get(`SELECT external_ref FROM order_references WHERE order_id = ? ORDER BY created_at DESC LIMIT 1`, order.id) as any;
+          const orderRef = refRow?.external_ref ? String(refRow.external_ref).split(':').slice(1).join(':') : null;
+          const claimId = `clm_${uuid()}`;
+          db.run(
+            `INSERT INTO claims (id, order_id, user_id, user_wallet, status, currency, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'pending', 'USDC', datetime('now'), datetime('now'))`,
+            claimId,
+            order.id,
+            'user-id-placeholder',
+            order.wallet
+          );
+          if (orderRef) {
+            // 可选：写入审核事件或索引，当前仅保留order_references表中的外部引用
+          }
+        }
+      } catch {}
       return res.json({ ok: true, order });
     } catch (error: any) {
       return res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message: error?.message || '提交交易处理失败' });

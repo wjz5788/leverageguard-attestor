@@ -1,7 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { useWallet } from "../contexts/WalletContext";
-import { authFetch } from "../lib/authFetch";
-import { getAuthToken, loginWithWallet } from "../lib/auth";
 
 type ClaimStatus = "PENDING" | "VERIFIED" | "PAID";
 
@@ -17,7 +14,6 @@ interface ClaimOrder {
   latestAccount: string;
   remainingSeconds: number;
   status: ClaimStatus;
-  orderId: string;
 }
 
 function formatCountdown(seconds: number) {
@@ -28,133 +24,72 @@ function formatCountdown(seconds: number) {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-async function prepareClaim(orderId: string) {
-  const res = await authFetch("/api/v1/claims/prepare", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderId }),
+function readLocalOrders(): ClaimOrder[] {
+  let arr: any[] = [];
+  try {
+    const raw = localStorage.getItem("lp_local_orders") || "[]";
+    const json = JSON.parse(raw);
+    arr = Array.isArray(json) ? json : [];
+  } catch {}
+  const now = Date.now();
+  return arr.map((o: any) => {
+    const endMs = Number(new Date(o.coverageEndTs).getTime());
+    const remainSec = Number.isFinite(endMs) ? Math.max(0, Math.floor((endMs - now) / 1000)) : 0;
+    return {
+      id: String(o.id || ""),
+      productName: String(o.title || "24h 爆仓保"),
+      principalUsd: Number(o.principal || 0),
+      leverage: `${Number(o.leverage || 0)}x`,
+      premiumUsd: Number(o.premiumPaid || 0),
+      payoutMaxUsd: Number(o.payoutMax || 0),
+      purchaseTime: new Date(o.createdAt || Date.now()).toLocaleString(),
+      orderRef: String(o.orderRef || ""),
+      latestAccount: String(o.exchangeAccountId || ""),
+      remainingSeconds: remainSec,
+      status: "PENDING",
+    };
   });
-  if (!res.ok) throw new Error(`准备失败: ${res.status}`);
-  return res.json();
 }
 
-async function verifyClaim(orderId: string, orderRef: string, claimToken: string) {
-  const res = await authFetch("/api/v1/claims/verify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderId, orderRef, claimToken }),
-  });
-  if (!res.ok) throw new Error(`验证失败: ${res.status}`);
-  return res.json();
-}
-
-export default function ClaimsManage() {
-  const { address, connectWallet } = useWallet();
+export default function ClaimsManagePage() {
   const [orders, setOrders] = useState<ClaimOrder[]>([]);
-  const [tick, setTick] = useState(0);
-
-  // 获取理赔记录
-  const fetchClaims = async () => {
-    if (!address) return;
-    try {
-      const res = await fetch(`/api/v1/claims`, { method: "GET" });
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json();
-      return Array.isArray(data?.claims) ? data.claims : [];
-    } catch (error) {
-      console.error('获取理赔记录失败:', error);
-      return [];
-    }
-  };
 
   useEffect(() => {
-    const timer = setInterval(() => setTick((v) => v + 1), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    const load = async () => {
-      if (!address) return;
-      try {
-        // 同时获取订单和理赔记录
-        const [ordersRes, claims] = await Promise.all([
-          fetch(`/api/v1/orders/my?address=${address}`, { method: "GET" }),
-          fetchClaims()
-        ]);
-        
-        if (!ordersRes.ok) throw new Error(`${ordersRes.status}`);
-        const ordersData = await ordersRes.json();
-        const ordersList: any[] = Array.isArray(ordersData?.orders) ? ordersData.orders : Array.isArray(ordersData) ? ordersData : [];
-        
-        const now = Date.now();
-        const mapped: ClaimOrder[] = ordersList.map((r: any, i: number) => {
-          const created = r.createdAt ?? r.created_at ?? new Date().toISOString();
-          const startTs = r.coverageStartTs ?? r.coverage_start_ts ?? created;
-          const endTs = r.coverageEndTs ?? r.coverage_end_ts ?? created;
-          const endMs = typeof endTs === "number" ? (endTs < 1e12 ? endTs * 1000 : endTs) : new Date(endTs).getTime();
-          const remain = Math.max(0, Math.floor((endMs - now) / 1000));
-          const premium6d = Number(r.premiumUSDC6d ?? r.premium_usdc_6d ?? 0);
-          const payout6d = Number(r.payoutUSDC6d ?? r.payout_usdc_6d ?? 0);
-          
-          // 查找对应的理赔记录
-          const claim = claims.find((c: any) => c.orderId === (r.id || r.orderId));
-          
-          // 更精确的状态映射逻辑
-          let status: ClaimStatus = "PENDING";
-          if (claim) {
-            // 如果存在理赔记录，使用理赔记录的状态
-            if (claim.status === "paid" || claim.status === "PAID") {
-              status = "PAID";
-            } else if (claim.status === "verified" || claim.status === "VERIFIED" || claim.status === "approved") {
-              status = "VERIFIED";
-            } else if (claim.status === "rejected") {
-              status = "PENDING"; // 被拒绝的理赔仍然显示为PENDING
-            }
-          } else if (r.status === "claimed_paid") {
-            status = "PAID";
-          } else if (r.status === "claimed_pending" || r.status === "VERIFIED") {
-            status = "VERIFIED";
-          } else if (r.status === "claimed_denied") {
-            status = "PENDING";
-          }
-          
-          return {
-            id: r.id ?? r.orderId ?? `${Date.now()}-${i}`,
-            productName: r.title ?? "24h 爆仓保",
-            principalUsd: Number(r.principal ?? 0),
-            leverage: String(r.leverage ?? 0) + "x",
-            premiumUsd: premium6d > 0 ? premium6d / 1_000_000 : Number(r.premiumPaid ?? r.premiumUSDC ?? r.premium ?? 0),
-            payoutMaxUsd: payout6d > 0 ? payout6d / 1_000_000 : Number(r.payoutMax ?? r.payoutUSDC ?? 0),
-            purchaseTime: new Date(created).toISOString().replace("T", " ").slice(0, 19),
-            orderRef: r.orderRef ?? r.order_ref ?? "",
-            latestAccount: claim?.exchangeAccountId ?? r.exchangeAccountId ?? r.exchange_account_id ?? "-",
-            remainingSeconds: remain,
-            status: status,
-            orderId: r.id ?? r.orderId ?? `${Date.now()}-${i}`,
-          };
-        });
-        setOrders(mapped);
-      } catch (e) {
-        console.error('加载理赔管理数据失败:', e);
-        setOrders([]);
+    setOrders(readLocalOrders());
+    const timer = setInterval(() => {
+      setOrders((prev) =>
+        prev.map((o) => ({ ...o, remainingSeconds: Math.max(0, o.remainingSeconds - 1) }))
+      );
+    }, 1000);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "lp_local_orders") {
+        setOrders(readLocalOrders());
       }
     };
-    load();
-  }, [address, tick]);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   const handleVerify = async (order: ClaimOrder) => {
     try {
-      if (!getAuthToken()) {
-        await loginWithWallet();
-      }
-      const prep = await prepareClaim(order.orderId);
-      const data = await verifyClaim(order.orderId, order.orderRef, prep.claimToken);
-      alert(`订单号 ${order.orderRef}\n爆仓结果：${data.isLiquidated ? "已爆仓" : "未爆仓"}\n证据ID：${data.evidenceId || "-"}`);
-      if (data.isLiquidated) {
+      const res = await fetch("/api/v1/claims/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderRef: order.orderRef }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      alert(
+        `订单号 ${order.orderRef}\n爆仓结果：${data.liquidated ? "已爆仓" : "未爆仓"}\n证据ID：${data.evidenceId || "-"}`
+      );
+      if (data.liquidated) {
         setOrders((prev) =>
           prev.map((o) =>
             o.id === order.id
-              ? { ...o, status: "VERIFIED", latestAccount: (data as any).accountRef || o.latestAccount }
+              ? { ...o, status: "VERIFIED", latestAccount: data.account || o.latestAccount }
               : o
           )
         );
@@ -171,21 +106,6 @@ export default function ClaimsManage() {
       alert("标记赔付失败，请稍后重试");
     }
   };
-
-  if (!address) {
-    return (
-      <div className="claims-page">
-        <div className="claims-header">
-          <div className="claims-title-wrap">
-            <div className="claims-status-dot" />
-            <h1 className="claims-title">理赔管理</h1>
-            <span className="claims-sub">请先连接钱包</span>
-          </div>
-          <button className="claims-refresh" onClick={connectWallet}>连接钱包</button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="claims-page">
@@ -223,14 +143,14 @@ export default function ClaimsManage() {
 
             <div className="claim-row claim-row-info">
               <span className="claim-info">购买时间 {order.purchaseTime}</span>
-              <span className="claim-info">订单号 {order.orderRef}</span>
+              <span className="claim-info">订单号 {order.orderRef || "-"}</span>
               <span className="claim-info">最近验单账号 {order.latestAccount || "-"}</span>
             </div>
 
             <div className="claim-row claim-row-actions">
               <button className="btn btn-outline" onClick={() => handleVerify(order)} disabled={order.status === "PAID"}>验证</button>
               <button className="btn btn-primary" onClick={() => handleMarkPaid(order)} disabled={order.status !== "VERIFIED"}>标记已赔付</button>
-              <a className="btn btn-ghost" href={`/claims/${order.orderId}`}>详情</a>
+              <button className="btn btn-ghost">详情</button>
             </div>
           </div>
         ))}
@@ -243,7 +163,6 @@ export default function ClaimsManage() {
         .claims-status-dot { width: 16px; height: 16px; border-radius: 999px; background: #ffd54f; }
         .claims-title { margin: 0; font-size: 20px; font-weight: 600; }
         .claims-sub { font-size: 14px; color: #999; }
-        .claims-refresh { border-radius: 999px; padding: 6px 14px; font-size: 14px; cursor: pointer; background: #13315c; color: #fff; border: none; }
         .claims-list { display: flex; flex-direction: column; gap: 16px; }
         .claim-card { background: #ffffff; border-radius: 16px; padding: 16px 20px 12px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04); }
         .claim-row { display: flex; align-items: center; }

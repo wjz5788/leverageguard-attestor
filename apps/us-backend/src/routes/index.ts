@@ -12,6 +12,7 @@ import ClaimsService from '../services/claimsService.js';
 import AuthService from '../services/authService.js';
 import authRoutes from './auth.js';
 import { createAuthMiddleware } from '../middleware/authMiddleware.js';
+import adminClaimsRouter from './adminClaims.js';
 
 export interface RouteDependencies {
   orderService: OrderService;
@@ -34,4 +35,7 @@ export default function registerRoutes(app: express.Application, deps: RouteDepe
   // 赔付管理相关路由（共享同一认证后端）
   const claimsService = new ClaimsService(orderService);
   app.use('/api/v1', claimsRoutes(claimsService, authService));
+
+  // 纯后台理赔接口（API Key 保护）
+  app.use('/api/v1/admin', adminClaimsRouter);
 }

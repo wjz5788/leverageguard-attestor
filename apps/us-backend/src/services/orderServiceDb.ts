@@ -326,6 +326,12 @@ export class OrderServiceDb {
       insertRefStmt.run(`${normalizedWallet}:${input.orderRef}`, orderId, 'payment_proof');
     }
 
+    const insertClaimStmt = this.db.prepare(`
+      INSERT INTO claims (id, order_id, user_id, user_wallet, status, currency, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'pending', 'USDC', datetime('now'), datetime('now'))
+    `);
+    insertClaimStmt.run(`clm_${uuid()}`, orderId, 'user-id-placeholder', normalizedWallet);
+
     // 查询并返回创建的订单
     const orderStmt = this.db.prepare(`
       SELECT * FROM orders WHERE id = ?
@@ -425,6 +431,18 @@ export class OrderServiceDb {
     `);
     updateStmt.run(new Date().toISOString(), target.id);
     
+    try {
+      const existing = this.db.prepare(`SELECT id FROM claims WHERE order_id = ? LIMIT 1`).get(target.id) as any;
+      if (!existing) {
+        const claimId = `clm_${uuid()}`;
+        const insertClaim = this.db.prepare(
+          `INSERT INTO claims (id, order_id, user_id, user_wallet, status, currency, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'pending', 'USDC', datetime('now'), datetime('now'))`
+        );
+        insertClaim.run(claimId, target.id, 'user-id-placeholder', w);
+      }
+    } catch {}
+
     return true;
   }
 

@@ -42,40 +42,7 @@ const getTxUrl = (chain: ChainName, tx: string) => {
   return getExplorerTxUrl({ chainId: null, txHash: (tx || "").trim() });
 };
 
-// =============================
-// Mock 数据（后端失败时使用）
-// =============================
-
-function makeMockOrders(): OrderCardData[] {
-  const baseNow = Date.now();
-  const mk = (p: Partial<OrderCardData>): OrderCardData => ({
-    id: crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2),
-    title: "24h 爆仓保",
-    principal: 200,
-    leverage: 10,
-    premiumPaid: 3.2,
-    payoutMax: 60,
-    status: "active",
-    coverageStartTs: Math.floor((baseNow - 60_000) / 1000),
-    coverageEndTs: Math.floor((baseNow + 23 * 3600_000 + 59 * 60_000) / 1000),
-    createdAt: new Date(baseNow - 5_000).toISOString(),
-    orderRef: String(10_000_000_000 + Math.floor(Math.random() * 9_000_000_000)),
-    exchangeAccountId: "eacc_mock",
-    chain: "Base",
-    txHash: "0x" + "a".repeat(64),
-    orderDigest: "0x" + "b".repeat(64),
-    skuId: "SKU_24H_FIXED",
-    ...p,
-  });
-
-  return [
-    mk({ status: "active", createdAt: new Date(baseNow - 1_000).toISOString() }),
-    mk({ status: "pending_onchain", createdAt: new Date(baseNow - 2_000).toISOString() }),
-    mk({ status: "claimed_pending", createdAt: new Date(baseNow - 3_000).toISOString() }),
-    mk({ status: "claimed_paid", createdAt: new Date(baseNow - 4_000).toISOString() }),
-    mk({ status: "expired", coverageEndTs: Math.floor((baseNow - 10_000) / 1000), createdAt: new Date(baseNow - 5_000).toISOString() }),
-  ];
-}
+// 取消演示数据：仅展示后端返回的真实记录或本地购买记录
 
 // =============================
 // 子组件：订单卡
@@ -111,27 +78,8 @@ const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
 
   const claimEnabled = status === "active" && !isExpiredUi;
 
-  const onClaimClick = async (o: OrderCardData) => {
-    try {
-      if (!getAuthToken()) {
-        await loginWithWallet();
-      }
-      const res = await authFetch('/api/v1/claims/prepare', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: o.id })
-      });
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      const cid = data?.claimId || data?.claim?.id;
-      if (cid) {
-        navigate(`/claims/${cid}`);
-        return;
-      }
-    } catch (e) {
-      console.warn('prepare claim failed:', e);
-    }
-    navigate(`/claims/new?orderId=${o.id}`);
+  const onClaimClick = (o: OrderCardData) => {
+    navigate(`/claims?orderId=${o.id}`);
   };
 
   const onDetailClick = (o: OrderCardData) => {
@@ -319,22 +267,16 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
       }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setRows(merged);
     } catch (e: any) {
-      console.warn("/orders failed, fallback to mock:", e?.message || e);
-      setError("订单服务不可用，展示演示数据");
+      console.warn("/orders failed:", e?.message || e);
+      setError("订单服务不可用，仅展示本地购买记录");
       try {
         const raw = localStorage.getItem("lp_local_orders") || "[]";
         const arr = JSON.parse(raw);
         const localArr: OrderCardData[] = Array.isArray(arr) ? arr : [];
-        if (localArr.length > 0) {
-          const sorted = localArr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          setRows(sorted);
-        } else {
-          const mock = makeMockOrders().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          setRows(mock);
-        }
+        const sorted = localArr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setRows(sorted);
       } catch {
-        const mock = makeMockOrders().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setRows(mock);
+        setRows([]);
       }
     } finally {
       setLoading(false);
