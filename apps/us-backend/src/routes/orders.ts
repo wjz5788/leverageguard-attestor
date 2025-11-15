@@ -2,6 +2,8 @@ import express from 'express';
 import { z } from 'zod';
 import { ethers } from 'ethers';
 import OrderService, { OrderError } from '../services/orderService.js';
+import AuthService from '../services/authService.js';
+import { EnhancedAuthMiddleware } from '../middleware/enhancedAuth.js';
 import { appendOrder } from '../database/fileLedger.js';
 import { db } from '../database/db.js';
 import { v4 as uuid } from 'uuid';
@@ -35,6 +37,7 @@ const toFixedString = (value: number, fractionDigits: number) =>
 
 export default function ordersRoutes(orderService: OrderService) {
   const router = express.Router();
+  const enhancedAuth = new EnhancedAuthMiddleware(new AuthService());
 
   // 轻量认证：使用 X-API-Key 校验，仅用于创建/查询订单接口；预览匿名
   const requireApiKey = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -214,8 +217,8 @@ export default function ordersRoutes(orderService: OrderService) {
     }
   });
 
-  // 获取订单详情 - 需要认证（API Key）
-  router.get('/orders/:orderId', requireApiKey, (req, res) => {
+  // 获取订单详情 - 允许 JWT（钱包会话）或 API Key 认证
+  router.get('/orders/:orderId', enhancedAuth.middleware({ requireAuth: true, allowedMethods: ['jwt', 'apiKey'] }), (req, res) => {
     const { orderId } = req.params;
 
     try {
