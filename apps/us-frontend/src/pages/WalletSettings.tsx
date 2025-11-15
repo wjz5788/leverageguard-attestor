@@ -13,7 +13,7 @@ interface WalletSettingsProps {
 
 export const WalletSettings: React.FC<WalletSettingsProps> = ({ t }) => {
   const navigate = useNavigate();
-  const { address, chainId, onBase, busy, message, connectWallet, switchToBase } = useWallet();
+  const { address, chainId, onBase, busy, message, connectWallet, switchToBase, disconnectWallet } = useWallet();
   const [showTestnetWarning, setShowTestnetWarning] = useState(false);
 
   // 获取当前网络名称
@@ -95,13 +95,22 @@ export const WalletSettings: React.FC<WalletSettingsProps> = ({ t }) => {
                       <span className="font-mono text-sm text-purple-900 break-all">
                         {address.slice(0, 8)}...{address.slice(-6)}
                       </span>
-                      <Button 
-                        onClick={() => navigator.clipboard.writeText(address)}
-                        size="sm"
-                        className="bg-purple-100 hover:bg-purple-200 text-purple-800"
-                      >
-                        复制
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          onClick={() => navigator.clipboard.writeText(address)}
+                          size="sm"
+                          className="bg-purple-100 hover:bg-purple-200 text-purple-800"
+                        >
+                          复制
+                        </Button>
+                        <Button 
+                          onClick={disconnectWallet}
+                          size="sm"
+                          className="bg-red-100 hover:bg-red-200 text-red-800"
+                        >
+                          退出
+                        </Button>
+                      </div>
                     </div>
                   </div>
                   

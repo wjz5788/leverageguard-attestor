@@ -17,18 +17,14 @@ import { ProductDemo } from './pages/ProductDemo';
 import { Products } from './pages/Products';
 import TransparencyPage from './pages/TransparencyPage';
 import { Help } from './pages/Help';
+import ClaimsManage from './pages/ClaimsManage';
 import { ClaimsPage } from './pages/ClaimsPage';
-import OrderVerifier from './pages/OrderVerifier';
 import OrderDetailPage from './pages/OrderDetailPage';
 import { zh } from './i18n/zh';
+import ClaimDetailPage from './pages/ClaimDetailPage';
 
 function App() {
   const [lang, setLang] = useState<'zh' | 'en'>('zh');
-  
-  const handleDisconnect = () => {
-    // 断开连接逻辑，这里可以添加实际的断开连接处理
-    console.log('Disconnect requested');
-  };
 
   return (
     <Router basename={import.meta.env.BASE_URL}>
@@ -36,7 +32,7 @@ function App() {
         <ToastProvider>
           <ErrorBoundary>
             <div className="min-h-screen bg-[#FFF7ED] flex flex-col">
-              <Header lang={lang} setLang={setLang} onDisconnect={handleDisconnect} />
+              <Header lang={lang} setLang={setLang} />
               
               <main className="flex-1">
                 <Routes>
@@ -47,19 +43,18 @@ function App() {
                   <Route path="/success" element={<Success t={zh} />} />
                   <Route path="/profile" element={<ProfilePage t={zh} />} />
                   <Route path="/settings/api" element={<ApiSettings t={zh} />} />
-                  <Route path="/verify" element={<OrderVerifier />} />
                   <Route path="/orders" element={<OrdersPage t={zh} />} />
                   <Route path="/orders/:id" element={<OrderDetailPage t={zh} />} />
                   <Route path="/account/orders" element={<Navigate to="/orders" replace />} />
-                  <Route path="/claims" element={<ClaimsPage t={zh} />} />
+                  <Route path="/claims" element={<ClaimsManage />} />
                   <Route path="/claims/new" element={<ClaimsPage t={zh} />} />
+                  <Route path="/claims/:claimId" element={<ClaimDetailPage />} />
                   <Route path="/account/claims" element={<Navigate to="/claims" replace />} />
                   <Route path="/account/claims/new" element={<Navigate to="/claims/new" replace />} />
                   <Route path="/product/demo" element={<ProductDemo t={zh} />} />
                   <Route path="/products" element={<Products t={zh} />} />
                   <Route path="/transparency" element={<TransparencyPage />} />
                   <Route path="/help" element={<Help t={zh} />} />
-                  <Route path="/verify/order" element={<OrderVerifier />} />
                 </Routes>
               </main>
               

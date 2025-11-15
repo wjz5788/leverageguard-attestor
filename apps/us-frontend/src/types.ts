@@ -8,6 +8,7 @@ export interface WalletState {
   setMessage: (s: string) => void;
   connectWallet: () => Promise<void>;
   switchToBase: (testnet?: boolean) => Promise<void>;
+  disconnectWallet?: () => void;
 }
 
 // Toast项目接口

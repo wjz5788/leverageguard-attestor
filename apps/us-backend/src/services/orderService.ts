@@ -1,8 +1,9 @@
 import { v4 as uuid } from 'uuid';
+import { OrderServiceDb } from './orderServiceDb.js';
 import { OrderRecord, OrderStatus, PaymentConfig, PaymentMethod, QuotePreview, QuotePreviewInput, SkuDefinition, CreateOrderInput } from '../types/orders.js';
 import { EnvValidator } from '../utils/envValidator.js';
 
-import { AppError, ERROR_CODES } from '../types/errors.js';
+import { AppError } from '../types/errors.js';
 
 export class OrderError extends AppError {
   constructor(code: string, message: string, httpStatus: number = 400) {
@@ -16,7 +17,6 @@ export interface OrderServiceOptions {
   quoteTtlSeconds?: number;
 }
 
-type QuoteStorageRecord = QuotePreview & { consumed: boolean };
 
 // 获取经过校验的支付配置
 const getValidatedPaymentConfig = (): PaymentConfig => {
@@ -38,13 +38,9 @@ const DEFAULT_PAYMENT: PaymentConfig = getValidatedPaymentConfig();
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 export default class OrderService {
-  private readonly skus: Map<string, SkuDefinition>;
   private readonly payment: PaymentConfig;
-  private readonly quotes = new Map<string, QuoteStorageRecord>();
-  private readonly orders = new Map<string, OrderRecord>();
-  private readonly idempotencyIndex = new Map<string, string>();
-  private readonly orderRefIndex = new Map<string, string>();
   private readonly quoteTtlSeconds: number;
+  private readonly dbService: OrderServiceDb;
 
   constructor(options: OrderServiceOptions = {}) {
     this.payment = {
@@ -53,15 +49,18 @@ export default class OrderService {
     };
 
     this.quoteTtlSeconds = options.quoteTtlSeconds ?? 60;
-    this.skus = this.seedSkus();
+
+    this.dbService = new OrderServiceDb({ payment: { methods: this.payment.methods }, quoteTtlSeconds: this.quoteTtlSeconds });
   }
 
   listSkus(): SkuDefinition[] {
-    return Array.from(this.skus.values()).filter((sku) => sku.enabled);
+    const list = this.dbService.listSkus() as unknown as SkuDefinition[];
+    return list.filter((sku) => sku.enabled);
   }
 
   getSku(skuId: string): SkuDefinition | undefined {
-    return this.skus.get(skuId);
+    const sku = this.dbService.getSku(skuId) as unknown as SkuDefinition | undefined;
+    return sku;
   }
 
   preview(input: QuotePreviewInput): QuotePreview {
@@ -90,154 +89,128 @@ export default class OrderService {
       throw new OrderError('INVALID_WALLET', 'Wallet must be a valid EVM address.');
     }
 
-    const quotation = this.computeQuote(sku, input.principal, input.leverage);
-    const idempotencyKey = `ipm_${uuid()}`;
+    const r = this.computeQuote(sku, input.principal, input.leverage);
+    const q = this.dbService.preview(input.skuId, r.principal, r.leverage) as any;
     const now = new Date();
     const expiresAt = new Date(now.getTime() + this.quoteTtlSeconds * 1000);
-
-    const record: QuoteStorageRecord = {
-      idempotencyKey,
+    return {
+      idempotencyKey: q.id,
       skuId: input.skuId,
-      principal: quotation.principal,
-      leverage: quotation.leverage,
-      feeRatio: quotation.feeRatio,
-      payoutRatio: quotation.payoutRatio,
-      premiumUSDC6d: quotation.premiumUSDC6d,
-      payoutUSDC6d: quotation.payoutUSDC6d,
+      principal: r.principal,
+      leverage: r.leverage,
+      feeRatio: r.feeRatio,
+      payoutRatio: r.payoutRatio,
+      premiumUSDC6d: r.premiumUSDC6d,
+      payoutUSDC6d: r.payoutUSDC6d,
       createdAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
-      wallet: input.wallet.toLowerCase(),
-      consumed: false
+      wallet: input.wallet.toLowerCase()
     };
-
-    this.quotes.set(idempotencyKey, record);
-
-    return record;
   }
 
   createOrder(input: CreateOrderInput): { order: OrderRecord; created: boolean } {
-    const existingOrder = this.resolveByIdempotency(input.idempotencyKey);
-    if (existingOrder) {
-      return { order: existingOrder, created: false };
-    }
-
-    const quote = this.quotes.get(input.idempotencyKey);
-    if (!quote) {
-      throw new OrderError('QUOTE_NOT_FOUND', 'Quote not found or already consumed.');
-    }
-
-    if (quote.consumed) {
-      const reused = this.resolveByIdempotency(input.idempotencyKey);
-      if (reused) {
-        return { order: reused, created: false };
-      }
-      throw new OrderError('QUOTE_ALREADY_USED', 'Quote already consumed.');
-    }
-
-    if (new Date(quote.expiresAt).getTime() < Date.now()) {
-      throw new OrderError('QUOTE_STALE', 'Quote expired, please refresh.');
-    }
-
-    if (input.skuId !== quote.skuId) {
-      throw new OrderError('INVALID_SKU', 'Quote does not match order SKU.');
-    }
-
-    if (Number(input.principal.toFixed(2)) !== Number(quote.principal.toFixed(2))) {
-      throw new OrderError('PRINCIPAL_MISMATCH', 'Principal mismatch.');
-    }
-
-    if (Number(input.leverage) !== Number(quote.leverage)) {
-      throw new OrderError('LEVERAGE_MISMATCH', 'Leverage mismatch.');
-    }
-
-    const normalizedWallet = input.wallet.toLowerCase();
-    if (normalizedWallet !== quote.wallet) {
-      throw new OrderError('WALLET_MISMATCH', 'Wallet mismatch.');
-    }
-
-    const paymentMethod = input.paymentMethod;
-    if (!this.payment.methods.includes(paymentMethod)) {
-      throw new OrderError('UNSUPPORTED_PAYMENT_METHOD', 'Payment method is not supported.');
-    }
-
-    const premium6d = Math.round(input.premiumUSDC6d);
-    if (premium6d !== quote.premiumUSDC6d) {
-      throw new OrderError('PREMIUM_MISMATCH', 'Premium does not match quoted amount.');
-    }
-
-    if (input.orderRef) {
-      const key = `${normalizedWallet}:${input.orderRef}`;
-      const orderId = this.orderRefIndex.get(key);
-      if (orderId) {
-        const found = this.orders.get(orderId);
-        if (found) {
-          return { order: found, created: false };
-        }
-      }
-    }
-
-    const nowIso = new Date().toISOString();
-    const orderId = `ord_${uuid()}`;
-    
-    // 支付状态仅由链上事件驱动：创建时一律 pending
-    const paymentStatus: 'pending' = 'pending';
-    const status: OrderStatus = 'pending';
-
-    const order: OrderRecord = {
-      id: orderId,
-      skuId: quote.skuId,
-      principal: quote.principal,
-      leverage: quote.leverage,
-      wallet: normalizedWallet,
-      premiumUSDC6d: quote.premiumUSDC6d,
-      payoutUSDC6d: quote.payoutUSDC6d,
-      feeRatio: quote.feeRatio,
-      payoutRatio: quote.payoutRatio,
-      idempotencyKey: quote.idempotencyKey,
-      quoteExpiresAt: quote.expiresAt,
-      paymentMethod,
-      paymentTx: undefined, // 不再存储paymentTx，使用paymentProof机制
-      paymentStatus,
-      // 可存储上传的 paymentProofId 以供审计，但不影响状态机
+    const result = this.dbService.createOrder({
+      skuId: input.skuId,
+      principal: input.principal,
+      leverage: input.leverage,
+      wallet: input.wallet,
+      paymentMethod: input.paymentMethod,
+      idempotencyKey: input.idempotencyKey,
+      premiumUSDC6d: input.premiumUSDC6d,
       paymentProofId: input.paymentProofId,
       orderRef: input.orderRef,
-      exchange: input.exchange,
-      pair: input.pair,
-      status,
-      createdAt: nowIso,
-      updatedAt: nowIso
+      exchange: String(input.exchange || ''),
+      pair: String(input.pair || '')
+    } as any) as any;
+    const order = result.order as any;
+    const created = result.created as boolean;
+    const mapped: OrderRecord = {
+      id: order.id,
+      skuId: order.skuId,
+      principal: order.principal,
+      leverage: order.leverage,
+      wallet: order.wallet,
+      premiumUSDC6d: order.premiumUSDC6d,
+      payoutUSDC6d: order.payoutUSDC6d,
+      feeRatio: order.feeRatio ?? 0,
+      payoutRatio: order.payoutRatio ?? 0,
+      idempotencyKey: input.idempotencyKey,
+      quoteExpiresAt: order.quoteExpiresAt ?? '',
+      paymentMethod: order.paymentMethod as PaymentMethod,
+      paymentTx: order.paymentTx,
+      paymentStatus: order.paymentStatus as any,
+      paymentProofId: order.paymentProofId,
+      orderRef: order.orderRef,
+      exchange: order.exchange,
+      pair: order.pair,
+      status: order.status as OrderStatus,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt
     };
-
-    this.orders.set(orderId, order);
-    this.idempotencyIndex.set(quote.idempotencyKey, orderId);
-    quote.consumed = true;
-
-    if (input.orderRef) {
-      const key = `${normalizedWallet}:${input.orderRef}`;
-      this.orderRefIndex.set(key, orderId);
-    }
-
-    return { order, created: true };
+    return { order: mapped, created };
   }
 
   getOrder(orderId: string): OrderRecord | undefined {
-    return this.orders.get(orderId);
+    const o = this.dbService.getOrder(orderId) as any;
+    if (!o) return undefined;
+    const tx = this.dbService.getLatestPaymentHash(orderId);
+    const mapped: OrderRecord = {
+      id: o.id,
+      skuId: o.skuId,
+      principal: o.principal,
+      leverage: o.leverage,
+      wallet: o.wallet,
+      premiumUSDC6d: o.premiumUSDC6d,
+      payoutUSDC6d: o.payoutUSDC6d,
+      feeRatio: o.feeRatio ?? 0,
+      payoutRatio: o.payoutRatio ?? 0,
+      idempotencyKey: o.idempotencyKey ?? '',
+      quoteExpiresAt: o.quoteExpiresAt ?? '',
+      paymentMethod: o.paymentMethod as PaymentMethod,
+      paymentTx: tx ?? o.paymentTx,
+      paymentStatus: o.paymentStatus as any,
+      paymentProofId: o.paymentProofId,
+      orderRef: o.orderRef,
+      exchange: o.exchange,
+      pair: o.pair,
+      status: o.status as OrderStatus,
+      createdAt: o.createdAt,
+      updatedAt: o.updatedAt
+    };
+    return mapped;
   }
 
   getPaymentConfig(): PaymentConfig {
     return { ...this.payment };
   }
 
-  listOrders(): OrderRecord[] {
-    return Array.from(this.orders.values()).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+  async listOrdersPersisted(): Promise<OrderRecord[]> {
+    const list = this.dbService.listOrders() as any[];
+    return list.map((o) => ({
+      id: o.id,
+      skuId: o.skuId,
+      principal: o.principal,
+      leverage: o.leverage,
+      wallet: o.wallet,
+      premiumUSDC6d: o.premiumUSDC6d,
+      payoutUSDC6d: o.payoutUSDC6d,
+      feeRatio: o.feeRatio ?? 0,
+      payoutRatio: o.payoutRatio ?? 0,
+      idempotencyKey: o.idempotencyKey ?? '',
+      quoteExpiresAt: o.quoteExpiresAt ?? '',
+      paymentMethod: o.paymentMethod as PaymentMethod,
+      paymentTx: this.dbService.getLatestPaymentHash(o.id) ?? o.paymentTx,
+      paymentStatus: o.paymentStatus as any,
+      paymentProofId: o.paymentProofId,
+      orderRef: o.orderRef,
+      exchange: o.exchange,
+      pair: o.pair,
+      status: o.status as OrderStatus,
+      createdAt: o.createdAt,
+      updatedAt: o.updatedAt
+    })).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  private resolveByIdempotency(key: string): OrderRecord | undefined {
-    const orderId = this.idempotencyIndex.get(key);
-    return orderId ? this.orders.get(orderId) : undefined;
-  }
 
   private computeQuote(sku: SkuDefinition, principal: number, leverage: number) {
     const p = clamp(Number(principal ?? 0), sku.principalMin, sku.principalMax);
@@ -266,48 +239,13 @@ export default class OrderService {
     };
   }
 
-  private seedSkus(): Map<string, SkuDefinition> {
-    const skus: SkuDefinition[] = [
-      {
-        id: 'sku_24h_liq',
-        code: 'SKU_24H_FIXED',
-        title: '24h 爆仓保',
-        description: '24 小时杠杆账户爆仓保障，Base 主网 USDC 直付。',
-        enabled: true,
-        windowHours: 24,
-        leverageMin: 10,
-        leverageMax: 100,
-        principalMin: 50,
-        principalMax: 500,
-        payoutCapUsd: 250,
-        pricing: {
-          feeCap: 0.15,
-          payoutFloor: 0.1,
-          payoutCap: 0.5,
-          quoteTtlSeconds: this.quoteTtlSeconds
-        }
-      }
-    ];
-
-    return new Map(skus.map((sku) => [sku.id, sku]));
-  }
 
   /**
    * 由链上事件驱动的回填：按钱包+金额（6位整型）匹配最近 pending 订单并标记为 paid。
    * 返回是否命中。
    */
   markPaidByWalletAndAmount(wallet: string, amount6d: number): boolean {
-    const w = wallet.toLowerCase();
-    const candidates = Array.from(this.orders.values())
-      .filter(o => o.wallet === w && o.status === 'pending' && o.premiumUSDC6d === amount6d)
-      .sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    if (!candidates.length) return false;
-    const target = candidates[0];
-    target.status = 'paid';
-    target.paymentStatus = 'paid';
-    target.updatedAt = new Date().toISOString();
-    this.orders.set(target.id, target);
-    return true;
+    const ok = this.dbService.markPaidByWalletAndAmount(wallet, amount6d) as any;
+    return Boolean(ok);
   }
 }

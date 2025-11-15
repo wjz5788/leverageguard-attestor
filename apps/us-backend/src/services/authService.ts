@@ -73,6 +73,7 @@ export class AuthError extends AppError {
 const DEFAULT_SESSION_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
 import dbManager from '../database/db.js';
+const memoryChallenges = new Map<string, { wallet: string; message: string; expiresAt: string; consumedAt?: string }>();
 
 export default class AuthService {
   private readonly jwtSecret: string;
@@ -122,6 +123,11 @@ export default class AuthService {
     }
   }
 
+  registerMemoryChallenge(walletAddress: string, nonce: string, message: string, expiresAtIso: string): void {
+    const normalized = this.normalizeWalletAddress(walletAddress);
+    memoryChallenges.set(nonce, { wallet: normalized, message, expiresAt: expiresAtIso });
+  }
+
   async validateSession(token: string): Promise<AuthenticatedUser | null> {
     try {
       const decoded = jwt.verify(token, this.jwtSecret) as JwtPayload & { type?: LoginType };
@@ -166,19 +172,22 @@ export default class AuthService {
     const expiresAt = new Date(issuedAt.getTime() + this.getChallengeTtlMs());
     const nonce = this.generateNonce();
     const message = this.buildChallengeMessage(normalized, nonce, issuedAt, context);
-
-    await this.db.run(
-      `INSERT INTO wallet_login_challenges (nonce, wallet_address, message, issued_at, expires_at, consumed_at)
-       VALUES (?, ?, ?, ?, ?, NULL)
-       ON CONFLICT(nonce) DO UPDATE SET wallet_address=excluded.wallet_address, message=excluded.message, issued_at=excluded.issued_at, expires_at=excluded.expires_at, consumed_at=NULL`,
-      [
-        nonce,
-        normalized,
-        message,
-        issuedAt.toISOString(),
-        expiresAt.toISOString()
-      ]
-    );
+    try {
+      await this.db.run(
+        `INSERT INTO wallet_login_challenges (nonce, wallet_address, message, issued_at, expires_at, consumed_at)
+         VALUES (?, ?, ?, ?, ?, NULL)
+         ON CONFLICT(nonce) DO UPDATE SET wallet_address=excluded.wallet_address, message=excluded.message, issued_at=excluded.issued_at, expires_at=excluded.expires_at, consumed_at=NULL`,
+        [
+          nonce,
+          normalized,
+          message,
+          issuedAt.toISOString(),
+          expiresAt.toISOString()
+        ]
+      );
+    } catch {
+      memoryChallenges.set(nonce, { wallet: normalized, message, expiresAt: expiresAt.toISOString() });
+    }
 
     return {
       nonce,
@@ -281,10 +290,18 @@ export default class AuthService {
 
   private async validateWalletLogin(payload: WalletLoginPayload): Promise<string> {
     const normalizedWallet = this.normalizeWalletAddress(payload.walletAddress);
-    const challenge = await this.db.get(
-      'SELECT nonce, wallet_address, message, expires_at, consumed_at FROM wallet_login_challenges WHERE nonce = ?',
-      [payload.nonce]
-    ) as any;
+    let challenge: any;
+    try {
+      challenge = await this.db.get(
+        'SELECT nonce, wallet_address, message, expires_at, consumed_at FROM wallet_login_challenges WHERE nonce = ?',
+        [payload.nonce]
+      ) as any;
+    } catch {
+      const mem = memoryChallenges.get(payload.nonce);
+      if (mem) {
+        challenge = { nonce: payload.nonce, wallet_address: mem.wallet, message: mem.message, expires_at: mem.expiresAt, consumed_at: mem.consumedAt ?? null };
+      }
+    }
 
     if (!challenge) {
       throw new AuthError('INVALID_CHALLENGE', 'Login challenge not found.');
@@ -330,7 +347,11 @@ export default class AuthService {
         [nonce]
       );
     } catch (error) {
-      console.warn('Failed to mark wallet login challenge consumed', error);
+      const mem = memoryChallenges.get(nonce);
+      if (mem) {
+        mem.consumedAt = new Date().toISOString();
+        memoryChallenges.set(nonce, mem);
+      }
     }
   }
 

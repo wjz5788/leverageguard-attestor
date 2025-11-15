@@ -6,7 +6,7 @@
 export interface EnvConfig {
   VITE_API_BASE: string;
   VITE_API_BASE_URL: string;
-  VITE_CHECKOUT_USDC_ADDRESS: string;
+  VITE_CHECKOUT_CONTRACT_ADDRESS: string;
   VITE_BASE_USDC_ADDRESS: string;
   VITE_TREASURY_ADDRESS: string;
   VITE_BASE_RPC: string;
@@ -40,7 +40,6 @@ function validateEnv(): EnvConfig {
   
   // 必填字段检查
   const requiredFields = [
-    'VITE_CHECKOUT_USDC_ADDRESS', 
     'VITE_BASE_USDC_ADDRESS',
     'VITE_TREASURY_ADDRESS',
     'VITE_BASE_RPC'
@@ -55,9 +54,18 @@ function validateEnv(): EnvConfig {
     throw new Error('VITE_API_BASE 或 VITE_API_BASE_URL 必须配置');
   }
   // 地址格式验证
+  const contractAddress = env.VITE_CHECKOUT_CONTRACT_ADDRESS || env.VITE_CHECKOUT_USDC_ADDRESS;
+  const baseUsdcAddress = env.VITE_BASE_USDC_ADDRESS || env.VITE_CHECKOUT_USDC_ADDRESS;
+  if (!contractAddress) {
+    throw new Error('VITE_CHECKOUT_CONTRACT_ADDRESS 或 VITE_CHECKOUT_USDC_ADDRESS 必须配置');
+  }
+  if (!baseUsdcAddress) {
+    throw new Error('VITE_BASE_USDC_ADDRESS 或 VITE_CHECKOUT_USDC_ADDRESS 必须配置');
+  }
+
   const addresses = [
-    { key: 'VITE_CHECKOUT_USDC_ADDRESS', value: env.VITE_CHECKOUT_USDC_ADDRESS },
-    { key: 'VITE_BASE_USDC_ADDRESS', value: env.VITE_BASE_USDC_ADDRESS },
+    { key: 'VITE_CHECKOUT_CONTRACT_ADDRESS', value: contractAddress },
+    { key: 'VITE_BASE_USDC_ADDRESS', value: baseUsdcAddress },
     { key: 'VITE_TREASURY_ADDRESS', value: env.VITE_TREASURY_ADDRESS }
   ];
 
@@ -78,8 +86,8 @@ function validateEnv(): EnvConfig {
   return {
     VITE_API_BASE: apiBaseRaw,
     VITE_API_BASE_URL: apiBaseRaw,
-    VITE_CHECKOUT_USDC_ADDRESS: env.VITE_CHECKOUT_USDC_ADDRESS,
-    VITE_BASE_USDC_ADDRESS: env.VITE_BASE_USDC_ADDRESS,
+    VITE_CHECKOUT_CONTRACT_ADDRESS: contractAddress,
+    VITE_BASE_USDC_ADDRESS: baseUsdcAddress,
     VITE_TREASURY_ADDRESS: env.VITE_TREASURY_ADDRESS,
     VITE_BASE_RPC: env.VITE_BASE_RPC,
     VITE_DEV_MODE: env.VITE_DEV_MODE === 'true'
@@ -108,7 +116,7 @@ export const getEnv = () => ENV;
 export const isDevMode = () => ENV.VITE_DEV_MODE;
 export const getApiBase = () => ENV.VITE_API_BASE;
 export const getContractAddresses = () => ({
-  checkoutUSDC: ENV.VITE_CHECKOUT_USDC_ADDRESS,
+  checkout: ENV.VITE_CHECKOUT_CONTRACT_ADDRESS,
   baseUSDC: ENV.VITE_BASE_USDC_ADDRESS,
   treasury: ENV.VITE_TREASURY_ADDRESS
 });

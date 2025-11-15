@@ -1,0 +1,40 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/server.ts",
+    "src/app.ts",
+    "src/routes/index.ts",
+    "src/routes/orders.ts",
+    "src/routes/health.ts",
+    "src/routes/pricing.ts",
+    "src/services/orderService.ts",
+    "src/utils/envValidator.ts",
+    "src/middleware/errorHandler.ts",
+    "src/middleware/requestLogger.ts",
+    "src/middleware/requestId.ts",
+    
+    "src/database/fileLedger.ts",
+    "src/types/ambient.d.ts"
+  ],
+  "exclude": [
+    "src/database/db.ts",
+    "src/database/migrationManager.ts",
+    "src/middleware/enhancedAuth.ts",
+    "src/models/**",
+    "src/routes/min.ts",
+    "src/routes/verification*.ts",
+    "src/services/apiKeyService.ts",
+    "src/services/contractListenerService.ts",
+    "src/services/orderServiceDb.ts",
+    "src/services/transparencyService.ts",
+    "src/services/verificationService.ts",
+    "tests/**"
+  ]
+}

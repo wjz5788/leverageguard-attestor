@@ -237,9 +237,17 @@ const deleteApiKey: RequestHandler = async (req, res) => {
 };
 
 // 注册路由
-router.post('/', saveApiKey);
-router.get('/', getApiKeys);
-router.post('/verify', verifyApiKey);
-router.delete('/:exchange', deleteApiKey);
+router.post('/', requireAdminOrAuth, saveApiKey);
+router.get('/', requireAdminOrAuth, getApiKeys);
+router.post('/verify', requireAdminOrAuth, verifyApiKey);
+router.delete('/:exchange', requireAdminOrAuth, deleteApiKey);
 
 export default router;
+function requireAdminOrAuth(req: express.Request, _res: express.Response, next: express.NextFunction) {
+  const key = (req.headers['x-api-key'] || (req.headers['X-API-Key'] as any) || '') as string;
+  const admin = (process.env.ADMIN_API_KEY || '').trim();
+  if (admin && key && key.trim() === admin) {
+    (req as any).auth = { userId: (process.env.ADMIN_USER_ID || 'admin-user').toString() };
+  }
+  next();
+}

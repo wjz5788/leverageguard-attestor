@@ -78,7 +78,7 @@ export function useApi<T = any>(
       
       // 显示成功消息
       if (successMessage) {
-        showToast(successMessage, 'success');
+        showToast({ title: successMessage, type: 'success' });
       }
       
       return result;
@@ -92,7 +92,7 @@ export function useApi<T = any>(
       
       // 显示错误提示
       if (showErrorToast) {
-        showToast(errorMsg, 'error');
+        showToast({ title: errorMsg, type: 'error' });
       }
       
       // 自动错误处理

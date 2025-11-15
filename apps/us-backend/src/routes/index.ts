@@ -1,59 +1,41 @@
 import type express from 'express';
-import { dbManager } from '../database/db.js';
-import AuthService from '../services/authService.js';
-import { createAuthMiddleware } from '../middleware/authMiddleware.js';
-import verificationRoutes from './verification.js';
+// 精简路由注册：当前仅挂载健康、定价与订单
+ 
 import healthRoutes from './health.js';
-import okxVerifyRoutes from './okx-verify.js';
-import authRoutes from './auth.js';
-import accountRoutes from './account.js';
-import linksRoutes from './links.js';
-import ordersRoutes from './orders.js';
-import claimsRoutes from './claims.js';
-import paymentProofsRoutes from './paymentProofs.js';
-import OrderService from '../services/orderService.js';
-import ClaimsService from '../services/claimsService.js';
-import PaymentProofService from '../services/paymentProofService.js';
-import { LinkService } from '../services/linkService.js';
-import { ContractListenerService } from '../services/contractListenerService.js';
-import minSchemaRoutes from './min.js';
-import quotesRoutes from './quotes.js';
-import apiKeysRoutes from './apiKeys.js';
 import pricingRoutes from './pricing.js';
-import voucherRoutes from './voucher.js';
-import verificationV2Routes from './verification-v2.js';
-import transparencyRoutes from './transparency.js';
+import OrderService from '../services/orderService.js';
+import ordersRoutes from './orders.js';
+import okxVerifyRoutes from './okx-verify.js';
+import apiKeysRoutes from './apiKeys.js';
+import claimsRoutes from './claims.js';
+import ClaimsService from '../services/claimsService.js';
+import AuthService from '../services/authService.js';
+import authRoutes from './auth.js';
+import { createAuthMiddleware } from '../middleware/authMiddleware.js';
+import adminClaimsRouter from './adminClaims.js';
 
 export interface RouteDependencies {
-  dbManager: typeof dbManager;
-  authService: AuthService;
   orderService: OrderService;
-  claimsService: ClaimsService;
-  paymentProofService: PaymentProofService;
-  linkService: LinkService;
-  contractListenerService: ContractListenerService;
 }
 
 export default function registerRoutes(app: express.Application, deps: RouteDependencies) {
-  const { dbManager, authService, orderService, claimsService, paymentProofService, linkService } = deps;
-  const requireAuth = createAuthMiddleware(authService);
+  const { orderService } = deps;
 
   app.use('/api/v1/health', healthRoutes());
-  app.use('/api/v1/verification', verificationRoutes(dbManager));
-  app.use('/api/v1/verify', okxVerifyRoutes);
-  app.use('/api/verify', okxVerifyRoutes);
-  app.use('/api/v1/auth', authRoutes(authService, requireAuth));
-  app.use('/api/v1/account', accountRoutes(authService, requireAuth));
-  app.use('/api/v1/links', linksRoutes(requireAuth, linkService));
-  app.use('/api/v1', ordersRoutes(orderService, authService));
-  app.use('/api/v1', claimsRoutes(claimsService, authService));
-  app.use('/api/v1/payment-proofs', paymentProofsRoutes(paymentProofService, orderService, authService));
-  app.use('/api/v1/min', minSchemaRoutes());
-  // 报价接口也要求认证，避免匿名 demo 回落
-  app.use('/api/v1/quotes', requireAuth, quotesRoutes);
-  app.use('/api/v1/api-keys', requireAuth, apiKeysRoutes);
   app.use('/api/v1/pricing', pricingRoutes);
-  app.use('/api/v1/voucher', voucherRoutes);
-  app.use('/api/v1/transparency', transparencyRoutes(orderService, claimsService, paymentProofService));
-  app.use('/api/v2/verify', verificationV2Routes(dbManager));
+  app.use('/api/v1', ordersRoutes(orderService));
+  app.use('/api/v1/verify', okxVerifyRoutes);
+  app.use('/api/v1/api-keys', apiKeysRoutes);
+
+  // 认证服务与路由
+  const authService = new AuthService();
+  const requireAuth = createAuthMiddleware(authService);
+  app.use('/api/v1/auth', authRoutes(authService, requireAuth));
+
+  // 赔付管理相关路由（共享同一认证后端）
+  const claimsService = new ClaimsService(orderService);
+  app.use('/api/v1', claimsRoutes(claimsService, authService));
+
+  // 纯后台理赔接口（API Key 保护）
+  app.use('/api/v1/admin', adminClaimsRouter);
 }

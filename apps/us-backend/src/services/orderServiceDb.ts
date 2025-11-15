@@ -68,6 +68,7 @@ export interface CreateOrderInput {
   wallet: string;
   paymentMethod: string;
   idempotencyKey: string;
+  premiumUSDC6d: number;
   paymentProofId?: string;
   orderRef?: string;
   exchange: string;
@@ -171,9 +172,30 @@ export class OrderServiceDb {
 
     const computed = this.computeQuote(sku, principal, leverage);
     const expiresAt = new Date(Date.now() + sku.pricing.quoteTtlSeconds * 1000).toISOString();
+    const id = `ipm_${uuid()}`;
+    const insertStmt = this.db.prepare(
+      `INSERT INTO quotes (
+        id, user_id, product_id, principal_usdc, leverage,
+        premium_usdc, payout_usdc, fee_rate, params_json, expires_at,
+        consumed, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+    );
+    insertStmt.run(
+      id,
+      'user-id-placeholder',
+      skuId,
+      Math.round(computed.principal * 1_000_000),
+      Math.round(computed.leverage),
+      computed.premiumUSDC6d,
+      computed.payoutUSDC6d,
+      computed.feeRatio,
+      JSON.stringify({ principal, leverage }),
+      expiresAt,
+      new Date().toISOString()
+    );
 
     return {
-      id: `qt_${uuid()}`,
+      id: id,
       skuId,
       principal: computed.principal,
       leverage: computed.leverage,
@@ -304,6 +326,12 @@ export class OrderServiceDb {
       insertRefStmt.run(`${normalizedWallet}:${input.orderRef}`, orderId, 'payment_proof');
     }
 
+    const insertClaimStmt = this.db.prepare(`
+      INSERT INTO claims (id, order_id, user_id, user_wallet, status, currency, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'pending', 'USDC', datetime('now'), datetime('now'))
+    `);
+    insertClaimStmt.run(`clm_${uuid()}`, orderId, 'user-id-placeholder', normalizedWallet);
+
     // 查询并返回创建的订单
     const orderStmt = this.db.prepare(`
       SELECT * FROM orders WHERE id = ?
@@ -338,6 +366,19 @@ export class OrderServiceDb {
     const rows = stmt.all() as any[];
     
     return rows.map(row => this.mapOrderRecord(row));
+  }
+
+  getLatestPaymentHash(orderId: string): string | undefined {
+    const stmt = this.db.prepare(
+      `SELECT tx_hash, confirmed_at, created_at, status
+       FROM payment_proofs
+       WHERE order_id = ?
+       ORDER BY (CASE WHEN confirmed_at IS NOT NULL THEN 1 ELSE 0 END) DESC, created_at DESC
+       LIMIT 1`
+    );
+    const row = stmt.get(orderId) as any;
+    if (!row) return undefined;
+    return String(row.tx_hash || '').trim() || undefined;
   }
 
   private async resolveByIdempotency(key: string): Promise<OrderRecord | undefined> {
@@ -403,6 +444,18 @@ export class OrderServiceDb {
     `);
     updateStmt.run(new Date().toISOString(), target.id);
     
+    try {
+      const existing = this.db.prepare(`SELECT id FROM claims WHERE order_id = ? LIMIT 1`).get(target.id) as any;
+      if (!existing) {
+        const claimId = `clm_${uuid()}`;
+        const insertClaim = this.db.prepare(
+          `INSERT INTO claims (id, order_id, user_id, user_wallet, status, currency, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'pending', 'USDC', datetime('now'), datetime('now'))`
+        );
+        insertClaim.run(claimId, target.id, 'user-id-placeholder', w);
+      }
+    } catch {}
+
     return true;
   }
 

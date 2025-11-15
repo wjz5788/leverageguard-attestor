@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { OrderCardData, PolicyStatus, ChainName } from "../types/order";
+import { getExplorerTxUrl } from "../lib/explorer";
+import { PolicyStatusTag } from "../components/PolicyStatusTag";
+import { getAuthToken, loginWithWallet } from "../lib/auth";
+import { authFetch } from "../lib/authFetch";
 
 // =============================
 // 工具函数
@@ -34,49 +38,17 @@ const num = (n: number, p = 2) => {
   return n.toLocaleString("en-US", { minimumFractionDigits: p, maximumFractionDigits: p });
 };
 
-const openChainTx = (chain: ChainName, tx: string) => {
-  let url = "";
-  if (/^0x[0-9a-fA-F]{64}$/.test(tx)) {
-    if (chain === "Base") url = `https://basescan.org/tx/${tx}`;
-  }
-  if (!url) url = `https://basescan.org/tx/${tx}`; // 兜底
-  window.open(url, "_blank");
+const getTxUrl = (chain: ChainName, tx: string) => {
+  return getExplorerTxUrl({ chainId: null, txHash: (tx || "").trim() });
 };
 
-// =============================
-// Mock 数据（后端失败时使用）
-// =============================
+const shortRef = (ref: string) => {
+  const s = String(ref || "");
+  if (!s) return "-";
+  return s.length > 12 ? s.slice(0, 4) + "…" + s.slice(-4) : s;
+};
 
-function makeMockOrders(): OrderCardData[] {
-  const baseNow = Date.now();
-  const mk = (p: Partial<OrderCardData>): OrderCardData => ({
-    id: crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2),
-    title: "24h 爆仓保",
-    principal: 200,
-    leverage: 10,
-    premiumPaid: 3.2,
-    payoutMax: 60,
-    status: "active",
-    coverageStartTs: Math.floor((baseNow - 60_000) / 1000),
-    coverageEndTs: Math.floor((baseNow + 23 * 3600_000 + 59 * 60_000) / 1000),
-    createdAt: new Date(baseNow - 5_000).toISOString(),
-    orderRef: String(10_000_000_000 + Math.floor(Math.random() * 9_000_000_000)),
-    exchangeAccountId: "eacc_mock",
-    chain: "Base",
-    txHash: "0x" + "a".repeat(64),
-    orderDigest: "0x" + "b".repeat(64),
-    skuId: "SKU_24H_FIXED",
-    ...p,
-  });
-
-  return [
-    mk({ status: "active", createdAt: new Date(baseNow - 1_000).toISOString() }),
-    mk({ status: "pending_onchain", createdAt: new Date(baseNow - 2_000).toISOString() }),
-    mk({ status: "claimed_pending", createdAt: new Date(baseNow - 3_000).toISOString() }),
-    mk({ status: "claimed_paid", createdAt: new Date(baseNow - 4_000).toISOString() }),
-    mk({ status: "expired", coverageEndTs: Math.floor((baseNow - 10_000) / 1000), createdAt: new Date(baseNow - 5_000).toISOString() }),
-  ];
-}
+// 取消演示数据：仅展示后端返回的真实记录或本地购买记录
 
 // =============================
 // 子组件：订单卡
@@ -90,15 +62,13 @@ const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
   const now = Date.now();
   const remainMs = Math.max(0, endMs - now);
   const isExpiredUi = remainMs <= 0 || status === "expired";
+  const isPendingOnchain = status === "pending_onchain";
 
   const badge = (s: string) => {
     const map: Record<string, { t: string; bg: string; fg: string }> = {
-      pending_onchain: { t: "上链确认中", bg: "#fef9c3", fg: "#854d0e" },
+      pending_onchain: { t: "待上链", bg: "#fef9c3", fg: "#854d0e" },
       active: { t: "生效中", bg: "#dcfce7", fg: "#065f46" },
       expired: { t: "已过期", bg: "#e5e7eb", fg: "#374151" },
-      claimed_pending: { t: "理赔审核", bg: "#dbeafe", fg: "#1e3a8a" },
-      claimed_paid: { t: "已赔付", bg: "#dcfce7", fg: "#065f46" },
-      claimed_denied: { t: "理赔拒绝", bg: "#fee2e2", fg: "#7f1d1d" },
     };
     const v = map[s] || { t: s, bg: "#e5e7eb", fg: "#374151" };
     return <span style={{ background: v.bg, color: v.fg, padding: "2px 8px", borderRadius: 999, fontSize: 12 }}>{v.t}</span>;
@@ -115,8 +85,7 @@ const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
   const claimEnabled = status === "active" && !isExpiredUi;
 
   const onClaimClick = (o: OrderCardData) => {
-    // 跳转到理赔页面，携带orderId参数
-    navigate(`/claims/new?orderId=${o.id}`);
+    navigate(`/claims?orderId=${o.id}`);
   };
 
   const onDetailClick = (o: OrderCardData) => {
@@ -155,8 +124,17 @@ const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {badge(isExpiredUi ? "expired" : String(status))}
-          <span className="font-mono text-sm text-gray-900">{isExpiredUi ? "T-00:00:00" : fmtRemain(remainMs)}</span>
+          <PolicyStatusTag
+            order={{
+              txHash,
+              coverageStart: Number.isFinite(toMs(coverageStartTs))
+                ? new Date(toMs(coverageStartTs)).toISOString()
+                : String(coverageStartTs),
+              coverageEnd: Number.isFinite(toMs(coverageEndTs))
+                ? new Date(toMs(coverageEndTs)).toISOString()
+                : String(coverageEndTs),
+            }}
+          />
         </div>
       </div>
 
@@ -164,19 +142,47 @@ const OrderCard: React.FC<{ data: OrderCardData }> = ({ data }) => {
       <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-2 text-sm text-gray-600">
         <Field label="购买时间" value={fmtDate(createdAt)} />
         <Field label="覆盖窗口" value={`${fmtDate(coverageStartTs)} → ${fmtDate(coverageEndTs)}`} />
-        <Field label="订单号" value={orderRef?.slice(-8)} mono />
-        <Field label="最近校验账号" value={exchangeAccountId || "-"} mono />
+        <Field
+          label="保单号"
+          value={(
+            <span title={data.id}>
+              {shortRef(data.id)}
+              <button
+                className="ml-2 px-1 rounded border border-gray-200 bg-white hover:bg-gray-50 text-xs text-gray-600"
+                onClick={() => {
+                  const v = data.id;
+                  if (!v) return;
+                  navigator.clipboard.writeText(String(v)).catch(() => {});
+                }}
+              >
+                复制
+              </button>
+            </span>
+          )}
+          mono
+        />
+        <Field label="交易所账户" value={exchangeAccountId || "-"} mono />
       </div>
 
       {/* 动作 */}
       <div className="mt-3">
         <div className="flex gap-2 flex-wrap">
-          <button 
-            className="px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
-            onClick={() => openChainTx(data.chain, data.txHash)}
-          >
-            查看链上
-          </button>
+          {(() => {
+            const url = getTxUrl(data.chain, data.txHash);
+            return (
+              <button
+                className="px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
+                disabled={!url}
+                onClick={() => {
+                  if (!url) return;
+                  console.log("跳转链上交易：", { orderId: data.id, txHash: data.txHash, url });
+                  window.open(url, "_blank", "noopener,noreferrer");
+                }}
+              >
+                {url ? "查看链上" : "暂无交易"}
+              </button>
+            );
+          })()}
           <button 
             className={`px-3 py-2 rounded-lg border transition-colors ${
               claimEnabled 
@@ -210,7 +216,15 @@ interface OrdersPageProps {
 }
 
 export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
-  const ORDERS_URL = apiBase ? `${apiBase.replace(/\/$/, "")}/orders` : "/api/v1/orders";
+  const [walletAddr, setWalletAddr] = useState<string>("");
+  try {
+    const w = (window as any)?.ethereum;
+    const src = Array.isArray(w?.providers) ? w.providers.find((p: any) => p?.isMetaMask || p?.request) : w;
+    if (src?.request) {
+      src.request({ method: "eth_accounts" }).then((accounts: string[]) => setWalletAddr((accounts?.[0] || "").toLowerCase())).catch(() => {});
+    }
+  } catch {}
+  const ORDERS_URL = apiBase ? `${apiBase.replace(/\/$/, "")}/orders/my?address=${walletAddr}` : `/api/v1/orders/my?address=${walletAddr}`;
 
   // 数据与加载态
   const [loading, setLoading] = useState(false);
@@ -226,7 +240,12 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
 
   // 拉取列表
   const refresh = async () => {
-    setLoading(true); 
+    if (!walletAddr) {
+      console.log('[OrdersPage] walletAddress empty, skip /orders/my');
+      setRows([]);
+      return;
+    }
+    setLoading(true);
     setError("");
     try {
       const res = await fetch(ORDERS_URL, { method: "GET" });
@@ -237,48 +256,67 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ t, apiBase = "" }) => {
         const created = r.createdAt ?? r.created_at ?? new Date().toISOString();
         const startTs = r.coverageStartTs ?? r.coverage_start_ts ?? created;
         const endTs = r.coverageEndTs ?? r.coverage_end_ts ?? (r.skuId === 'sku_24h_liq' ? new Date(new Date(created).getTime() + 24 * 3600_000).toISOString() : created);
+        const premium6d = Number(r.premiumUSDC6d ?? r.premium_usdc_6d ?? 0);
+        const payout6d = Number(r.payoutUSDC6d ?? r.payout_usdc_6d ?? 0);
         return ({
         id: r.id ?? r.orderId ?? `${Date.now()}-${i}`,
         title: r.title ?? "24h 爆仓保",
         principal: Number(r.principal ?? 0),
         leverage: Number(r.leverage ?? 0),
-        premiumPaid: Number(r.premiumPaid ?? r.premiumUSDC ?? r.premium ?? 0),
-        payoutMax: Number(r.payoutMax ?? r.payoutUSDC ?? 0),
+        premiumPaid: premium6d > 0 ? premium6d / 1_000_000 : Number(r.premiumPaid ?? r.premiumUSDC ?? r.premium ?? 0),
+        payoutMax: payout6d > 0 ? payout6d / 1_000_000 : Number(r.payoutMax ?? r.payoutUSDC ?? 0),
         status: String(r.status ?? "active"),
         coverageStartTs: startTs,
         coverageEndTs: endTs,
         createdAt: created,
         orderRef: r.orderRef ?? r.order_ref ?? "",
-        exchangeAccountId: r.exchangeAccountId ?? r.exchange_account_id,
+        exchangeAccountId: r.exchangeAccountId ?? r.exchange_account_id ?? r.exchange,
         chain: r.chain ?? "Base",
-        txHash: r.paymentTx ?? r.txHash ?? r.tx_hash ?? "",
+        txHash: String(r.paymentTx ?? r.txHash ?? r.tx_hash ?? "").trim(),
         orderDigest: r.orderDigest ?? r.order_digest ?? "",
         skuId: r.skuId ?? r.sku_id ?? "SKU_24H_FIXED",
       });
       });
       // 按 createdAt desc
       normalized.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setRows(normalized);
+      let localArr: OrderCardData[] = [];
+      try {
+        const raw = localStorage.getItem("lp_local_orders") || "[]";
+        const arr = JSON.parse(raw);
+        localArr = Array.isArray(arr) ? arr : [];
+      } catch {}
+      const merged = [...localArr, ...normalized].filter((v, idx, arr) => {
+        const key = String(v?.id || "") + "|" + String(v?.txHash || "");
+        return idx === arr.findIndex(w => (String(w?.id || "") + "|" + String(w?.txHash || "")) === key);
+      }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setRows(merged);
     } catch (e: any) {
-      console.warn("/orders failed, fallback to mock:", e?.message || e);
-      setError("订单服务不可用，展示演示数据");
-      const mock = makeMockOrders().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setRows(mock);
+      console.warn("/orders failed:", e?.message || e);
+      setError("");
+      try {
+        const raw = localStorage.getItem("lp_local_orders") || "[]";
+        const arr = JSON.parse(raw);
+        const localArr: OrderCardData[] = Array.isArray(arr) ? arr : [];
+        const sorted = localArr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setRows(sorted);
+      } catch {
+        setRows([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { 
-    refresh(); 
-  }, [apiBase]);
+  useEffect(() => {
+    refresh();
+  }, [apiBase, walletAddr]);
 
   const total = rows.length;
 
   return (
     <div className="min-h-screen bg-[#FFF7ED] text-[#3F2E20]">
       {/* 顶部条 */}
-      <div className="sticky top-0 z-40 bg-[#FFF7EDF2] border-b border-gray-200">
+      <div className="sticky top-16 z-10 bg-[#FFF7EDF2] border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-xl bg-yellow-400 border border-gray-100" />

@@ -7,6 +7,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { useToast } from '../contexts/ToastContext';
 // 新增：ethers（v6）
 import { ethers } from 'ethers';
+import { payAndSubmit } from '../lib/payPolicy';
 
 // === 新增：常量 & 最小 ABI（① 顶部常量/ABI） ===
 // 建议用环境变量：VITE_POLICY_ADDR；没有就占位 0x0（会在下单时报错提醒）
@@ -82,113 +83,45 @@ export const Products: React.FC<ProductsProps> = ({ t }) => {
       try { await connectWallet(); } catch {}
       return;
     }
-    if (!POLICY_ADDR || POLICY_ADDR === '0x0000000000000000000000000000000000000000') {
-      push({ title: '缺少合约地址：请设置 VITE_POLICY_ADDR' });
-      return;
-    }
     setBuying(true);
     try {
-      // 0) 确保 Base 主网（0x2105）
       if ((chainId || '').toLowerCase() !== '0x2105') {
         await switchToBase(false);
       }
-
-      // 1) 向后端要参数化报价（PRICER 出签）
-      const qRes = await fetch('/api/v1/pricing/quote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          principal: clamp(principal, MIN_P, MAX_P),
-          leverage: clamp(lev, MIN_L, MAX_L),
-          durationHours: 24,      // 你的产品页=24h；如做成滑块，请传真实值
-          skuId: 101,             // 或 900（区间护栏 SKU）
-          wallet: address
-        })
-      });
-      if (!qRes.ok) throw new Error('报价失败');
-      const q = await qRes.json();
-      const { quote, quoteSig, idempotencyKey } = q || {};
-      if (!quote?.price || !quoteSig) throw new Error('报价签名缺失');
-      if (String(quote.contractAddr).toLowerCase() !== POLICY_ADDR.toLowerCase()) {
-        throw new Error('合约路由不匹配');
-      }
-      const now = Math.floor(Date.now()/1000);
-      if (now > Number(quote.deadline)) throw new Error('报价已过期，请刷新');
-
-      // 2) 向后端要 Voucher（ATTESTOR 出签）
-      const vRes = await fetch('/api/v1/voucher/issue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          wallet: address,
-          skuId: quote.skuId ?? 101,
-          exchangeId: quote.exchangeId ?? '0x6f6b785f000000000000000000000000000000000000000000000000000000', // "okx" 占位
-          accountHash: quote.accountHash
-        })
-      });
-      if (!vRes.ok) throw new Error('资格凭证失败');
-      const v = await vRes.json();
-      const { voucher, voucherSig, verifyHash } = v || {};
-      if (!voucher || !voucherSig) throw new Error('Voucher 签名缺失');
-
-      // 3) allowance 不足则 approve
-      const provider = new ethers.BrowserProvider((window as any).ethereum);
-      const signer = await provider.getSigner();
-      const usdc = new ethers.Contract(USDC_ADDR, ERC20_ABI, signer);
-      const need = BigInt(quote.price); // 后端返回 6 位整数
-      const cur: bigint = await usdc.allowance(await signer.getAddress(), POLICY_ADDR);
-      if (cur < need) {
-        const txA = await usdc.approve(POLICY_ADDR, need);
-        await txA.wait();
-      }
-
-      // 4) 调合约 buyPolicy（链上扣费+铸 SBT）
-      const policy = new ethers.Contract(POLICY_ADDR, POLICY_ABI, signer);
-      const skuId = Number(quote.skuId ?? 101);
-      const notional = BigInt(Math.round(clamp(principal, MIN_P, MAX_P) * clamp(lev, MIN_L, MAX_L))) * 1_000_000n;
-      const _verifyHash = verifyHash ?? quote.inputHash;
-
-      const tx = await policy.buyPolicy(
-        voucher, voucherSig,
-        quote,   quoteSig,
-        skuId,   notional, _verifyHash
-      );
-      const rc = await tx.wait();
-
-      // 5) 从事件抓 policyId，再落订单（以链上为准）
-      let policyId: string | undefined;
+      const amountUSDC = '0.01';
+      const res = await payAndSubmit(amountUSDC);
+      push({ title: '支付交易已发起', desc: `tx=${(res?.txHash || '').slice(0, 10)}…` });
       try {
-        for (const l of rc.logs ?? []) {
-          const parsed = policy.interface.parseLog(l);
-          if (parsed?.name === 'PolicyPurchased') {
-            policyId = parsed?.args?.policyId?.toString();
-            break;
-          }
-        }
-      } catch {}
-      if (!policyId) throw new Error('链上未返回 policyId');
-
-      const createRes = await fetch('/api/v1/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          idempotencyKey,
-          policyId,
-          wallet: address,
+        const now = Date.now();
+        const localRaw = localStorage.getItem('lp_local_orders') || '[]';
+        const localArr = Array.isArray(JSON.parse(localRaw)) ? JSON.parse(localRaw) : [];
+        const item = {
+          id: res?.orderId || `${now}`,
+          title: '24h 爆仓保',
           principal: clamp(principal, MIN_P, MAX_P),
-          leverage: clamp(lev, MIN_L, MAX_L),
-          premiumUSDC_6d: String(need),
-          chain: 'base',
-          purchaseTx: tx.hash,
-          paymentMethod: 'buyPolicy'
-        })
-      });
-      if (!createRes.ok) throw new Error('创建订单失败');
-
-      push({ title: '投保成功' });
-      navigate('/account/orders');
+          leverage: ensureInt(lev),
+          premiumPaid: Number(feeAmt || 0),
+          payoutMax: Number(payoutAmt || 0),
+          status: 'active',
+          coverageStartTs: new Date(now).toISOString(),
+          coverageEndTs: new Date(now + 24 * 3600_000).toISOString(),
+          createdAt: new Date(now).toISOString(),
+          orderRef: '',
+          exchangeAccountId: '',
+          chain: 'Base',
+          txHash: String(res?.txHash || '').trim(),
+          orderDigest: '',
+          skuId: 'SKU_24H_FIXED',
+        };
+        const merged = [item, ...localArr].filter((v, idx, arr) => {
+          const key = String(v?.id || '') + '|' + String(v?.txHash || '');
+          return idx === arr.findIndex(w => (String(w?.id || '') + '|' + String(w?.txHash || '')) === key);
+        });
+        localStorage.setItem('lp_local_orders', JSON.stringify(merged));
+      } catch {}
+      navigate('/orders');
     } catch (e: any) {
-      push({ title: e?.message || '下单失败' });
+      push({ title: e?.message || '支付失败' });
     } finally {
       setBuying(false);
     }

@@ -23,6 +23,12 @@ export const renderWithProviders = (ui: React.ReactElement, options = {}) => {
   );
 };
 
+export const TestWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <LoadingProvider>
+    <ToastProvider>{children}</ToastProvider>
+  </LoadingProvider>
+);
+
 export const createMockContextValue = (overrides = {}) => {
   return {
     loading: false,

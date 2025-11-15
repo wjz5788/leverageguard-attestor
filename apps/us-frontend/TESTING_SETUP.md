@@ -19,6 +19,20 @@ This project now includes comprehensive testing infrastructure with both unit te
 
 ## 🚀 Quick Start
 
+### 必备环境变量
+
+在根目录 `.env`（或 `apps/us-frontend/.env`）里配置以下字段，否则支付流程会在运行期直接报错：
+
+```bash
+VITE_BASE_RPC=https://mainnet.base.org                 # Base 公共 RPC，可替换成自有节点
+VITE_BASE_USDC_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+VITE_CHECKOUT_CONTRACT_ADDRESS=0xc423c34b57730ba87fb74b99180663913a345d68
+VITE_CHECKOUT_QUOTE_HASH=0x...                         # 已预注册/约定的 quoteHash
+VITE_TREASURY_ADDRESS=0xaa1f4df6fc3ad033cc71d561689189d11ab54f4b
+```
+
+> 兼容旧字段：若暂时没有 `VITE_CHECKOUT_CONTRACT_ADDRESS`，仍可沿用旧的 `VITE_CHECKOUT_USDC_ADDRESS`；但推荐尽快切换到前者以免与 Base USDC 地址混淆。
+
 ### Install Dependencies
 ```bash
 cd /Users/zhaomosheng/Desktop/LiqPass-clean/apps/us-frontend

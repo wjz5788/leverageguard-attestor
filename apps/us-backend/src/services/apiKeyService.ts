@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import sqlite3 from 'sqlite3';
-import dbManager, { type DatabaseManager } from '../database/db.js';
+import axios from 'axios';
+import dbManager, { type DatabaseInterface } from '../database/db.js';
 import type { 
   ApiKey, 
   SanitizedApiKey, 
@@ -26,7 +26,7 @@ export class ApiKeyServiceError extends Error {
  * API密钥服务
  */
 export default class ApiKeyService {
-  private db: sqlite3.Database;
+  private db: DatabaseInterface;
 
   constructor() {
     this.db = dbManager.getDatabase();
@@ -53,78 +53,35 @@ export default class ApiKeyService {
     const apiKeyId = request.api_key_id || CryptoUtils.generateApiKeyId();
     
     if (existing) {
-      // 更新现有记录
       const updateSql = `
         UPDATE api_keys
         SET api_key_id = ?, key_id = ?, api_key_enc = ?, secret_enc = ?, passphrase_enc = ?,
             status = 'new', updated_at = ?
         WHERE user_id = ? AND exchange = ?
       `;
-      
-      return new Promise((resolve, reject) => {
-        this.db.run(updateSql, [
-          apiKeyId,
-          apiKeyId,
-          encrypted.api_key_enc,
-          encrypted.secret_enc,
-          encrypted.passphrase_enc,
-          now,
-          userId,
-          request.exchange
-        ], (err: any) => {
-          if (err) {
-            reject(new ApiKeyServiceError('DB_ERROR', `更新API密钥失败: ${err.message}`));
-            return;
-          }
-          
-          // 返回更新后的记录
-          this.getApiKeyByUserAndExchange(userId, request.exchange)
-            .then((apiKey) => {
-              if (apiKey) {
-                resolve(apiKey);
-              } else {
-                reject(new ApiKeyServiceError('NOT_FOUND', 'API密钥未找到'));
-              }
-            })
-            .catch(reject);
-        });
-      });
+      const r = this.db.run(updateSql, apiKeyId, apiKeyId, encrypted.api_key_enc, encrypted.secret_enc, encrypted.passphrase_enc, now, userId, request.exchange);
+      if (!r || r.changes < 0) {
+        throw new ApiKeyServiceError('DB_ERROR', '更新API密钥失败');
+      }
+      const apiKey = await this.getApiKeyByUserAndExchange(userId, request.exchange);
+      if (!apiKey) {
+        throw new ApiKeyServiceError('NOT_FOUND', 'API密钥未找到');
+      }
+      return apiKey;
     } else {
-      // 创建新记录
       const insertSql = `
         INSERT INTO api_keys (
           id, user_id, exchange, api_key_id, key_id, api_key_enc, secret_enc, passphrase_enc,
           status, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
-      
       const id = uuidv4();
-      
-      return new Promise((resolve, reject) => {
-        this.db.run(insertSql, [
-          id,
-          userId,
-          request.exchange,
-          apiKeyId,
-          apiKeyId,
-          encrypted.api_key_enc,
-          encrypted.secret_enc,
-          encrypted.passphrase_enc,
-          'new',
-          now,
-          now
-        ], (err: any) => {
-          if (err) {
-            reject(new ApiKeyServiceError('DB_ERROR', `保存API密钥失败: ${err.message}`));
-            return;
-          }
-          
-          // 返回新创建的记录
-          this.getApiKeyById(id)
-            .then((apiKey) => resolve(apiKey!))
-            .catch(reject);
-        });
-      });
+      const r = this.db.run(insertSql, id, userId, request.exchange, apiKeyId, apiKeyId, encrypted.api_key_enc, encrypted.secret_enc, encrypted.passphrase_enc, 'new', now, now);
+      if (!r || r.changes !== 1) {
+        throw new ApiKeyServiceError('DB_ERROR', '保存API密钥失败');
+      }
+      const apiKey = await this.getApiKeyById(id);
+      return apiKey;
     }
   }
 
@@ -138,17 +95,9 @@ export default class ApiKeyService {
       ORDER BY created_at DESC
     `;
     
-    return new Promise((resolve, reject) => {
-      this.db.all(sql, [userId], (err: any, rows: ApiKey[]) => {
-        if (err) {
-          reject(new ApiKeyServiceError('DB_ERROR', `查询API密钥失败: ${err.message}`));
-          return;
-        }
-        
-        const sanitized = rows.map(row => this.sanitizeApiKey(row));
-        resolve(sanitized);
-      });
-    });
+    const rows = this.db.all(sql, userId) as ApiKey[];
+    const sanitized = rows.map(row => this.sanitizeApiKey(row));
+    return sanitized;
   }
 
   /**
@@ -197,21 +146,8 @@ export default class ApiKeyService {
   async deleteApiKey(userId: string, exchange: ExchangeType): Promise<boolean> {
     const sql = `DELETE FROM api_keys WHERE user_id = ? AND exchange = ?`;
     
-    return new Promise((resolve, reject) => {
-      this.db.run(sql, [userId, exchange], function(this: any, err: any) {
-        if (err) {
-          reject(new ApiKeyServiceError('DB_ERROR', `删除API密钥失败: ${err.message}`));
-          return;
-        }
-        
-        // 检查是否有行被删除
-        if (this.changes === 0) {
-          resolve(false);
-        } else {
-          resolve(true);
-        }
-      });
-    });
+    const r = this.db.run(sql, userId, exchange);
+    return !!(r && r.changes > 0);
   }
 
   /**
@@ -220,21 +156,11 @@ export default class ApiKeyService {
   private async getApiKeyById(id: string): Promise<ApiKey> {
     const sql = `SELECT * FROM api_keys WHERE id = ?`;
     
-    return new Promise((resolve, reject) => {
-      this.db.get(sql, [id], (err: any, row: ApiKey) => {
-        if (err) {
-          reject(new ApiKeyServiceError('DB_ERROR', `查询API密钥失败: ${err.message}`));
-          return;
-        }
-        
-        if (!row) {
-          reject(new ApiKeyServiceError('NOT_FOUND', 'API密钥不存在'));
-          return;
-        }
-        
-        resolve(row);
-      });
-    });
+    const row = this.db.get(sql, id) as ApiKey | undefined;
+    if (!row) {
+      throw new ApiKeyServiceError('NOT_FOUND', 'API密钥不存在');
+    }
+    return row;
   }
 
   /**
@@ -243,16 +169,8 @@ export default class ApiKeyService {
   private async getApiKeyByUserAndExchange(userId: string, exchange: ExchangeType): Promise<ApiKey | null> {
     const sql = `SELECT * FROM api_keys WHERE user_id = ? AND exchange = ?`;
     
-    return new Promise((resolve, reject) => {
-      this.db.get(sql, [userId, exchange], (err: any, row: ApiKey) => {
-        if (err) {
-          reject(new ApiKeyServiceError('DB_ERROR', `查询API密钥失败: ${err.message}`));
-          return;
-        }
-        
-        resolve(row || null);
-      });
-    });
+    const row = this.db.get(sql, userId, exchange) as ApiKey | undefined;
+    return row || null;
   }
 
   /**
@@ -309,15 +227,10 @@ export default class ApiKeyService {
     
     const now = new Date().toISOString();
     
-    return new Promise((resolve, reject) => {
-      this.db.run(sql, [status, verifiedAt, now, id], function(this: any, err: any) {
-        if (err) {
-          reject(new ApiKeyServiceError('DB_ERROR', `更新API密钥状态失败: ${err.message}`));
-          return;
-        }
-        resolve();
-      });
-    });
+    const r = this.db.run(sql, status, verifiedAt, now, id);
+    if (!r) {
+      throw new ApiKeyServiceError('DB_ERROR', '更新API密钥状态失败');
+    }
   }
 
   /**
@@ -341,16 +254,43 @@ export default class ApiKeyService {
    * 私有方法：调用jp-verify服务
    */
   private async callJpVerify(decrypted: { api_key: string; secret: string; passphrase: string }, exchange: ExchangeType): Promise<VerifyApiKeyResponse> {
-    // 这里需要实现调用jp-verify服务的逻辑
-    // 由于jp-verify服务需要具体的订单信息来验证，这里我们可以使用一个简单的测试订单
-    
-    // 暂时返回模拟的成功响应
-    // 在实际实现中，这里应该调用jp-verify服务进行真正的验证
-    
-    return {
-      success: true,
-      message: 'API密钥验证成功',
-      verified_at: new Date().toISOString()
-    };
+    // 统一走本后端的 OKX 验证代理，从而写入 verify_results，供理赔校验复用
+    const backendBase = (process.env.BACKEND_BASE_URL || `http://127.0.0.1:${process.env.PORT || '3006'}`).toString();
+    const verifyUrl = `${backendBase}/api/v1/verify/standard`;
+
+    // 在测试模式下，jp-verify 会接受测试订单；可由环境变量覆盖
+    const ordId = (process.env.VERIFY_TEST_ORD_ID || 'TEST-ORDER').toString();
+    const instId = (process.env.VERIFY_TEST_INST_ID || 'BTC-USDT-SWAP').toString();
+
+    if (exchange !== 'okx') {
+      throw new ApiKeyServiceError('UNSUPPORTED_EXCHANGE', `暂不支持 ${exchange} 交易所`);
+    }
+
+    try {
+      const payload = {
+        exchange: 'okx',
+        ordId,
+        instId,
+        keyMode: 'inline',
+        apiKey: decrypted.api_key,
+        secretKey: decrypted.secret,
+        passphrase: decrypted.passphrase,
+        clientMode: 'minimal'
+      };
+
+      const resp = await axios.post(verifyUrl, payload, { headers: { 'Content-Type': 'application/json' }, timeout: 30000 });
+      const data = resp.data as any;
+      const status = String(data?.status || '').toLowerCase();
+      const success = status === 'verified';
+      return {
+        success,
+        message: success ? 'API密钥验证成功' : 'API密钥验证失败',
+        verified_at: data?.meta?.verifiedAt || new Date().toISOString(),
+        error: success ? undefined : (data?.error?.code || 'VERIFY_FAILED')
+      };
+    } catch (error: any) {
+      const code = error?.response?.data?.error?.code || (error?.code === 'ECONNREFUSED' ? 'SERVICE_UNAVAILABLE' : 'VERIFY_FAILED');
+      throw new ApiKeyServiceError(code, `验证失败: ${error?.response?.data?.error?.msg || error?.message || String(error)}`);
+    }
   }
 }
