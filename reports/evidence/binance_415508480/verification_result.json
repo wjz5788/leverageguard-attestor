@@ -1,0 +1,22 @@
+{
+  "order_id": "415508480",
+  "symbol": "HEMIUSDT",
+  "timestamp": "2025-10-18T06:45:22.603209",
+  "order_info": {
+    "order_type": "LIMIT",
+    "side": "BUY",
+    "status": "FILLED",
+    "price": "0.1209180",
+    "orig_qty": "17541",
+    "executed_qty": "17541",
+    "time": "2025-09-23T09:25:39.663000"
+  },
+  "is_liquidation_order": "unknown",
+  "liquidation_risk": {
+    "risk_level": "无持仓",
+    "message": "HEMIUSDT当前无持仓"
+  },
+  "theoretical_liquidation_price": null,
+  "trade_count": 15,
+  "liquidation_orders_count": 0
+}

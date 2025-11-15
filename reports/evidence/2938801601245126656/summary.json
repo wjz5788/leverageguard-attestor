@@ -1,0 +1,37 @@
+{
+  "ordId": "2938801601245126656",
+  "instId": "BTC-USDT-SWAP",
+  "instType": "SWAP",
+  "window": {
+    "beginMs": 1760084761908,
+    "endMs": 1760086561908
+  },
+  "exchange": "okx",
+  "symbol": "BTC-USDT-SWAP",
+  "leverage": 100,
+  "notional": 945.2976,
+  "isLiquidated": true,
+  "liquidationTs": 1760085661908,
+  "payoutAmount": 800,
+  "payoutCurrency": "USDC",
+  "fillSummary": {
+    "total_fills": 1,
+    "total_pnl": 0.0,
+    "total_fee": -0.18905952,
+    "approx_notional_sum": 945.2976,
+    "first_fill_ts": 1760085661908,
+    "last_fill_ts": 1760085661908
+  },
+  "billsCount": 0,
+  "liquidationSignals": 0,
+  "hasStrongEvidence": false,
+  "merkleRoot": "0x81aee4d25e1329bf032b7cfb587cd0bd0be6ff4bc0169c4e64f5e490f4b64087",
+  "evidenceFiles": [
+    "bills.json",
+    "fills.json",
+    "instrument.json",
+    "meta.json",
+    "order.json"
+  ],
+  "generatedAt": "2025-10-18T05:06:32.007Z"
+}

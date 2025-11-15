@@ -1,0 +1,443 @@
+openapi: 3.0.3
+info:
+  title: LiqPass API
+  description: 去中心化保险系统API接口
+  version: 1.0.0
+  contact:
+    name: LiqPass Team
+    email: support@liqpass.com
+servers:
+  - url: https://api.liqpass.com/v1
+    description: 生产环境
+  - url: https://staging-api.liqpass.com/v1
+    description: 测试环境
+  - url: http://localhost:3000/api/v1
+    description: 本地开发环境
+
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: API密钥认证
+    signature:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: 请求签名
+    timestamp:
+      type: apiKey
+      in: header
+      name: X-Timestamp
+      description: 时间戳
+  
+  schemas:
+    Order:
+      type: object
+      required:
+        - order_id
+        - user_address
+        - amount
+        - leverage
+        - duration
+        - premium
+        - status
+        - created_at
+      properties:
+        order_id:
+          type: string
+          example: "order_1234567890"
+          description: 订单唯一标识
+        user_address:
+          type: string
+          example: "0x742d35Cc6634C0532925a3b8D9b1b4A7bAe8b6c1"
+          description: 用户钱包地址
+        amount:
+          type: integer
+          example: 1000
+          description: 保险金额（USDC最小单位）
+        leverage:
+          type: integer
+          example: 3
+          description: 杠杆倍数
+        duration:
+          type: integer
+          example: 7
+          description: 保险期限（天）
+        premium:
+          type: integer
+          example: 30
+          description: 保费金额（USDC最小单位）
+        status:
+          type: string
+          enum: ["pending", "active", "claimed", "expired"]
+          example: "active"
+          description: 订单状态
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+    
+    CreateOrderRequest:
+      type: object
+      required:
+        - amount
+        - leverage
+        - duration
+      properties:
+        amount:
+          type: integer
+          minimum: 100
+          maximum: 1000000
+          example: 1000
+          description: 保险金额（USDC最小单位）
+        leverage:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 3
+          description: 杠杆倍数
+        duration:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 7
+          description: 保险期限（天）
+        currency:
+          type: string
+          default: "USDC"
+          example: "USDC"
+          description: 货币类型
+    
+    Claim:
+      type: object
+      required:
+        - claim_id
+        - order_id
+        - claim_amount
+        - status
+        - created_at
+      properties:
+        claim_id:
+          type: string
+          example: "claim_1234567890"
+        order_id:
+          type: string
+          example: "order_1234567890"
+        claim_amount:
+          type: integer
+          example: 1500
+          description: 赔付金额
+        status:
+          type: string
+          enum: ["submitted", "verifying", "approved", "rejected", "processing", "paid"]
+          example: "submitted"
+        evidence:
+          type: object
+          description: 清算事件证据
+        created_at:
+          type: string
+          format: date-time
+        processed_at:
+          type: string
+          format: date-time
+    
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+        - code
+      properties:
+        error:
+          type: string
+          example: "invalid_request"
+        message:
+          type: string
+          example: "请求参数无效"
+        code:
+          type: integer
+          example: 400
+        details:
+          type: object
+          description: 错误详情
+
+paths:
+  /orders:
+    post:
+      summary: 创建保险订单
+      description: 创建新的保险订单，订单状态为pending，等待用户支付保费
+      tags:
+        - Orders
+      security:
+        - apiKey: []
+        - signature: []
+        - timestamp: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+            example:
+              amount: 1000
+              leverage: 3
+              duration: 7
+              currency: "USDC"
+      responses:
+        '201':
+          description: 订单创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+              example:
+                order_id: "order_1234567890"
+                user_address: "0x742d35Cc6634C0532925a3b8D9b1b4A7bAe8b6c1"
+                amount: 1000
+                leverage: 3
+                duration: 7
+                premium: 30
+                status: "pending"
+                created_at: "2024-01-01T00:00:00Z"
+                updated_at: "2024-01-01T00:00:00Z"
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_parameters"
+                message: "杠杆倍数必须在1-10之间"
+                code: 400
+        '401':
+          description: 认证失败
+        '429':
+          description: 请求频率过高
+      
+    get:
+      summary: 查询订单列表
+      description: 获取用户的历史订单列表
+      tags:
+        - Orders
+      security:
+        - apiKey: []
+        - signature: []
+        - timestamp: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: 返回记录数量
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: 偏移量
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: ["pending", "active", "claimed", "expired"]
+          description: 按状态筛选
+      responses:
+        '200':
+          description: 成功获取订单列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+                  total:
+                    type: integer
+                    example: 150
+                  has_more:
+                    type: boolean
+                    example: true
+              example:
+                orders:
+                  - order_id: "order_1234567890"
+                    user_address: "0x742d35Cc6634C0532925a3b8D9b1b4A7bAe8b6c1"
+                    amount: 1000
+                    leverage: 3
+                    duration: 7
+                    premium: 30
+                    status: "active"
+                    created_at: "2024-01-01T00:00:00Z"
+                total: 150
+                has_more: true
+
+  /orders/{order_id}:
+    get:
+      summary: 查询订单详情
+      description: 根据订单ID获取订单详细信息
+      tags:
+        - Orders
+      security:
+        - apiKey: []
+        - signature: []
+        - timestamp: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 订单ID
+      responses:
+        '200':
+          description: 成功获取订单详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          description: 订单不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "order_not_found"
+                message: "指定的订单不存在"
+                code: 404
+
+  /claims:
+    post:
+      summary: 提交赔付申请
+      description: 为指定订单提交赔付申请
+      tags:
+        - Claims
+      security:
+        - apiKey: []
+        - signature: []
+        - timestamp: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - order_id
+                - claim_amount
+                - evidence
+              properties:
+                order_id:
+                  type: string
+                  example: "order_1234567890"
+                claim_amount:
+                  type: integer
+                  example: 1500
+                evidence:
+                  type: object
+                  properties:
+                    tx_hash:
+                      type: string
+                      example: "0x1234567890abcdef"
+                    description:
+                      type: string
+                      example: "清算事件证明"
+            example:
+              order_id: "order_1234567890"
+              claim_amount: 1500
+              evidence:
+                tx_hash: "0x1234567890abcdef"
+                description: "在Binance交易所发生的强制平仓事件"
+      responses:
+        '201':
+          description: 赔付申请提交成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+              example:
+                claim_id: "claim_1234567890"
+                order_id: "order_1234567890"
+                claim_amount: 1500
+                status: "submitted"
+                created_at: "2024-01-01T00:00:00Z"
+        '400':
+          description: 请求参数错误
+        '404':
+          description: 订单不存在
+
+  /healthz:
+    get:
+      summary: 健康检查
+      description: 检查服务健康状态
+      tags:
+        - System
+      responses:
+        '200':
+          description: 服务健康
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T00:00:00Z"
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: boolean
+                        example: true
+                      blockchain:
+                        type: boolean
+                        example: true
+              example:
+                status: "healthy"
+                timestamp: "2024-01-01T00:00:00Z"
+                version: "1.0.0"
+                services:
+                  database: true
+                  blockchain: true
+
+  /metrics:
+    get:
+      summary: 服务指标
+      description: 获取服务运行指标（Prometheus格式）
+      tags:
+        - System
+      responses:
+        '200':
+          description: 成功获取指标
+          content:
+            text/plain:
+              example: |
+                # HELP http_requests_total Total HTTP requests
+                # TYPE http_requests_total counter
+                http_requests_total{method="post",path="/orders",status="201"} 150
+                http_requests_total{method="get",path="/healthz",status="200"} 1000
+
+tags:
+  - name: Orders
+    description: 保险订单相关接口
+  - name: Claims
+    description: 赔付申请相关接口
+  - name: System
+    description: 系统状态和监控接口

@@ -1,0 +1,43 @@
+{
+  "name": "liqpass",
+  "version": "1.0.0",
+  "description": "LiqPass - 加密货币爆仓保护平台",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "liqpass-verify",
+    "leverageguard-docs"
+  ],
+  "scripts": {
+    "dev": "concurrently \"pnpm --filter us-frontend dev\" \"pnpm --filter us-backend dev\"",
+    "build": "pnpm --filter us-frontend build && pnpm --filter us-backend build",
+    "test": "pnpm --filter us-frontend test && pnpm --filter us-backend test",
+    "lint": "pnpm --filter us-frontend lint && pnpm --filter us-backend lint",
+    "clean": "pnpm --filter us-frontend clean && pnpm --filter us-backend clean",
+    "docs:check-links": "node scripts/docs-update.js check-links",
+    "docs:lint": "node scripts/docs-update.js lint",
+    "docs:changelog": "node scripts/docs-update.js changelog",
+    "docs:status": "node scripts/docs-update.js status",
+    "docs:full-check": "node scripts/docs-update.js full-check"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^4.0.3",
+    "@nomicfoundation/hardhat-verify": "^3.0.6",
+    "concurrently": "^8.2.2",
+    "ethers": "^6.15.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "keywords": [
+    "cryptocurrency",
+    "insurance",
+    "trading",
+    "defi",
+    "blockchain"
+  ],
+  "author": "LiqPass Team",
+  "license": "MIT"
+}

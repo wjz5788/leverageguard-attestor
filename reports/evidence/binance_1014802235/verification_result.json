@@ -1,0 +1,22 @@
+{
+  "order_id": "1014802235",
+  "symbol": "CRVUSDC",
+  "timestamp": "2025-10-18T06:44:04.622176",
+  "order_info": {
+    "order_type": "MARKET",
+    "side": "SELL",
+    "status": "FILLED",
+    "price": "0.0000000",
+    "orig_qty": "581.4",
+    "executed_qty": "581.4",
+    "time": "2025-10-06T17:27:49.078000"
+  },
+  "is_liquidation_order": "unknown",
+  "liquidation_risk": {
+    "risk_level": "无持仓",
+    "message": "CRVUSDC当前无持仓"
+  },
+  "theoretical_liquidation_price": null,
+  "trade_count": 6,
+  "liquidation_orders_count": 0
+}
